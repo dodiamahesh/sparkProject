@@ -1,0 +1,21 @@
+{
+  "connector.class": "com.mongodb.kafka.connect.MongoSinkConnector",
+  "tasks.max": "1",
+  "topics.regex": "src\\.(mongo|mysql)\\..*|(mongo|mysql)_.*",
+  "connection.uri": "mongodb://localhost:27017/?replicaSet=rs0",
+  "database": "de_bronze",
+  "document.id.strategy": "com.mongodb.kafka.connect.sink.processor.id.strategy.FullKeyStrategy",
+  "document.id.strategy.overwrite.existing": "true",
+  "writemodel.strategy": "com.mongodb.kafka.connect.sink.writemodel.strategy.ReplaceOneDefaultStrategy",
+  "transforms": "route,ingest",
+  "transforms.route.type": "org.apache.kafka.connect.transforms.RegexRouter",
+  "transforms.route.regex": "src\\.(mongo|mysql)\\.[^.]+\\.(.*)",
+  "transforms.route.replacement": "$1_$2",
+  "transforms.ingest.type": "org.apache.kafka.connect.transforms.InsertField$Value",
+  "transforms.ingest.timestamp.field": "_ingested_at",
+  "errors.tolerance": "all",
+  "errors.log.enable": "true",
+  "errors.deadletterqueue.topic.name": "dlq.sink-bronze",
+  "errors.deadletterqueue.topic.replication.factor": "1",
+  "errors.deadletterqueue.context.headers.enable": "true"
+}

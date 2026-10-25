@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+.env
+
+# Spark
+spark-warehouse/
+metastore_db/
+derby.log
+*.log
+checkpoint/
+
+# Scala / Java (jo vaparta ho to)
+target/
+project/target/
+*.class
+
+# IDE
+.idea/
+.vscode/
+
+# Data files (moti files GitHub par na mukvi)
+*.parquet
+*.csv
+data/
