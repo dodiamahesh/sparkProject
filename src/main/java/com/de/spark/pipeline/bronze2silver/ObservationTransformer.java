@@ -7,9 +7,9 @@ import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SparkSession;
 import org.apache.spark.sql.expressions.Window;
 import org.apache.spark.sql.expressions.WindowSpec;
-import org.apache.spark.sql.types.DataType;
 import org.springframework.stereotype.Component;
 
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -17,16 +17,15 @@ import static com.de.spark.pipeline.bronze2silver.Rejects.*;
 import static org.apache.spark.sql.functions.*;
 
 /**
- * Bronze mongo_weather_observations events -> Silver weather_observation + 5 child tables.
+ * Bronze weather_observations documents -> Silver weather_observation + 5 child tables.
  *
- * Steps:  parse "after" JSON -> split deletes -> VALIDATE -> remove DUPLICATES -> flatten.
+ * Steps:  split off the metadata -> split deletes -> VALIDATE -> remove DUPLICATES -> flatten.
  * Every record that is not loaded goes to the rejects with a reason (see Rejects).
  */
 @Component
 public class ObservationTransformer {
 
-    public static final String SOURCE = "mongo_weather_observations";
-    private static final DataType OBSERVATION_TYPE = DataType.fromDDL(BronzeSchemas.OBSERVATION);
+    public static final String SOURCE = "weather_observations";
 
     private final SparkSession spark;
     private final PipelineProperties props;
@@ -44,25 +43,33 @@ public class ObservationTransformer {
         public Dataset<Row> rejects;                              // -> etl_rejected_record
     }
 
-    public Result transform(Dataset<Row> events) {
-        Dataset<Row> parsed = events.select(
-                regexp_extract(col("_id.id"), "[0-9a-fA-F]{24}", 0).as("event_key"),
-                col("op"),
-                col("after").as("raw_payload"),
-                from_json(col("after"), OBSERVATION_TYPE).as("d"),
-                millisToTimestamp(col("source.ts_ms")).as("source_ts"),
+    public Result transform(Dataset<Row> docs) {
+        // "d" = the original observation fields (everything except the bronze metadata fields)
+        Column[] observationFields = Arrays.stream(docs.columns())
+                .filter(name -> !BronzeSchemas.METADATA_FIELDS.contains(name))
+                .map(docs::col)
+                .toArray(Column[]::new);
+        Column observation = struct(observationFields);
+
+        Dataset<Row> parsed = docs.select(
+                // _id is the ObjectId hex string; "" when it is missing or not an ObjectId
+                regexp_extract(col("_id"), "[0-9a-fA-F]{24}", 0).as("event_key"),
+                coalesce(col("_deleted"), lit(false)).as("is_deleted"),
+                to_json(observation).as("raw_payload"),
+                observation.as("d"),
+                millisToTimestamp(col("_source_ts")).as("source_ts"),
                 millisToTimestamp(col("_ingested_at")).as("bronze_ingested_at"));
 
         Result r = new Result();
 
-        // 1. Deletes ("op" = d): no document any more, only the id -> soft delete in silver
-        r.deleted = parsed.filter(col("op").equalTo("d"))
+        // 1. Deletes (_deleted = true, soft delete in bronze) -> soft delete in silver
+        r.deleted = parsed.filter(col("is_deleted"))
                 .select(col("event_key").as("id"), col("source_ts"), col("bronze_ingested_at"));
 
         // 2. VALIDATION: every rule gives a reason; a row with a reason is rejected
-        Dataset<Row> checked = parsed.filter(col("op").notEqual("d"))
+        Dataset<Row> checked = parsed.filter(not(col("is_deleted")))
                 .withColumn("call_letters", trim(col("d.callLetters")))
-                .withColumn("obs_ts", millisToTimestamp(col("d.ts.$date")))
+                .withColumn("obs_ts", col("d.ts"))
                 .withColumn("lon", col("d.position.coordinates").getItem(0))
                 .withColumn("lat", col("d.position.coordinates").getItem(1))
                 .withColumn("reason", validationReason())
@@ -113,15 +120,15 @@ public class ObservationTransformer {
     private static Column validationReason() {
         Column lon = col("lon");
         Column lat = col("lat");
-        return when(col("d._id.$oid").isNull(), lit(MISSING_ID))
+        return when(col("event_key").equalTo(""), lit(MISSING_ID))
                 .when(col("obs_ts").isNull(), lit(MISSING_TIMESTAMP))
                 .when(col("call_letters").isNull().or(col("call_letters").equalTo("")), lit(MISSING_STATION))
                 .when(lon.isNull().or(lat.isNull()).or(abs(lon).gt(180)).or(abs(lat).gt(90)), lit(INVALID_COORDINATES));
     }
 
     private static Column validationDetails() {
-        return when(col("reason").equalTo(MISSING_ID), lit("'after' is empty, not valid JSON or has no _id.$oid"))
-                .when(col("reason").equalTo(MISSING_TIMESTAMP), lit("ts.$date is missing or not epoch milliseconds"))
+        return when(col("reason").equalTo(MISSING_ID), lit("_id is missing or not an ObjectId"))
+                .when(col("reason").equalTo(MISSING_TIMESTAMP), lit("ts is missing or not a date"))
                 .when(col("reason").equalTo(MISSING_STATION), lit("callLetters is null or blank"))
                 .when(col("reason").equalTo(INVALID_COORDINATES), concat(
                         lit("coordinates [lon, lat] = "),
@@ -143,7 +150,7 @@ public class ObservationTransformer {
 
     private static Dataset<Row> observations(Dataset<Row> df) {
         return df.select(
-                col("d._id.$oid").as("id"),
+                col("event_key").as("id"),
                 col("d.st").as("st"),
                 col("obs_ts"),
                 col("lon").as("longitude"),

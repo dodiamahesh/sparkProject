@@ -1,7 +1,9 @@
 # Medallion Pipeline – Code Guide (ગુજરાતી)
 
 > **Bronze (MongoDB) → Job #1 → Silver (MySQL) → Job #2 → Gold (MySQL)**: code કેવી રીતે કામ કરે છે, validation અને duplicates કેવી રીતે સંભાળાય છે, કેવી રીતે ચલાવવું અને ચકાસવું.
-> Infrastructure (Source → Kafka → Bronze): [MEDALLION_SETUP_GUIDE_GU.md](MEDALLION_SETUP_GUIDE_GU.md) · Plan: [MEDALLION_PIPELINE_PLAN_GU.md](MEDALLION_PIPELINE_PLAN_GU.md)
+> Infrastructure (Source → Kafka → Bronze): [MONGO_CDC_COMPLETE_SETUP_GU.md](MONGO_CDC_COMPLETE_SETUP_GU.md) · Databases: [MEDALLION_SETUP_GUIDE_GU.md](MEDALLION_SETUP_GUIDE_GU.md) · Plan: [MEDALLION_PIPELINE_PLAN_GU.md](MEDALLION_PIPELINE_PLAN_GU.md)
+>
+> **ફેરફાર (2026-10-28):** Bronze observations હવે `weather_observations` collection માં છે (પહેલાં `mongo_weather_observations`). એ CDC subscriber લખે છે: **source document જેમ છે તેમ + `_op`, `_deleted`, `_source_ts`, `_ingested_at`**. Debezium નો `after` JSON string હવે નથી. `mysql_station` / `mysql_station_owner` જૂના pipeline ના છે અને **હવે update થતા નથી** (MySQL CDC બંધ).
 
 ---
 
@@ -28,9 +30,10 @@
 
 ```
  de_bronze (MongoDB)                       de_silver (MySQL)                         de_gold (MySQL)
- ├ mongo_weather_observations ─┐           ├ weather_observation (+5 child tables)    ├ daily_station_weather
+ ├ weather_observations ───────┐           ├ weather_observation (+5 child tables)    ├ daily_station_weather
  ├ mysql_station ──────────────┼─ Job #1 ─►├ dim_station                    ─ Job #2 ─►├ station_data_quality
  └ mysql_station_owner ────────┘           ├ etl_rejected_record  ← validation/dups    └ monthly_region_weather
+   (mysql_* = જૂના, update નહીં)
                                            ├ etl_watermark        ← ક્યાં સુધી process કર્યું
                                            └ etl_job_run          ← દરેક run નો હિસાબ
 
@@ -62,7 +65,7 @@ src/main/java/com/de/spark/
 │   ├─ bronze2silver/
 │   │   ├─ BronzeSchemas.java        Bronze documents ના explicit schemas
 │   │   ├─ Rejects.java              Reject reasons + reject row બનાવવાની રીત
-│   │   ├─ ObservationTransformer.java  parse → validate → duplicates → flatten (observations)
+│   │   ├─ ObservationTransformer.java  metadata અલગ → validate → duplicates → flatten (observations)
 │   │   ├─ StationTransformer.java   dim_station (station + owner), validation
 │   │   └─ BronzeToSilverJob.java    Job #1: extract → transform → stage → merge (1 transaction)
 │   └─ silver2gold/
@@ -77,7 +80,8 @@ src/main/resources/
     ├─ silver/V1__silver_init.sql    Flyway: silver tables + control + staging
     └─ gold/V1__gold_init.sql        Flyway: gold tables + staging
 
-kafka-connect/                       source-mysql.json, source-mongo.json, sink-bronze.json, register-connectors.ps1
+kafka-connect/                       mongo-cdc-db-source.json, register-connectors.ps1
+mongo-cdc-subscriber/                Kafka → Bronze Java subscriber (અલગ Maven project, MONGO_CDC_COMPLETE_SETUP_GU.md)
 ```
 
 **જૂનો pipeline દૂર થયો છે:** `WeatherEtlJob`, JPA entities, `ddl-auto`, `sql/schema.sql`, `etl.*` settings. Tables હવે **Flyway** બનાવે છે.
@@ -110,7 +114,7 @@ kafka-connect/                       source-mysql.json, source-mongo.json, sink-
 1. window      from = etl_watermark(bronze_to_silver),  to = now − safety lag
 2. EXTRACT     3 bronze collections, ફક્ત  from < _ingested_at <= to
                ($match aggregation pipeline → MongoDB પોતે filter કરે છે = pushdown)
-3. TRANSFORM   ObservationTransformer:  parse "after" JSON → deletes → VALIDATE → DUPLICATES → flatten
+3. TRANSFORM   ObservationTransformer:  metadata અલગ → deletes (_deleted) → VALIDATE → DUPLICATES → flatten
                StationTransformer:      affected stations → dim rows (owner/region) → VALIDATE
 4. STAGE       Spark → stg_* tables (parallel, TRUNCATE + INSERT)
 5. MERGE       ONE MySQL transaction:
@@ -123,14 +127,21 @@ kafka-connect/                       source-mysql.json, source-mongo.json, sink-
 6. AUDIT       etl_job_run = SUCCESS (rows read / written / rejected)
 ```
 
-### Mongo event માંથી observation
-Bronze માં Mongo document `after` field માં JSON string તરીકે છે. `from_json(after, BronzeSchemas.OBSERVATION)` તેને columns માં ફેરવે છે:
-- `ts: {"$date": 447343200000}` → `obs_ts` (timestamp)
-- `_id: {"$oid": "5553..."}` → `id`
-- `op = "d"` (delete) → `after` null હોય છે, તેથી id bronze `_id.id` માંથી લેવાય છે → `is_deleted = 1`
+### Bronze document માંથી observation
+Bronze `weather_observations` document = **source document જેમ છે તેમ + 4 metadata fields**. MongoDB Spark Connector એને `BronzeSchemas.OBSERVATION` (explicit schema) થી સીધો columns માં વાંચે છે. કોઈ JSON parsing નથી:
+- Metadata સિવાયના બધા fields (`BronzeSchemas.METADATA_FIELDS` સિવાય) → એક `d` struct (બાકીનો code `d.callLetters`, `d.position...` વાપરે છે)
+- `_id` (ObjectId, STRING તરીકે વંચાય છે) → `event_key` → `id`
+- `ts` (Date) → `obs_ts` (timestamp)
+- `_deleted = true` (soft delete) → `is_deleted = 1`. Bronze document છેલ્લી values સાથે રહે છે, પણ silver માં ફક્ત id અને times વપરાય છે
+- `_source_ts` → `source_ts` (duplicates માં નવો record પસંદ કરવા), `_ingested_at` → `bronze_ingested_at`
+- `raw_payload` (rejects માં) = `d` નો JSON
+
+> **Testing માં ચકાસેલું (2026-10-28):** ObjectId plain hex string તરીકે આવે છે, Date → TIMESTAMP, અને mixed int/double coordinates (`[-172, 79.8]`) → `ARRAY<DOUBLE>` બરાબર વંચાય છે.
 
 ### Station dimension
 `mysql_station` **કે** `mysql_station_owner` માં ફેરફાર થાય, તો તે stations ની dim row આખા bronze master data માંથી **ફરી બને છે** (owner = સૌથી નવો live owner). તેથી owner/region બદલાય કે delete થાય તો પણ dim સાચી રહે છે.
+
+> ⚠️ MySQL CDC બંધ હોવાથી આ બંને collections માં **નવા ફેરફાર આવતા નથી**. `StationTransformer` નો code બદલાયો નથી. એ જૂના data પરથી જ dim બનાવે છે (watermark reset કરો ત્યારે).
 
 ### Upsert SQL (ઉદાહરણ)
 `JdbcUpsertWriter.upsertSql(...)` આવું SQL બનાવે છે (MySQL 8 alias syntax):
@@ -152,8 +163,8 @@ ON DUPLICATE KEY UPDATE st = s.st, obs_ts = s.obs_ts, ..., silver_loaded_at = s.
 
 | Reason | Condition | Details ઉદાહરણ |
 |---|---|---|
-| `MISSING_ID` | `after` ખાલી, invalid JSON, અથવા `_id.$oid` નથી | `'after' is empty, not valid JSON or has no _id.$oid` |
-| `MISSING_TIMESTAMP` | `ts.$date` નથી અથવા epoch ms નથી | `ts.$date is missing or not epoch milliseconds` |
+| `MISSING_ID` | `_id` નથી, અથવા ObjectId (24 hex) નથી | `_id is missing or not an ObjectId` |
+| `MISSING_TIMESTAMP` | `ts` નથી અથવા Date નથી | `ts is missing or not a date` |
 | `MISSING_STATION` | `callLetters` null અથવા ખાલી (spaces) | `callLetters is null or blank` |
 | `INVALID_COORDINATES` | lon/lat નથી, અથવા \|lon\| > 180, \|lat\| > 90 | `coordinates [lon, lat] = [200.0,95.0] (lon must be -180..180, lat -90..90)` |
 
@@ -248,7 +259,7 @@ Pipeline નો બાકીનો code બદલવાની જરૂર ન�
 | Mechanism | ક્યાં | શું સુરક્ષિત કરે |
 |---|---|---|
 | **Watermark** | `etl_watermark` | દરેક run ફક્ત watermark પછીનો data વાંચે |
-| **Safety lag** (2 min) | Job #1 | Kafka sink મોડો લખે તો પણ record watermark ની પાછળ રહી કાયમ miss ન થાય |
+| **Safety lag** (2 min) | Job #1 | CDC subscriber મોડો લખે તો પણ record watermark ની પાછળ રહી કાયમ miss ન થાય |
 | **Pushdown filter** | `BronzeReader` | MongoDB જ filter કરે છે; Spark આખું collection વાંચતું નથી |
 | **Upsert / replace** | merge SQL | એ જ data ફરી આવે તો પણ duplicates નહીં (idempotent) |
 | **એક જ transaction** | Job #1 merge | Data + rejects + watermark: બધું થાય અથવા કંઈ જ નહીં |
@@ -292,7 +303,7 @@ Pipeline નો બાકીનો code બદલવાની જરૂર ન�
 ### 9.1 Start ક્રમ
 ```
 1. MySQL, MongoDB (Windows services)
-2. Kafka → Kafka Connect   (setup guide ભાગ H)
+2. Kafka → Kafka Connect → CDC subscriber   (MONGO_CDC_COMPLETE_SETUP_GU.md વિભાગ 11.1)
 3. Pipeline app             ↓
 ```
 
@@ -360,22 +371,25 @@ SELECT reason, COUNT(*) FROM de_silver.etl_rejected_record GROUP BY reason;
 
 ## 12. નવું Source Table ઉમેરવું (end to end)
 
-ઉદાહરણ: MySQL `de_source_mysql.sensor`
+ઉદાહરણ: MongoDB `de_source_mongo.sensor` (MySQL CDC બંધ છે, એટલે નવો source MongoDB માં)
 
 | # | Layer | શું કરવું |
 |---|---|---|
-| 1 | Source | `CREATE TABLE sensor (...)` (primary key સાથે) |
-| 2 | Kafka Connect | **કંઈ નહીં.** `database.include.list` આખા DB ને પકડે છે, અને sink નો `topics.regex` નવા topic ને પકડે છે. → bronze `mysql_sensor` આપોઆપ બને છે. જૂનો data જોઈએ તો setup guide F4 |
-| 3 | `BronzeSchemas` | `MYSQL_SENSOR` schema ઉમેરો (bronze ના એક document ને જોઈને) |
+| 1 | Source | `db.sensor.insertOne({...})`. Collection આપોઆપ બને છે |
+| 2 | Kafka Connect + subscriber | **કંઈ નહીં.** Source connector આખો `de_source_mongo` database watch કરે છે, અને events એ જ topic `de_source_mongo` માં જાય છે. Subscriber `de_bronze.sensor` આપોઆપ બનાવે છે (metadata સાથે). Connector શરૂ થયો **તે પહેલાનો** data જોઈએ તો [CDC setup 12.5](MONGO_CDC_COMPLETE_SETUP_GU.md) |
+| 3 | `BronzeSchemas` | `SENSOR` schema ઉમેરો (bronze ના એક document ને જોઈને), અને છેલ્લે `_op STRING, _deleted BOOLEAN, _source_ts BIGINT, _ingested_at BIGINT` |
 | 4 | Flyway | `db/silver/V2__sensor.sql`: `dim_sensor` + `stg_dim_sensor`. **V1 ને ક્યારેય edit ન કરો**, નવી V2 file બનાવો |
-| 5 | Transformer | `SensorTransformer`: validation + rejects (`StationTransformer` જેવો) |
-| 6 | Job #1 | `readWindow("mysql_sensor", ...)` → transform → `stage` → merge માં upsert |
+| 5 | Transformer | `SensorTransformer`: metadata અલગ કરવો, `_deleted` → `is_deleted`, validation + rejects (`ObservationTransformer` / `StationTransformer` જેવો) |
+| 6 | Job #1 | `readWindow("sensor", ...)` → transform → `stage` → merge માં upsert |
 | 7 | Gold (જરૂર હોય તો) | `db/gold/V2__...sql` + `SilverToGoldJob` માં aggregate |
 | 8 | Test | Source માં insert/update/delete → silver/gold/rejects ચકાસો (વિભાગ 10) |
 
 ---
 
 ## 13. Test Results
+
+> ⚠️ **નીચેના results જૂના (Debezium + sink connector) bronze format સાથેના છે (2026-10-25).**
+> 2026-10-28 ના ફેરફાર પછી ચકાસેલું: subscriber ના insert / update / soft delete (metadata સાથે), અને Spark નો નવો schema read + `ObservationTransformer` (sample bronze documents પર, read-only). **આખો pipeline (Job #1 → Job #2, silver/gold માં લખવું) નવા format સાથે હજુ ફરી run કર્યો નથી.**
 
 Machine પર `default` profile (`local[*]`) સાથે test કર્યું. Test માટે interval 20 સેકન્ડ અને lag 0 રાખ્યા હતા.
 
@@ -414,6 +428,7 @@ Machine પર `default` profile (`local[*]`) સાથે test કર્યુ�
 | Reprocess વખતે rejects ફરી log થાય છે | `etl_rejected_record` માં એક જ record ની વધુ rows | Reject log માં (record_key, reason, payload hash) unique |
 | Time zone | DATETIME columns JVM નો local time (IST) વાપરે છે | બધું UTC (JVM + JDBC `connectionTimeZone=UTC`) |
 | Bronze માં ફક્ત છેલ્લું version | Silver ને વચ્ચેના changes દેખાતા નથી (history Kafka માં છે) | Bronze history collection (append-only) |
+| Station data stale | MySQL CDC બંધ છે, એટલે `mysql_station` / `mysql_station_owner` માં ફેરફાર આવતા નથી | MySQL CDC ફરી ચાલુ કરવો, અથવા Spark માં MySQL માંથી સીધું JDBC read |
 | Source schema change | નવું field `BronzeSchemas` ઉમેર્યા વગર silver માં નથી આવતું (bronze માં સચવાય છે) | Schema update + Flyway V2 |
 | Dev cluster run | RAM ને કારણે **cluster પર test નથી કર્યું** (local[*] જ) | 16 GB+ machine અથવા Kafka થોડો સમય બંધ રાખીને |
 | `monthly_region_weather` query | Touched months ની બધી rows વાંચે છે | મોટા data માટે month-range index/partition |
@@ -427,7 +442,7 @@ Machine પર `default` profile (`local[*]`) સાથે test કર્યુ�
 | Startup: `Migration V1__silver_init.sql failed` | SQL error જુઓ. MySQL DDL rollback નથી થતું, તેથી અધૂરી tables + Flyway history સાફ કરવી પડે (dev માં: `DROP DATABASE de_silver; CREATE DATABASE de_silver;`). **Applied migration ને edit ન કરો**, નવી V2 બનાવો |
 | `Validate failed: Migrations have failed validation` | V1 file બદલાઈ ગઈ છે → નવી V2 file વાપરો |
 | `NoSuchMethodError ... com.mongodb` | MongoDB driver version mismatch → `pom.xml` માં `mongodb.version` 5.1.x |
-| Job #1 `read=0` જ આવે છે | Connectors RUNNING? Bronze માં નવા docs? `_ingested_at` < now − lag? (નવો change 2 મિનિટ પછી આવે છે) |
+| Job #1 `read=0` જ આવે છે | Source connector RUNNING? Subscriber ચાલુ છે? Bronze docs માં `_ingested_at` છે (જૂના subscriber એ લખેલા docs માં નથી, [CDC setup 12.1](MONGO_CDC_COMPLETE_SETUP_GU.md) replay)? `_ingested_at` < now − lag? (નવો change 2 મિનિટ પછી આવે છે) |
 | ઘણા rejects | વિભાગ 5.4 ની SQL: `reason`, `details`, `raw_payload` જુઓ |
 | Job #2 `SKIPPED` | Job #1 નો `error_message` (`etl_job_run`) જુઓ |
 | `HADOOP_HOME and hadoop.home.dir are unset` | Warning છે, નુકસાન નથી. `HADOOP_HOME` સેટ કરીને નવી terminal ખોલો |

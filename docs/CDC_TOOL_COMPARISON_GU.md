@@ -1,13 +1,16 @@
 # CDC Tool Comparison – Debezium કે બીજું? (ગુજરાતી)
 
 > Medallion pipeline ના **Stage 1 (Source: MongoDB + MySQL) → Stage 2 (Bronze: MongoDB)** માટે Kafka Connect સાથે કયું tool વાપરવું, તેની સરખામણી.
-> સંબંધિત: [MEDALLION_PIPELINE_PLAN_GU.md](MEDALLION_PIPELINE_PLAN_GU.md), [MEDALLION_SETUP_GUIDE_GU.md](MEDALLION_SETUP_GUIDE_GU.md)
+> સંબંધિત: [MEDALLION_PIPELINE_PLAN_GU.md](MEDALLION_PIPELINE_PLAN_GU.md), [MONGO_CDC_COMPLETE_SETUP_GU.md](MONGO_CDC_COMPLETE_SETUP_GU.md)
 >
 > 📝 **નોંધ:** શરૂઆતમાં SQL source તરીકે EDB Postgres Advanced Server (EPAS) હતું. હવે તેની જગ્યાએ **MySQL** છે. આ document MySQL પ્રમાણે update કરેલું છે.
+>
+> ⚠️ **નિર્ણય બદલાયો (2026-10-28):** વિભાગ 7 નો Debezium વાળો નિર્ણય હવે લાગુ **નથી**. હાલનો નિર્ણય [વિભાગ 0](#0-હાલનો-નિર્ણય-2026-10-28) માં છે. વિભાગ 1–7 સરખામણી તરીકે રાખ્યા છે.
 
 ---
 
 ## અનુક્રમણિકા
+0. [હાલનો નિર્ણય (2026-10-28)](#0-હાલનો-નિર્ણય-2026-10-28)
 1. [Debezium ફરજિયાત છે?](#1-debezium-ફરજિયાત-છે)
 2. [બધા વિકલ્પો](#2-બધા-વિકલ્પો)
 3. [Debezium વાપરો કે નહીં – સીધી સરખામણી](#3-debezium-વાપરો-કે-નહીં--સીધી-સરખામણી)
@@ -16,6 +19,28 @@
 6. [Feature-wise સરખામણી](#6-feature-wise-સરખામણી)
 7. [અંતિમ નિર્ણય](#7-અંતિમ-નિર્ણય)
 8. [મહત્વના શબ્દો](#8-મહત્વના-શબ્દો)
+
+---
+
+## 0. હાલનો નિર્ણય (2026-10-28)
+
+| Source | હવે | પહેલાં (વિભાગ 7) |
+|---|---|---|
+| MongoDB | **MongoDB Kafka Connector (source)** + `RegexRouter` → એક જ topic `de_source_mongo` | Debezium MongoDB connector, collection દીઠ topic |
+| MySQL | ❌ **CDC બંધ**. Bronze ના જૂના `mysql_*` collections જેમ છે તેમ વપરાય છે | Debezium MySQL connector |
+| Bronze માં લખવું | **પોતાનો Java subscriber** (`mongo-cdc-subscriber`) | MongoDB Kafka Connector (sink) |
+
+**કેમ બદલ્યું?**
+1. **Original types સાચવવા.** Debezium MongoDB event માં document **JSON string** (`after`) તરીકે આવતો હતો, અને unwrap SMT mixed int/double arrays પર fail થતો હતો. MongoDB connector **Canonical Extended JSON** આપે છે, અને subscriber `BsonDocument.parse()` થી original BSON (`ObjectId`, `Int32`, `Date`) પાછું બનાવે છે.
+2. **એક જ generic topic.** Source database ના બધા collections એક topic માં, નવું collection બને તો config બદલવો પડતો નથી.
+3. **Bronze માં લખવાનું પૂરું control.** Sink connector ને બદલે પોતાના code માં: operation પ્રમાણે upsert / soft delete, અને Spark માટે `_op`, `_deleted`, `_source_ts`, `_ingested_at` metadata.
+4. **MySQL CDC ની હાલ જરૂર નથી.**
+
+**શું ગુમાવ્યું:**
+- Subscriber નો code **જાતે maintain** કરવો પડે (sink connector માં ફક્ત config હતો).
+- Station data (MySQL) **stale** છે. ફરી જોઈએ તો વિભાગ 4/5 ના વિકલ્પો (Debezium MySQL અથવા JDBC Source), અથવા Spark માંથી MySQL JDBC read.
+
+Setup: [MONGO_CDC_COMPLETE_SETUP_GU.md](MONGO_CDC_COMPLETE_SETUP_GU.md)
 
 ---
 
@@ -134,7 +159,9 @@ Kafka Connect (framework)
 
 ## 7. અંતિમ નિર્ણય
 
-### ✅ વિકલ્પ A: બંને sources માટે Debezium
+> ⚠️ **આ પહેલાનો નિર્ણય છે.** 2026-10-28 થી હાલનો નિર્ણય: [વિભાગ 0](#0-હાલનો-નિર્ણય-2026-10-28).
+
+### વિકલ્પ A: બંને sources માટે Debezium (પહેલાનો નિર્ણય)
 | Source | Connector |
 |---|---|
 | MongoDB | **Debezium MongoDB connector** (બંને sources નું format એકસરખું રાખવા) |

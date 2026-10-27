@@ -1,21 +1,19 @@
 package com.de.spark.pipeline.bronze2silver;
 
+import java.util.List;
+
 /**
  * Explicit schemas of the Bronze documents (Spark DDL), built from real documents in de_bronze.
  *
- * mongo_*  = Debezium MongoDB change event, stored as-is:
- *            { _id:{id}, op, after:"<original document as JSON string>", source:{ts_ms}, _ingested_at }
- * mysql_*  = Debezium MySQL row after the unwrap SMT:
+ * weather_observations = the source document as-is (written by mongo-cdc-subscriber) + 4 metadata fields:
+ *            { _id: ObjectId, <original fields...>, _op, _deleted, _source_ts, _ingested_at }
+ * mysql_*  = Debezium MySQL row after the unwrap SMT (old pipeline; no longer updated, read as it is):
  *            { _id:{<pk>}, <columns...>, __op, __deleted, __source_ts_ms, _ingested_at }
  */
 public final class BronzeSchemas {
 
-    public static final String MONGO_EVENT = String.join(", ",
-            "_id STRUCT<id: STRING>",
-            "op STRING",
-            "after STRING",
-            "source STRUCT<ts_ms: BIGINT>",
-            "_ingested_at BIGINT");
+    /** Metadata fields that mongo-cdc-subscriber adds after the original fields of every document. */
+    public static final List<String> METADATA_FIELDS = List.of("_op", "_deleted", "_source_ts", "_ingested_at");
 
     public static final String MYSQL_STATION = String.join(", ",
             "station_code STRING", "station_name STRING", "country STRING",
@@ -27,15 +25,18 @@ public final class BronzeSchemas {
             "owner_id BIGINT", "station_code STRING", "owner_name STRING", "region STRING",
             "__op STRING", "__deleted STRING", "__source_ts_ms BIGINT", "_ingested_at BIGINT");
 
-    /** The original weather observation inside "after" (relaxed Extended JSON: plain numbers, $oid, $date as millis). */
     private static String vq(String type) {
         return "STRUCT<`value`: " + type + ", quality: STRING>";
     }
 
+    /**
+     * A bronze weather_observations document: the original observation (BSON types read directly:
+     * ObjectId -> STRING, Date -> TIMESTAMP) followed by the 4 metadata fields.
+     */
     public static final String OBSERVATION = String.join(", ",
-            "_id STRUCT<`$oid`: STRING>",
+            "_id STRING",
             "st STRING",
-            "ts STRUCT<`$date`: BIGINT>",
+            "ts TIMESTAMP",
             "position STRUCT<`type`: STRING, coordinates: ARRAY<DOUBLE>>",
             "elevation DOUBLE",
             "callLetters STRING",
@@ -63,7 +64,11 @@ public final class BronzeSchemas {
                     + " lowestCloudCoverage: " + vq("STRING") + ", lowCloudGenus: " + vq("STRING")
                     + ", lowestCloudBaseHeight: " + vq("DOUBLE") + ", midCloudGenus: " + vq("STRING")
                     + ", highCloudGenus: " + vq("STRING") + ">",
-            "presentWeatherObservationManual ARRAY<STRUCT<`condition`: STRING, quality: STRING>>");
+            "presentWeatherObservationManual ARRAY<STRUCT<`condition`: STRING, quality: STRING>>",
+            "_op STRING",
+            "_deleted BOOLEAN",
+            "_source_ts BIGINT",
+            "_ingested_at BIGINT");
 
     private BronzeSchemas() {
     }

@@ -24,7 +24,7 @@ import static com.de.spark.common.JdbcUpsertWriter.upsertSql;
 /**
  * Job #1: Bronze (MongoDB) -> Silver (MySQL), incremental.
  *
- *   1. window   = (watermark, now - safety lag]  on bronze _ingested_at
+ *   1. window   = (watermark, now - safety lag]  on bronze _ingested_at (set by mongo-cdc-subscriber)
  *   2. EXTRACT  only the bronze documents in the window (MongoDB filters them = pushdown)
  *   3. TRANSFORM validate, de-duplicate, flatten  (ObservationTransformer, StationTransformer)
  *   4. STAGE    Spark writes all results into stg_* tables
@@ -71,7 +71,7 @@ public class BronzeToSilverJob {
         Dataset<Row> obsEvents = null, stationEvents = null, ownerEvents = null;
         try {
             // EXTRACT
-            obsEvents = reader.readWindow(ObservationTransformer.SOURCE, BronzeSchemas.MONGO_EVENT, from, to)
+            obsEvents = reader.readWindow(ObservationTransformer.SOURCE, BronzeSchemas.OBSERVATION, from, to)
                     .repartition(props.getPartitions()).cache();
             stationEvents = reader.readWindow(StationTransformer.STATION_SOURCE, BronzeSchemas.MYSQL_STATION, from, to).cache();
             ownerEvents = reader.readWindow(StationTransformer.OWNER_SOURCE, BronzeSchemas.MYSQL_STATION_OWNER, from, to).cache();

@@ -6,6 +6,9 @@
 > 2. **Production environment** ના planning માટે knowledge base
 >
 > Versions **2026-10-25** ના રોજ developer machine પર ચકાસેલા છે.
+>
+> **ફેરફાર (2026-10-28):** Debezium MySQL (#19) અને Debezium MongoDB (#20) connectors **દૂર કર્યા છે**. MongoDB CDC હવે **MongoDB Kafka Connector, source mode** (#21) + એક generic topic + પોતાનો Java subscriber (`mongo-cdc-subscriber`) થી થાય છે. MySQL CDC બંધ છે. Setup: [MONGO_CDC_COMPLETE_SETUP_GU.md](MONGO_CDC_COMPLETE_SETUP_GU.md).
+> Tools ના નંબર બદલ્યા નથી, જેથી બીજા documents ના references તૂટે નહીં.
 > License માહિતી સામાન્ય માર્ગદર્શન માટે છે. **અંતિમ નિર્ણય તમારી organization ની legal/compliance team નો રહેશે.**
 
 ---
@@ -59,9 +62,9 @@
 ### D. Streaming / CDC ✅
 17. Apache Kafka 4.3.1 (KRaft mode)
 18. Kafka Connect (Kafka સાથે આવે છે)
-19. Debezium MySQL Connector (Kafka Connect plugin)
-20. Debezium MongoDB Connector (Kafka Connect plugin)
-21. MongoDB Kafka Connector (Kafka Connect sink plugin)
+19. ~~Debezium MySQL Connector~~ ❌ દૂર કર્યું (2026-10-28)
+20. ~~Debezium MongoDB Connector~~ ❌ દૂર કર્યું (2026-10-28)
+21. MongoDB Kafka Connector (Kafka Connect plugin, **source** mode માં વપરાય છે) + પોતાનો Java subscriber `mongo-cdc-subscriber`
 
 ### E. Application Libraries (Maven jars) ✅
 22. Spring Boot 2.7.18 (starter, starter-jdbc, maven plugin)
@@ -129,12 +132,11 @@
 |---|---|---|
 | Apache Kafka 4.3.1, KRaft (#17) | ✅ | Change events store/deliver |
 | Kafka Connect (#18) | ✅ | Connectors ચલાવવાનું framework (REST :8083) |
-| **MySQL માટે:** Debezium MySQL Connector (#19) + MySQL binlog (ROW/FULL) + replication user | ✅ | MySQL changes → Kafka |
+| **MongoDB માટે:** MongoDB Kafka Connector, source mode (#21) + replica set (change streams) + `RegexRouter` (બધા collections → એક topic `de_source_mongo`) | ✅ | Mongo changes → Kafka (connector: `mongo-cdc-db-source`) |
+| **Bronze writer:** પોતાનો Java subscriber `mongo-cdc-subscriber` (`kafka-clients` + `mongodb-driver-sync`) + DLQ topic `de_source_mongo.dlq` | ✅ | Kafka → `de_bronze` (insert / update / soft delete, original types + metadata સાથે) |
+| **MySQL માટે:** Debezium MySQL Connector (#19) + binlog + replication user | ❌ દૂર કર્યું | MySQL CDC હાલ બંધ |
 | **EPAS / PostgreSQL માટે:** Debezium PostgreSQL Connector (#53) + `wal_level=logical` + replication slot + publication | 🟡 | EPAS changes → Kafka |
-| **MongoDB માટે:** Debezium MongoDB Connector (#20) + replica set (change streams) | ✅ | Mongo changes → Kafka |
-| MongoDB Kafka Connector, source mode (#21 નો ભાગ) | 🔵 | Mongo CDC નો બીજો વિકલ્પ |
 | JDBC Source Connector (Confluent) (–) | 🔵 | CDC ન ચાલે ત્યારે polling fallback |
-| **Bronze sink:** MongoDB Kafka Connector (#21) + RegexRouter/InsertField SMTs + DLQ topic | ✅ | Kafka → `de_bronze` |
 | Schema Registry (Confluent / Apicurio) + Avro (–) | 🔵 | Event schema versioning |
 | Kafka UI (kafbat) / AKHQ (–) | 🔵 | Topics, messages, connectors GUI |
 | `register-connectors.ps1`, Kafka CLI | ✅ | Connectors manage, live messages જોવા |
@@ -142,7 +144,7 @@
 ### 1A.3 Raw / Bronze Storage (Stage 2)
 | Tool | Status | ભૂમિકા |
 |---|---|---|
-| MongoDB `de_bronze` (#13) | ✅ | As-is data + metadata |
+| MongoDB `de_bronze` (#13) | ✅ | Source જેવા જ documents (એ જ collection નામ, `_id`, types) + `_op`, `_deleted`, `_source_ts`, `_ingested_at` (soft delete) |
 | Object storage: S3 / ADLS / MinIO (–) | 🔵 | Lakehouse bronze (ઘણો data હોય ત્યારે) |
 | Table formats: Delta Lake / Apache Iceberg / Hudi (–) | 🔵 | ACID tables on object storage, time travel |
 
@@ -218,7 +220,7 @@
 |---|---|---|
 | Spark UI :4040, Master UI :8080, Worker UI :8081/8082 | ✅ | Jobs, stages, executors |
 | `etl_job_run`, `etl_watermark`, `etl_rejected_record` | ✅ | Pipeline audit |
-| Kafka CLI: consumer-groups (LAG), console consumer | ✅ | Kafka/sink health |
+| Kafka CLI: consumer-groups (LAG), console consumer | ✅ | Kafka/subscriber health |
 | Prometheus + Grafana + Alertmanager (–) | 🔵 | Metrics, dashboards, alerts |
 | JMX Exporter (Kafka/Connect/Spark), Kafka Exporter / Burrow (consumer lag) (–) | 🔵 | Kafka metrics |
 | mysqld_exporter, postgres_exporter, mongodb_exporter (–) | 🔵 | DB metrics |
@@ -228,7 +230,7 @@
 ### 1A.11 Security
 | Tool | Status | ભૂમિકા |
 |---|---|---|
-| DB users: `debezium` (replication), `om_reader` (read-only) | ✅ | Least privilege (શરૂઆત) |
+| DB users: `om_reader` (read-only). (`debezium` replication user હવે જરૂરી નથી) | ✅ | Least privilege (શરૂઆત) |
 | Secrets manager: HashiCorp Vault / Azure Key Vault / AWS Secrets Manager (–) | 🔵 | Passwords files માંથી દૂર |
 | TLS certificates (internal CA) (–) | 🔵 | Kafka, MongoDB, MySQL/EPAS, OpenMetadata encryption |
 | Kafka SASL (SCRAM) / mTLS + ACLs (–) | 🔵 | Kafka authentication/authorization |
@@ -273,7 +275,7 @@
 | Version | 17.0.19 (LTS) |
 | પ્રકાર | Install (MSI) |
 | Concept | Java runtime: Spark, Kafka, Kafka Connect, Spring Boot બધા JVM પર ચાલે છે |
-| કેમ જરૂરી | Spark 3.5, Kafka 4.x broker અને Debezium 3.x ને **Java 17** જોઈએ છે |
+| કેમ જરૂરી | Spark 3.5, Kafka 4.x broker અને `mongo-cdc-subscriber` ને **Java 17** જોઈએ છે |
 | Source | https://learn.microsoft.com/java/openjdk/download |
 | License | GPLv2 + Classpath Exception (free) |
 | Dev / Prod | ✅ / ✅ (દરેક server પર) |
@@ -382,13 +384,13 @@
 |---|---|
 | Version | 8.0.30 (Windows service `MySQL80`) |
 | પ્રકાર | Install (MySQL Installer) |
-| Concept | Relational DB: **Source** (`de_source_mysql`), **Silver** (`de_silver`), **Gold** (`de_gold`); **CDC** માટે **binlog** (ROW / FULL) |
+| Concept | Relational DB: **Source** (`de_source_mysql`), **Silver** (`de_silver`), **Gold** (`de_gold`). (MySQL CDC હાલ બંધ છે) |
 | કેમ જરૂરી | Source data, curated + aggregate layers, pipeline control tables |
 | Source | https://dev.mysql.com/downloads/installer/ |
 | License | GPLv2 (Community Edition). Commercial: MySQL Enterprise |
 | Dev / Prod | ✅ / ✅ |
-| RFC પ્રકાર | Software install + DB users (`debezium` replication user) + port 3306 |
-| Production નોંધ | ⚠️ **MySQL 8.0 નું support April 2026 માં પૂરું થયું (EOL).** Production માટે **MySQL 8.4 LTS** (Debezium 3.7 support કરે છે). HA: InnoDB Cluster / replica, અથવા managed (AWS RDS, Azure Database for MySQL) |
+| RFC પ્રકાર | Software install + DB users + port 3306 |
+| Production નોંધ | ⚠️ **MySQL 8.0 નું support April 2026 માં પૂરું થયું (EOL).** Production માટે **MySQL 8.4 LTS**. HA: InnoDB Cluster / replica, અથવા managed (AWS RDS, Azure Database for MySQL) |
 
 ### 11. MySQL Installer – Community
 | Field | વિગત |
@@ -418,7 +420,7 @@
 | License | ⚠️ **SSPL v1** (Server Side Public License). OSI-approved open source નથી. Commercial: MongoDB Enterprise / Atlas |
 | Dev / Prod | ✅ / ✅ |
 | RFC પ્રકાર | Software install + **Legal review (SSPL)** + port 27017 |
-| Production નોંધ | ⚠️ 8.3 એ **rapid release** છે. Production માટે **major release (8.0)** વાપરો. **Debezium 3.7 officially MongoDB 6.0 / 7.0 / 8.0 ને support કરે છે**; 8.3 હાલ ચાલે છે પણ officially listed નથી. Production: 3-node replica set + authentication + TLS, અથવા MongoDB Atlas |
+| Production નોંધ | ⚠️ 8.3 એ **rapid release** છે (ટૂંકા સમય માટે support). Production માટે **major release (8.0)** વાપરો. Production: 3-node replica set + authentication + TLS, અથવા MongoDB Atlas |
 
 ### 14. MongoDB Shell (mongosh)
 | Field | વિગત |
@@ -481,41 +483,32 @@
 | RFC પ્રકાર | Kafka સાથે આવે છે + port 8083 |
 | Production નોંધ | ઓછામાં ઓછા 2 workers (distributed mode), plugins બધા workers પર સરખા. REST API ને secure કરો |
 
-### 19. Debezium MySQL Connector
+### 19. ~~Debezium MySQL Connector~~ ❌ દૂર કર્યું
 | Field | વિગત |
 |---|---|
-| Version | 3.7.0.Final |
-| પ્રકાર | Kafka Connect plugin (zip) → `C:\kafka\plugins\debezium-connector-mysql` |
-| Concept | **CDC (Change Data Capture)**: MySQL **binlog** વાંચે, **initial snapshot**, `ExtractNewRecordState` SMT |
-| કેમ જરૂરી | MySQL source ના insert/update/delete ને Kafka topic માં મોકલે (connector: `source-mysql`) |
-| Source | Maven Central: `io.debezium:debezium-connector-mysql:3.7.0.Final:plugin.zip` |
-| License | Apache 2.0 |
-| Dev / Prod | ✅ / ✅ |
-| RFC પ્રકાર | Plugin download + MySQL replication privileges (`REPLICATION SLAVE/CLIENT`) |
-| Production નોંધ | Supported MySQL: 8.0.x, 8.4.x, 9.7. Binlog retention connector downtime કરતાં લાંબી રાખો |
+| Status | **2026-10-28 એ દૂર કર્યું.** Plugin folder `C:\kafka\plugins\debezium-connector-mysql` delete કર્યું. MySQL માં `debezium` user હજુ હોય તો: `DROP USER IF EXISTS 'debezium'@'localhost';` |
+| કારણ | MySQL CDC હાલ જરૂરી નથી |
+| ફરી જોઈએ તો | Maven Central: `io.debezium:debezium-connector-mysql:<version>:plugin.zip`, MySQL binlog (ROW/FULL) + replication user (`REPLICATION SLAVE/CLIENT`). License: Apache 2.0 |
 
-### 20. Debezium MongoDB Connector
+### 20. ~~Debezium MongoDB Connector~~ ❌ દૂર કર્યું
 | Field | વિગત |
 |---|---|
-| Version | 3.7.0.Final |
-| પ્રકાર | Kafka Connect plugin (zip) → `C:\kafka\plugins\debezium-connector-mongodb` |
-| Concept | **CDC**: MongoDB **change streams**, initial snapshot |
-| કેમ જરૂરી | Mongo source ના changes ને Kafka topic માં મોકલે (connector: `source-mongo`) |
-| Source | Maven Central: `io.debezium:debezium-connector-mongodb:3.7.0.Final:plugin.zip` |
-| License | Apache 2.0 |
-| Dev / Prod | ✅ / ✅ |
-| નોંધ | Mixed-type arrays ને કારણે unwrap SMT વાપર્યો નથી (setup guide E2) |
+| Status | **2026-10-28 એ દૂર કર્યું.** Plugin folder `C:\kafka\plugins\debezium-connector-mongodb` delete કર્યું |
+| કારણ | Debezium નો MongoDB event, document ને **JSON string** (`after`) તરીકે મોકલે છે, અને bronze માં original types સાચવવામાં તકલીફ હતી. તેની જગ્યાએ MongoDB નો official connector (#21) વાપર્યો |
 
-### 21. MongoDB Kafka Connector (Sink)
+### 21. MongoDB Kafka Connector (source mode) + `mongo-cdc-subscriber`
 | Field | વિગત |
 |---|---|
 | Version | 3.1.2 (`mongo-kafka-connect-3.1.2-all.jar`) |
 | પ્રકાર | Kafka Connect plugin (jar) → `C:\kafka\plugins\mongo-kafka-connect` |
-| Concept | **Sink connector**: Kafka → MongoDB, upsert, `RegexRouter`/`InsertField` SMTs, **DLQ** |
-| કેમ જરૂરી | બધા `src.*` topics ને **Bronze** (`de_bronze`) માં લખે (connector: `sink-bronze`) |
+| Concept | **CDC (source connector)**: MongoDB **change streams**, `copy_existing` (initial load), Canonical Extended JSON, `RegexRouter` SMT |
+| કેમ જરૂરી | `de_source_mongo` ના **બધા collections** ના changes **એક જ topic** `de_source_mongo` માં મોકલે (connector: `mongo-cdc-db-source`) |
+| Bronze writer | **Sink connector નહીં**, પોતાનો Java subscriber `mongo-cdc-subscriber` (project માં અલગ Maven project): topic વાંચીને `de_bronze` માં insert / update / delete કરે |
 | Source | Maven Central: `org.mongodb.kafka:mongo-kafka-connect:3.1.2` (`-all` classifier) |
 | License | Apache 2.0 |
 | Dev / Prod | ✅ / ✅ |
+| RFC પ્રકાર | Plugin download + MongoDB replica set (change streams) |
+| Setup | [MONGO_CDC_COMPLETE_SETUP_GU.md](MONGO_CDC_COMPLETE_SETUP_GU.md) |
 
 ---
 
@@ -539,6 +532,15 @@
 | 32 | `org.apache.logging.log4j:*` | 2.20.0 (pinned) | Logging | Spark ની log4j-api/core | Apache 2.0 | ✅ |
 | 33 | `ch.qos.logback:*`, `org.slf4j:*` | Spring Boot managed | Logging | App logging (Spark નો `log4j-slf4j2-impl` exclude કર્યો છે) | Logback: EPL 1.0 / LGPL 2.1; SLF4J: MIT | ✅ |
 | 34 | `org.apache.maven.plugins:maven-dependency-plugin` | Maven managed | Build | Executor jars `target/executor-jars` માં copy (cluster mode) | Apache 2.0 | Build |
+
+**`mongo-cdc-subscriber` (અલગ Maven project) ની libraries:**
+
+| Library (groupId:artifactId) | Version | કેમ જરૂરી | License |
+|---|---|---|---|
+| `org.apache.kafka:kafka-clients` | 4.0.0 | Kafka consumer (topic વાંચવા) + producer (DLQ) | Apache 2.0 |
+| `org.mongodb:mongodb-driver-sync` | 5.1.4 | Bronze માં લખવા, `BsonDocument.parse()` (Extended JSON → original types) | Apache 2.0 |
+| `org.slf4j:slf4j-api`, `slf4j-simple` | 2.0.13 | Console logging | MIT |
+| `org.apache.maven.plugins:maven-assembly-plugin` | 3.7.1 | Runnable jar (`jar-with-dependencies`) | Apache 2.0 |
 
 **Version pinning કેમ (`pom.xml` properties):** Spring Boot 2.7 પોતાના જૂના versions લાવે છે, જે Spark 3.5 / Mongo connector સાથે ચાલતા નથી. તેથી `jackson-bom.version`, `janino.version`, `log4j2.version` અને `mongodb.version` override કર્યા છે. Production માં પણ **આ જ versions** રાખો.
 
@@ -738,7 +740,7 @@ License: Apache 2.0 · Source: PyPI · RFC: PyPI access
 ### 53. Debezium PostgreSQL Connector
 | Field | વિગત |
 |---|---|
-| Version | 3.7.0.Final (હાલના Debezium plugins સાથે સરખું) |
+| Version | 3.7.0.Final (planning વખતનું version; install કરતી વખતે નવું ચકાસો) |
 | પ્રકાર | Kafka Connect plugin (zip) → `C:\kafka\plugins\debezium-connector-postgres` |
 | Concept | **CDC**: WAL logical decoding (`plugin.name=pgoutput`), replication slot, publication, initial snapshot |
 | કેમ જરૂરી | EPAS/PostgreSQL source ના changes → Kafka |
@@ -775,10 +777,10 @@ License: Apache 2.0 · Source: PyPI · RFC: PyPI access
 | Concept | Tools |
 |---|---|
 | **Medallion Architecture** (Source → Bronze → Silver → Gold) | MongoDB, MySQL, Kafka, Kafka Connect, Spark |
-| **CDC (Change Data Capture)** | Debezium MySQL/MongoDB connectors, MySQL binlog, MongoDB change streams (replica set) |
+| **CDC (Change Data Capture)** | MongoDB Kafka Connector (source), MongoDB change streams (replica set), એક generic topic, `mongo-cdc-subscriber` |
 | **Event Streaming** | Apache Kafka (KRaft), topics, offsets, consumer groups |
-| **Data Integration (no-code)** | Kafka Connect, SMTs, MongoDB Kafka Sink, DLQ |
-| **Initial load of existing data** | Debezium `snapshot.mode=initial` |
+| **Data Integration** | Kafka Connect (source), `RegexRouter` SMT, પોતાનો Kafka consumer (`mongo-cdc-subscriber`), DLQ topic |
+| **Initial load of existing data** | MongoDB Source Connector `startup.mode=copy_existing` |
 | **Batch ETL / Distributed Processing** | Apache Spark (local + standalone cluster), Hadoop client, winutils |
 | **Incremental Processing** | Watermark tables, MongoDB Spark Connector pushdown, upserts |
 | **Data Validation / Quality / Deduplication** | Spark (validation rules, window functions), `etl_rejected_record`, `station_data_quality` |
@@ -801,13 +803,13 @@ License: Apache 2.0 · Source: PyPI · RFC: PyPI access
 |---|---|---|
 | **Software install (developer machine)** | JDK, Maven, VS Code, MySQL, MongoDB (+ mongosh, Tools, Compass), Spark, Kafka | Admin rights અથવા Software Center દ્વારા install, version, license |
 | **Unofficial binary** | `winutils.exe`, `hadoop.dll` | Security review, hash verification, source repo |
-| **Library repository access** | બધી Maven jars (2.5) અને Kafka Connect plugins (19–21) | Maven Central access, અથવા Nexus/Artifactory proxy whitelist + vulnerability scan |
+| **Library repository access** | બધી Maven jars (2.5, `mongo-cdc-subscriber` સહિત) અને Kafka Connect plugin (#21) | Maven Central access, અથવા Nexus/Artifactory proxy whitelist + vulnerability scan |
 | **Container registry access** | `docker.getcollate.io`, `docker.elastic.co`, Docker Hub | Registry whitelist / internal mirror |
 | **Commercial license / procurement** | Docker Desktop (મોટી org) | Subscription, અથવા Rancher/Podman જેવો free વિકલ્પ |
 | **Legal review (copyleft / source-available)** | MongoDB (SSPL), Compass (SSPL), Elasticsearch (AGPL/SSPL/ELv2), MySQL (GPLv2) | Internal use માટે મંજૂરી |
 | **Network / firewall** | વિભાગ 5 ના ports | Local માટે સામાન્ય રીતે જરૂર નથી; servers વચ્ચે જોઈશે |
 | **OS feature** | WSL2, Hyper-V/virtualization | Admin + BIOS |
-| **DB access / users** | MySQL `debezium` (replication), `root@'%'`, `om_reader`; Mongo replica set; EPAS replication user + publication | DBA approval. Production માં `root` ન વાપરો, least-privilege users બનાવો |
+| **DB access / users** | MySQL `root@'%'`, `om_reader`; Mongo replica set; EPAS replication user + publication | DBA approval. Production માં `root` ન વાપરો, least-privilege users બનાવો |
 | **Python package repository** | Airflow + providers (PyPI) | PyPI access અથવા internal PyPI proxy (Nexus/Artifactory) |
 | **Linux environment on Windows** | Airflow (WSL2 Ubuntu અથવા Docker) | WSL2 enable + Ubuntu distribution install |
 | **Enterprise DB subscription** | EDB EPAS, PEM, EFM, MTK | EDB subscription / procurement, EDB account (downloads) |
@@ -903,7 +905,7 @@ Owner / Support      :
 | 1 | **Spring Boot 2.7.18** | Open-source support નવેમ્બર 2023 માં પૂરો | Spring Boot 3.x પર upgrade (Java 17, `javax` → `jakarta`). Spark સાથે compatibility test કરવી |
 | 2 | **MySQL 8.0.30** | 8.0 નું support April 2026 માં પૂરું | MySQL 8.4 LTS |
 | 3 | **MySQL Connector/J 8.0.33** | જૂનું | Server version સાથે મેળ ખાતું નવું version |
-| 4 | **MongoDB 8.3.13** (rapid release) | Debezium 3.7 નું officially listed version નથી | MongoDB 8.0 (major release) |
+| 4 | **MongoDB 8.3.13** (rapid release) | Rapid release નો support ટૂંકા સમય માટે હોય છે | MongoDB 8.0 (major release) |
 | 5 | **Kafka on Windows** | Officially unsupported | Linux cluster |
 | 6 | **Docker Desktop license** | Org size પ્રમાણે paid | Procurement અથવા free વિકલ્પ |
 | 7 | **winutils** | Unofficial binary, `winutils.exe` ખૂટે છે | Linux માં જરૂર નથી |
