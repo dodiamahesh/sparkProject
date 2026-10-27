@@ -1,0 +1,19 @@
+{
+  "connector.class": "com.mongodb.kafka.connect.MongoSourceConnector",
+  "tasks.max": "1",
+  "connection.uri": "mongodb://localhost:27017/?replicaSet=rs0",
+  "database": "de_source_mongo",
+  "topic.prefix": "cdc",
+  "startup.mode": "copy_existing",
+  "change.stream.full.document": "updateLookup",
+  "publish.full.document.only": "false",
+  "output.format.key": "json",
+  "output.format.value": "json",
+  "output.json.formatter": "com.mongodb.kafka.connect.source.json.formatter.ExtendedJson",
+  "key.converter": "org.apache.kafka.connect.storage.StringConverter",
+  "value.converter": "org.apache.kafka.connect.storage.StringConverter",
+  "transforms": "dbTopic",
+  "transforms.dbTopic.type": "org.apache.kafka.connect.transforms.RegexRouter",
+  "transforms.dbTopic.regex": "cdc\\.([^.]+)\\..*",
+  "transforms.dbTopic.replacement": "$1"
+}

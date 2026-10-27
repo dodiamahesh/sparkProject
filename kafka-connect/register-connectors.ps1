@@ -1,6 +1,6 @@
 # Manage Kafka Connect connectors from the JSON files in this folder.
 # Usage:
-#   .\register-connectors.ps1              -> create/update all connectors (source-mysql, source-mongo, sink-bronze)
+#   .\register-connectors.ps1              -> create/update all connectors (mongo-cdc-db-source)
 #   .\register-connectors.ps1 status       -> show connector + task state
 #   .\register-connectors.ps1 delete NAME  -> delete one connector (its offsets stay in Kafka)
 param(
@@ -9,7 +9,7 @@ param(
 )
 
 $connect = "http://localhost:8083"
-$names = "source-mysql", "source-mongo", "sink-bronze"
+$names = "mongo-cdc-db-source"
 
 function Show-Status {
     foreach ($n in (Invoke-RestMethod "$connect/connectors")) {
