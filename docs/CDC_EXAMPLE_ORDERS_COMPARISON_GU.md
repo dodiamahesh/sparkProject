@@ -1,6 +1,6 @@
-# CDC Example: `ordes` collection – Source → Kafka → Destination સરખામણી
+# CDC Example: `orders` collection – Source → Kafka → Destination સરખામણી
 
-> એક document પર કરેલા **3 operations** (insert → replace → delete) source DB, Kafka topic અને destination (bronze) માં કેવા દેખાય છે, એની સરખામણી. જ્યાં mismatch છે ત્યાં એનું કારણ પણ લખ્યું છે.
+> એક document પર કરેલા **4 operations** (insert → update → replace → delete) source DB, Kafka topic અને destination (bronze) માં કેવા દેખાય છે, એની સરખામણી. જ્યાં mismatch છે ત્યાં એનું કારણ પણ લખ્યું છે.
 > આખો setup: [MONGO_CDC_COMPLETE_SETUP_GU.md](MONGO_CDC_COMPLETE_SETUP_GU.md)
 >
 > બધો data **2026-10-28** ના ખરા test નો છે. ✔️ ચિહ્ન વાળી માહિતી machine પર ચકાસેલી છે.
@@ -10,157 +10,42 @@
 ## અનુક્રમણિકા
 
 - [1. શું કર્યું (Timeline)](#1-શું-કર્યું-timeline)
-- [2. Source: insert કરેલો document](#2-source-insert-કરેલો-document)
-- [3. Kafka topic ના 3 messages](#3-kafka-topic-ના-3-messages)
-- [4. Destination (bronze) માં મળેલો document](#4-destination-bronze-માં-મળેલો-document)
-- [5. Field-by-field સરખામણી](#5-field-by-field-સરખામણી)
-- [6. Mismatches અને કારણો](#6-mismatches-અને-કારણો)
-- [7. નવા subscriber સાથે destination કેવું દેખાવું જોઈએ](#7-નવા-subscriber-સાથે-destination-કેવું-દેખાવું-જોઈએ)
-- [8. સુધારવા શું કરવું](#8-સુધારવા-શું-કરવું)
-- [9. સારાંશ](#9-સારાંશ)
+- [2. Step 1: Insert](#2-step-1-insert)
+- [3. Step 2: Update](#3-step-2-update)
+- [4. Step 3: Replace](#4-step-3-replace)
+- [5. Step 4: Delete](#5-step-4-delete)
+- [6. ચારેય Kafka messages એક નજરમાં](#6-ચારેય-kafka-messages-એક-નજરમાં)
+- [7. Mismatches અને કારણો](#7-mismatches-અને-કારણો)
+- [8. નવા subscriber સાથે destination કેવું દેખાવું જોઈએ](#8-નવા-subscriber-સાથે-destination-કેવું-દેખાવું-જોઈએ)
+- [9. સુધારવા શું કરવું](#9-સુધારવા-શું-કરવું)
+- [10. સારાંશ](#10-સારાંશ)
 
 ---
 
 ## 1. શું કર્યું (Timeline)
 
-| # | સમય (IST) | Source માં operation | Kafka `operationType` | Partition / Offset |
+| # | સમય (IST) | Source માં operation | Kafka `operationType` | Partition / Offset ✔️ |
 |---|---|---|---|---|
-| 1 | 2026-10-28 10:34:20 | Document insert (`status: "PLACED"`) | `insert` | 2 / – |
-| 2 | 2026-10-28 10:36:21 | Compass માં document edit કરીને save (`status: "Delevered"`) | `replace` | 2 / – |
-| 3 | 2026-10-28 10:36:50 | Document delete | `delete` | 2 / – |
+| 1 | 2026-10-28 23:45:39 | Document insert (`status: "PLACED"`) | `insert` | 1 / 3 |
+| 2 | 2026-10-28 23:48:27 | `updateOne`: `status` → `SHIPPED`, `buyer.address.city` → `Surat` | `update` | 1 / 4 |
+| 3 | 2026-10-28 23:52:00 | Document replace (`status: "DELIVERED"`, `amount: 2299`, નવો email) | `replace` | 1 / 5 |
+| 4 | 2026-10-28 23:53:36 | Document delete | `delete` | 1 / 6 |
 
-- Database: `de_source_mongo`, collection: **`ordes`**
-- Document `_id`: `ObjectId("6ae18254641f36c74b6506ec")`
-- ત્રણેય messages **એક જ partition (2)** માં છે, કારણ કે ત્રણેયનો key એ જ `_id` છે. એટલે એમનો ક્રમ સચવાયો છે ✅
-- સમય messages ના `wallTime` પરથી લીધો છે.
-
-> **Compass માં edit = `replace`, `update` નહીં.** Compass document ને આખો બદલીને save કરે છે, એટલે MongoDB એને `replace` event તરીકે નોંધે છે. `updateOne({...}, {$set: ...})` થી ફેરફાર કરો તો `update` event આવે.
+- Database: `de_source_mongo`, collection: **`orders`**
+- Document `_id`: `ObjectId("6ae23bcbbde98f5b55239830")`
+- ચારેય messages **એક જ partition (1)** માં, offsets **3 → 4 → 5 → 6** ના ક્રમમાં છે, કારણ કે ચારેયનો key એ જ `_id` છે ✅
+- સમય દરેક message ના `wallTime` પરથી લીધો છે.
 
 ---
 
-## 2. Source: insert કરેલો document
+## 2. Step 1: Insert
 
-**તમે લખેલો document** (`_id` આપ્યો નથી, એટલે MongoDB એ જાતે `ObjectId` બનાવ્યો):
+### Source (insert પછી)
 ```json
 {
+  "_id": { "$oid": "6ae23bcbbde98f5b55239830" },
   "orderId": 1001,
   "status": "PLACED",
-  "amount": 2499.50,
-  "buyer": {
-    "name": "Aarav Patel",
-    "email": "aarav@example.com",
-    "address": {
-      "city": "Ahmedabad",
-      "state": "Gujarat",
-      "pin": "380015"
-    }
-  }
-}
-```
-
-**Source માં save થયા પછી (BSON types સાથે):**
-
-| Field | Value | BSON type |
-|---|---|---|
-| `_id` | `6ae18254641f36c74b6506ec` | ObjectId (MongoDB એ બનાવ્યો) |
-| `orderId` | `1001` | Int32 |
-| `status` | `"PLACED"` | String |
-| `amount` | `2499.5` | Double |
-| `buyer` | nested object | Object |
-| `buyer.address.pin` | `"380015"` | String (quotes માં લખ્યું હતું) |
-
-**Replace પછી:** ફક્ત `status` બદલાયું: `"PLACED"` → `"Delevered"`.
-**Delete પછી:** Source માં document **નથી** (✔️ `de_source_mongo.ordes` count = 0).
-
----
-
-## 3. Kafka topic ના 3 messages
-
-Topic: `de_source_mongo` · Key (ત્રણેય માટે): `{"_id": {"$oid": "6ae18254641f36c74b6506ec"}}`
-
-### 3.1 Message 1: `insert`
-```json
-{
-  "_id": { "_data": "826AE18254000000012B042C0100296E5A10047D9FA13B6F7D4628B78ACB682CFA7946463C6F7065726174696F6E54797065003C696E736572740046646F63756D656E744B65790046645F696400646AE18254641F36C74B6506EC000004" },
-  "operationType": "insert",
-  "clusterTime": { "$timestamp": { "t": 1793163860, "i": 1 } },
-  "wallTime": { "$date": { "$numberLong": "1793163860102" } },
-  "fullDocument": {
-    "_id": { "$oid": "6ae18254641f36c74b6506ec" },
-    "orderId": { "$numberInt": "1001" },
-    "status": "PLACED",
-    "amount": { "$numberDouble": "2499.5" },
-    "buyer": {
-      "name": "Aarav Patel",
-      "email": "aarav@example.com",
-      "address": { "city": "Ahmedabad", "state": "Gujarat", "pin": "380015" }
-    }
-  },
-  "ns": { "db": "de_source_mongo", "coll": "ordes" },
-  "documentKey": { "_id": { "$oid": "6ae18254641f36c74b6506ec" } }
-}
-```
-
-### 3.2 Message 2: `replace`
-```json
-{
-  "_id": { "_data": "826AE182CD000000032B042C0100296E5A10047D9FA13B6F7D4628B78ACB682CFA7946463C6F7065726174696F6E54797065003C7265706C6163650046646F63756D656E744B65790046645F696400646AE18254641F36C74B6506EC000004" },
-  "operationType": "replace",
-  "clusterTime": { "$timestamp": { "t": 1793163981, "i": 3 } },
-  "wallTime": { "$date": { "$numberLong": "1793163981504" } },
-  "fullDocument": {
-    "_id": { "$oid": "6ae18254641f36c74b6506ec" },
-    "orderId": { "$numberInt": "1001" },
-    "status": "Delevered",
-    "amount": { "$numberDouble": "2499.5" },
-    "buyer": {
-      "name": "Aarav Patel",
-      "email": "aarav@example.com",
-      "address": { "city": "Ahmedabad", "state": "Gujarat", "pin": "380015" }
-    }
-  },
-  "ns": { "db": "de_source_mongo", "coll": "ordes" },
-  "documentKey": { "_id": { "$oid": "6ae18254641f36c74b6506ec" } }
-}
-```
-`replace` માં `updateDescription` **નથી** હોતું (એ ફક્ત `update` માં આવે છે). આખો નવો document `fullDocument` માં હોય છે.
-
-### 3.3 Message 3: `delete`
-```json
-{
-  "_id": { "_data": "826AE182EA000000012B042C0100296E5A10047D9FA13B6F7D4628B78ACB682CFA7946463C6F7065726174696F6E54797065003C64656C6574650046646F63756D656E744B65790046645F696400646AE18254641F36C74B6506EC000004" },
-  "operationType": "delete",
-  "clusterTime": { "$timestamp": { "t": 1793164010, "i": 1 } },
-  "wallTime": { "$date": { "$numberLong": "1793164010166" } },
-  "ns": { "db": "de_source_mongo", "coll": "ordes" },
-  "documentKey": { "_id": { "$oid": "6ae18254641f36c74b6506ec" } }
-}
-```
-`fullDocument` **નથી**, કારણ કે document હવે રહ્યો જ નથી. ફક્ત `documentKey._id` થી ખબર પડે છે કે કયો document ગયો.
-
-### 3.4 ત્રણેય messages એક નજરમાં
-
-| Property | insert | replace | delete |
-|---|---|---|---|
-| `operationType` | `insert` | `replace` | `delete` |
-| `fullDocument` | ✅ (`status: PLACED`) | ✅ (`status: Delevered`) | ❌ નથી |
-| `updateDescription` | ❌ | ❌ | ❌ |
-| `documentKey._id` | ✅ | ✅ | ✅ |
-| `clusterTime.i` | 1 | **3** (એ second નું 3જું operation) | 1 |
-| Partition | 2 | 2 | 2 |
-
-✅ **Kafka messages માં કોઈ mismatch નથી.** ત્રણેય operations પૂરી માહિતી અને સાચા types સાથે આવ્યા છે.
-
----
-
-## 4. Destination (bronze) માં મળેલો document
-
-**તમે જોયેલો document** (`de_bronze.ordes`):
-```json
-{
-  "_id": { "$oid": "6ae18254641f36c74b6506ec" },
-  "orderId": 1001,
-  "status": "Delevered",
   "amount": 2499.5,
   "buyer": {
     "name": "Aarav Patel",
@@ -170,144 +55,352 @@ Topic: `de_source_mongo` · Key (ત્રણેય માટે): `{"_id": {"$o
 }
 ```
 
-**અત્યારની ખરી સ્થિતિ** (✔️ ચકાસેલું):
-
-| ચકાસણી | પરિણામ |
-|---|---|
-| `de_source_mongo.ordes` documents | **0** |
-| `de_bronze.ordes` documents | **0** (document **નીકળી ગયો** છે) |
-| Subscriber consumer group `LAG` (ત્રણેય partitions) | **0** (ત્રણેય messages process થઈ ગયા છે) |
-| ચાલતો subscriber (PID 9892) | **2026-10-28 00:41** એ start થયેલો, અને jar પણ **00:41** એ build થયેલું |
-
----
-
-## 5. Field-by-field સરખામણી
-
-Replace પછીની સ્થિતિ: Source (replace પછી) vs Kafka message 2 vs તમે જોયેલો destination document.
-
-| Field | Source (BSON) | Kafka (Extended JSON) | Destination (જોયેલું) | Match? |
-|---|---|---|---|---|
-| `_id` | ObjectId `6ae18254...` | `{"$oid": "6ae18254..."}` | ObjectId `6ae18254...` | ✅ |
-| `orderId` | Int32 `1001` | `{"$numberInt": "1001"}` | `1001` (Int32) | ✅ |
-| `status` | `"Delevered"` | `"Delevered"` | `"Delevered"` | ✅ |
-| `amount` | Double `2499.5` | `{"$numberDouble": "2499.5"}` | `2499.5` (Double) | ✅ (નીચેની નોંધ જુઓ) |
-| `buyer.name` | `"Aarav Patel"` | `"Aarav Patel"` | `"Aarav Patel"` | ✅ |
-| `buyer.email` | `"aarav@example.com"` | એ જ | એ જ | ✅ |
-| `buyer.address.city/state/pin` | `Ahmedabad / Gujarat / "380015"` | એ જ | એ જ | ✅ |
-| Fields નો ક્રમ | `_id, orderId, status, amount, buyer` | એ જ | એ જ | ✅ |
-| `_op` | – | (`operationType` = `replace`) | ❌ **નથી** | ⚠️ Mismatch 1 |
-| `_deleted` | – | – | ❌ **નથી** | ⚠️ Mismatch 1 |
-| `_source_ts` | – | (`wallTime` = `1793163981504`) | ❌ **નથી** | ⚠️ Mismatch 1 |
-| `_ingested_at` | – | – | ❌ **નથી** | ⚠️ Mismatch 1 |
-| Delete પછી document | ❌ નથી | `delete` event ✅ | તમે જોયો ત્યારે ✅ હતો, હવે ❌ નથી | ⚠️ Mismatch 2 |
-
-> **`2499.50` vs `2499.5` mismatch નથી.** Double type માં છેલ્લો `0` સચવાતો નથી. Value અને type (Double) બંને એ જ છે. Decimal ના ચોક્કસ digits જોઈતા હોય તો source માં `NumberDecimal("2499.50")` (Decimal128) વાપરો.
-
----
-
-## 6. Mismatches અને કારણો
-
-### ⚠️ Mismatch 1: Metadata fields (`_op`, `_deleted`, `_source_ts`, `_ingested_at`) નથી
-
-**કારણ: ચાલતો subscriber જૂના code નો છે.**
-
-| | સમય (2026-10-28) |
-|---|---|
-| ચાલતા subscriber નું jar build થયું | **00:41** |
-| Subscriber start થયો (PID 9892) | **00:41** |
-| Metadata + soft delete વાળો નવો code લખાયો | 00:41 **પછી** |
-
-એટલે ચાલતો subscriber હજુ **જૂનું behavior** વાપરે છે:
-- Document **metadata વગર** લખે છે
-- Delete વખતે document **કાઢી નાખે છે** (hard delete)
-
-Project ની files માં નવો code છે, પણ **ફરી build કરીને restart કર્યા વગર** એ લાગુ થતો નથી.
-
-**અસર:** Spark (Bronze → Silver) `_ingested_at` પરથી નવો data શોધે છે. આ field ન હોય તો Spark આ documents **ક્યારેય વાંચશે નહીં**.
-
-### ⚠️ Mismatch 2: Delete પછી પણ destination માં document દેખાયો
-
-**કારણ: તમે destination **delete થયા પહેલાં** જોયો હતો, અથવા Compass refresh નહોતું થયું.**
-
-- તમે જોયેલા document માં `status: "Delevered"` છે, એટલે કે એ **replace પછીની અને delete પહેલાંની** સ્થિતિ છે.
-- અત્યારે `de_bronze.ordes` માં **0 documents** છે, અને subscriber ની `LAG = 0` છે. એટલે delete event પણ લાગુ થઈ ગયો છે ✔️
-- જૂનો subscriber hard delete કરે છે, એટલે document સંપૂર્ણ **નીકળી ગયો**.
-
-➡️ Pipeline એ delete **સાચી રીતે** લાગુ કર્યું છે. આ ફક્ત જોવાના સમયનો ફરક છે. Compass માં **Refresh** (🔄) દબાવીને ફરી જુઓ.
-
-### ℹ️ Data quality નોંધ (pipeline ની ભૂલ નથી)
-
-| શું | ક્યાં | નોંધ |
-|---|---|---|
-| Collection નું નામ **`ordes`** | Source | કદાચ `orders` લખવું હતું. Pipeline નામ **જેમ છે તેમ** આગળ લઈ જાય છે, એટલે bronze માં પણ `ordes` બને છે |
-| `status: "Delevered"` | Source (Compass edit) | કદાચ `Delivered` લખવું હતું. Bronze source ની ચોક્કસ copy છે, એટલે spelling પણ એ જ રહે છે. આવી values silver layer ની validation માં પકડવી |
-
----
-
-## 7. નવા subscriber સાથે destination કેવું દેખાવું જોઈએ
-
-નવો subscriber (metadata + soft delete) ચલાવો, તો દરેક step પછી `de_bronze.ordes` આવો દેખાશે. `_source_ts` = દરેક message નો `wallTime`. `_ingested_at` = subscriber એ લખ્યો તે સમય, જે તમારા run માં અલગ હશે.
-
-**Insert પછી:**
+### Kafka message (partition 1, offset 3)
+Key: `{"_id": {"$oid": "6ae23bcbbde98f5b55239830"}}`
 ```json
 {
-  "_id": { "$oid": "6ae18254641f36c74b6506ec" },
+  "_id": { "_data": "826AE23BCB000000012B042C0100296E5A1004F59EE5B698D64D26835270C3D1D93D94463C6F7065726174696F6E54797065003C696E736572740046646F63756D656E744B65790046645F696400646AE23BCBBDE98F5B55239830000004" },
+  "operationType": "insert",
+  "clusterTime": { "$timestamp": { "t": 1793211339, "i": 1 } },
+  "wallTime": { "$date": { "$numberLong": "1793211339483" } },
+  "fullDocument": {
+    "_id": { "$oid": "6ae23bcbbde98f5b55239830" },
+    "orderId": { "$numberInt": "1001" },
+    "status": "PLACED",
+    "amount": { "$numberDouble": "2499.5" },
+    "buyer": {
+      "name": "Aarav Patel",
+      "email": "aarav@example.com",
+      "address": { "city": "Ahmedabad", "state": "Gujarat", "pin": "380015" }
+    }
+  },
+  "ns": { "db": "de_source_mongo", "coll": "orders" },
+  "documentKey": { "_id": { "$oid": "6ae23bcbbde98f5b55239830" } }
+}
+```
+
+### Destination (તમે જોયેલું)
+```json
+{
+  "_id": { "$oid": "6ae23bcbbde98f5b55239830" },
   "orderId": 1001,
   "status": "PLACED",
   "amount": 2499.5,
-  "buyer": { "name": "Aarav Patel", "email": "aarav@example.com",
-             "address": { "city": "Ahmedabad", "state": "Gujarat", "pin": "380015" } },
-  "_op": "insert",
-  "_deleted": false,
-  "_source_ts": 1793163860102,
-  "_ingested_at": 1793163860120
+  "buyer": {
+    "name": "Aarav Patel",
+    "email": "aarav@example.com",
+    "address": { "city": "Ahmedabad", "state": "Gujarat", "pin": "380015" }
+  }
 }
 ```
 
-**Replace પછી:**
-```json
-{
-  "_id": { "$oid": "6ae18254641f36c74b6506ec" },
-  "orderId": 1001,
-  "status": "Delevered",
-  "amount": 2499.5,
-  "buyer": { "name": "Aarav Patel", "email": "aarav@example.com",
-             "address": { "city": "Ahmedabad", "state": "Gujarat", "pin": "380015" } },
-  "_op": "replace",
-  "_deleted": false,
-  "_source_ts": 1793163981504,
-  "_ingested_at": 1793163981520
-}
-```
-
-**Delete પછી (soft delete: document રહે છે):**
-```json
-{
-  "_id": { "$oid": "6ae18254641f36c74b6506ec" },
-  "orderId": 1001,
-  "status": "Delevered",
-  "amount": 2499.5,
-  "buyer": { "name": "Aarav Patel", "email": "aarav@example.com",
-             "address": { "city": "Ahmedabad", "state": "Gujarat", "pin": "380015" } },
-  "_op": "delete",
-  "_deleted": true,
-  "_source_ts": 1793164010166,
-  "_ingested_at": 1793164010180
-}
-```
-
-| Step | જૂનો subscriber (હાલ ચાલે છે) | નવો subscriber |
-|---|---|---|
-| Insert | Document, metadata વગર | Document + `_op: insert`, `_deleted: false` |
-| Replace | Document replace, metadata વગર | Document replace + `_op: replace` |
-| Delete | Document **નીકળી જાય** | Document **રહે**, `_op: delete`, `_deleted: true` |
-| Spark ને દેખાય? | ❌ (`_ingested_at` નથી) | ✅ |
-
-> `_ingested_at` ની ઉપરની values ઉદાહરણ છે. બાકીની બધી values (`_id`, fields, `_source_ts`) તમારા ખરા Kafka messages પરથી છે.
+### સરખામણી
+| Field | Source | Kafka | Destination | Match? |
+|---|---|---|---|---|
+| `_id` | ObjectId | `{"$oid": ...}` | ObjectId | ✅ |
+| `orderId` | Int32 `1001` | `{"$numberInt": "1001"}` | Int32 `1001` | ✅ |
+| `status` | `PLACED` | `PLACED` | `PLACED` | ✅ |
+| `amount` | Double `2499.5` | `{"$numberDouble": "2499.5"}` | Double `2499.5` | ✅ |
+| `buyer` (nested) | Ahmedabad, `aarav@example.com` | એ જ | એ જ | ✅ |
+| Fields નો ક્રમ | `_id, orderId, status, amount, buyer` | એ જ | એ જ | ✅ |
+| Metadata (`_op`, `_deleted`, `_source_ts`, `_ingested_at`) | – | – | ❌ **નથી** | ⚠️ [Mismatch 1](#mismatch-1-metadata-fields-નથી) |
 
 ---
 
-## 8. સુધારવા શું કરવું
+## 3. Step 2: Update
+
+### Source માં ચલાવેલી query
+```javascript
+db.orders.updateOne(
+  { orderId: 1001 },
+  { $set: { status: "SHIPPED", "buyer.address.city": "Surat" } }
+)
+```
+
+### Source (update પછી)
+```json
+{
+  "_id": { "$oid": "6ae23bcbbde98f5b55239830" },
+  "orderId": 1001,
+  "status": "SHIPPED",
+  "amount": 2499.5,
+  "buyer": {
+    "name": "Aarav Patel",
+    "email": "aarav@example.com",
+    "address": { "city": "Surat", "state": "Gujarat", "pin": "380015" }
+  }
+}
+```
+
+### Kafka message (partition 1, offset 4)
+```json
+{
+  "_id": { "_data": "826AE23C73000000012B042C0100296E5A1004F59EE5B698D64D26835270C3D1D93D94463C6F7065726174696F6E54797065003C7570646174650046646F63756D656E744B65790046645F696400646AE23BCBBDE98F5B55239830000004" },
+  "operationType": "update",
+  "clusterTime": { "$timestamp": { "t": 1793211507, "i": 1 } },
+  "wallTime": { "$date": { "$numberLong": "1793211507427" } },
+  "ns": { "db": "de_source_mongo", "coll": "orders" },
+  "documentKey": { "_id": { "$oid": "6ae23bcbbde98f5b55239830" } },
+  "updateDescription": {
+    "updatedFields": { "status": "SHIPPED", "buyer.address.city": "Surat" },
+    "removedFields": [],
+    "truncatedArrays": []
+  },
+  "fullDocument": {
+    "_id": { "$oid": "6ae23bcbbde98f5b55239830" },
+    "orderId": { "$numberInt": "1001" },
+    "status": "SHIPPED",
+    "amount": { "$numberDouble": "2499.5" },
+    "buyer": {
+      "name": "Aarav Patel",
+      "email": "aarav@example.com",
+      "address": { "city": "Surat", "state": "Gujarat", "pin": "380015" }
+    }
+  }
+}
+```
+
+**આ message માં નવું શું છે:**
+
+| Property | Value | અર્થ |
+|---|---|---|
+| `updateDescription.updatedFields` | `{"status": "SHIPPED", "buyer.address.city": "Surat"}` | **ફક્ત બદલાયેલા fields**. Nested field નું નામ **dotted path** (`buyer.address.city`) તરીકે આવે છે |
+| `updateDescription.removedFields` | `[]` | `$unset` નથી કર્યું |
+| `fullDocument` | આખો નવો document | `change.stream.full.document=updateLookup` ને કારણે મળ્યો |
+
+> Insert/replace માં `fullDocument` `ns` ની પહેલાં આવે છે, જ્યારે update માં **છેલ્લે** (`updateDescription` પછી). આ MongoDB નો ક્રમ છે. Subscriber fields નામથી વાંચે છે, એટલે ક્રમથી કોઈ ફરક પડતો નથી.
+
+### Destination (તમે જોયેલું)
+```json
+{
+  "_id": { "$oid": "6ae23bcbbde98f5b55239830" },
+  "orderId": 1001,
+  "status": "PLACED",
+  "amount": 2499.5,
+  "buyer": {
+    "name": "Aarav Patel",
+    "email": "aarav@example.com",
+    "address": { "city": "Ahmedabad", "state": "Gujarat", "pin": "380015" }
+  }
+}
+```
+
+### સરખામણી
+| Field | Source | Kafka (`fullDocument`) | Destination (જોયેલું) | Match? |
+|---|---|---|---|---|
+| `status` | `SHIPPED` | `SHIPPED` | **`PLACED`** | ❌ [Mismatch 2](#mismatch-2-update-પછી-destination-માં-જૂની-values-દેખાઈ) |
+| `buyer.address.city` | `Surat` | `Surat` | **`Ahmedabad`** | ❌ [Mismatch 2](#mismatch-2-update-પછી-destination-માં-જૂની-values-દેખાઈ) |
+| બાકીના fields | | એ જ | એ જ | ✅ |
+| Metadata | – | – | ❌ નથી | ⚠️ [Mismatch 1](#mismatch-1-metadata-fields-નથી) |
+
+✅ **Source → Kafka સાચું છે.** Mismatch ફક્ત તમે જોયેલા destination માં છે (કારણ વિભાગ 7 માં).
+
+---
+
+## 4. Step 3: Replace
+
+### Source (replace પછી)
+```json
+{
+  "_id": { "$oid": "6ae23bcbbde98f5b55239830" },
+  "orderId": 1001,
+  "status": "DELIVERED",
+  "amount": 2299,
+  "buyer": {
+    "name": "Aarav Patel",
+    "email": "aarav.patel@example.com",
+    "address": { "city": "Ahmedabad", "state": "Gujarat", "pin": "380015" }
+  }
+}
+```
+
+### Kafka message (partition 1, offset 5)
+```json
+{
+  "_id": { "_data": "826AE23D48000000012B042C0100296E5A1004F59EE5B698D64D26835270C3D1D93D94463C6F7065726174696F6E54797065003C7265706C6163650046646F63756D656E744B65790046645F696400646AE23BCBBDE98F5B55239830000004" },
+  "operationType": "replace",
+  "clusterTime": { "$timestamp": { "t": 1793211720, "i": 1 } },
+  "wallTime": { "$date": { "$numberLong": "1793211720863" } },
+  "fullDocument": {
+    "_id": { "$oid": "6ae23bcbbde98f5b55239830" },
+    "orderId": { "$numberInt": "1001" },
+    "status": "DELIVERED",
+    "amount": { "$numberInt": "2299" },
+    "buyer": {
+      "name": "Aarav Patel",
+      "email": "aarav.patel@example.com",
+      "address": { "city": "Ahmedabad", "state": "Gujarat", "pin": "380015" }
+    }
+  },
+  "ns": { "db": "de_source_mongo", "coll": "orders" },
+  "documentKey": { "_id": { "$oid": "6ae23bcbbde98f5b55239830" } }
+}
+```
+`replace` માં `updateDescription` **નથી**. આખો નવો document `fullDocument` માં છે.
+
+### Destination (તમે જોયેલું)
+```json
+{
+  "_id": { "$oid": "6ae23bcbbde98f5b55239830" },
+  "orderId": 1001,
+  "status": "DELIVERED",
+  "amount": 2299,
+  "buyer": {
+    "name": "Aarav Patel",
+    "email": "aarav.patel@example.com",
+    "address": { "city": "Ahmedabad", "state": "Gujarat", "pin": "380015" }
+  }
+}
+```
+
+### સરખામણી
+| Field | Source | Kafka | Destination | Match? |
+|---|---|---|---|---|
+| `status` | `DELIVERED` | `DELIVERED` | `DELIVERED` | ✅ |
+| `amount` | **Int32** `2299` | `{"$numberInt": "2299"}` | **Int32** `2299` | ✅ (પણ type બદલાયો, [Note 3](#note-3-amount-નો-type-double--int32-બદલાયો)) |
+| `buyer.email` | `aarav.patel@example.com` | એ જ | એ જ | ✅ |
+| `buyer.address.city` | `Ahmedabad` | `Ahmedabad` | `Ahmedabad` | ✅ |
+| Metadata | – | – | ❌ નથી | ⚠️ [Mismatch 1](#mismatch-1-metadata-fields-નથી) |
+
+> Replace પછી `city` ફરી `Ahmedabad` છે, કારણ કે replace માં તમે આખો નવો document આપ્યો હતો, અને એમાં city `Ahmedabad` હતું. Update વાળો `Surat` આ replace થી બદલાઈ ગયો.
+
+---
+
+## 5. Step 4: Delete
+
+### Kafka message (partition 1, offset 6)
+```json
+{
+  "_id": { "_data": "826AE23DA8000000012B042C0100296E5A1004F59EE5B698D64D26835270C3D1D93D94463C6F7065726174696F6E54797065003C64656C6574650046646F63756D656E744B65790046645F696400646AE23BCBBDE98F5B55239830000004" },
+  "operationType": "delete",
+  "clusterTime": { "$timestamp": { "t": 1793211816, "i": 1 } },
+  "wallTime": { "$date": { "$numberLong": "1793211816458" } },
+  "ns": { "db": "de_source_mongo", "coll": "orders" },
+  "documentKey": { "_id": { "$oid": "6ae23bcbbde98f5b55239830" } }
+}
+```
+`fullDocument` **નથી**. ફક્ત `documentKey._id` થી ખબર પડે છે કે કયો document ગયો.
+
+### Source અને Destination (✔️ ચકાસેલું)
+| | Documents |
+|---|---|
+| `de_source_mongo.orders` | **0** |
+| `de_bronze.orders` | **0**: document **નીકળી ગયો** (hard delete) |
+
+---
+
+## 6. ચારેય Kafka messages એક નજરમાં
+
+| Property | insert | update | replace | delete |
+|---|---|---|---|---|
+| Offset (partition 1) | 3 | 4 | 5 | 6 |
+| `fullDocument` | ✅ PLACED | ✅ SHIPPED, Surat | ✅ DELIVERED, 2299 | ❌ |
+| `updateDescription` | ❌ | ✅ `status`, `buyer.address.city` | ❌ | ❌ |
+| `documentKey._id` | ✅ | ✅ | ✅ | ✅ |
+| `amount` નો type | Double | Double | **Int32** | – |
+
+✅ **Kafka messages માં કોઈ mismatch નથી.** ચારેય operations સાચા ક્રમમાં, સાચા types સાથે, પૂરી માહિતી સાથે આવ્યા છે.
+
+---
+
+## 7. Mismatches અને કારણો
+
+### Mismatch 1: Metadata fields નથી
+
+`_op`, `_deleted`, `_source_ts` અને `_ingested_at` એક પણ step માં destination માં નથી, અને delete પછી document **નીકળી ગયો** (soft delete નહીં).
+
+**કારણ: ચાલતો subscriber જૂના code નો છે.** ✔️
+
+| | સમય |
+|---|---|
+| ચાલતા subscriber નું jar build | 2026-10-28 **00:41** |
+| Subscriber start (PID 9892) | 2026-10-28 **00:41**, ત્યારથી સતત ચાલુ |
+| Metadata + soft delete વાળો નવો code | 00:41 **પછી** લખાયો |
+
+Project માં નવો code છે, પણ **jar ફરી build કરીને subscriber restart** કર્યા વગર એ લાગુ થતો નથી.
+
+**અસર:** Spark (Bronze → Silver) `_ingested_at` પરથી નવો data શોધે છે, એટલે આ documents Spark ને **દેખાશે નહીં**. Delete પણ silver સુધી નહીં પહોંચે, કારણ કે document જ નીકળી ગયો છે.
+
+### Mismatch 2: Update પછી destination માં જૂની values દેખાઈ
+
+તમે જોયેલા destination માં `status: "PLACED"` અને `city: "Ahmedabad"` હતા, જ્યારે source અને Kafka માં `SHIPPED` અને `Surat` હતા.
+
+**કારણ: મોટે ભાગે destination update લાગુ થયા પહેલાં જોવાયું, અથવા Compass refresh નહોતું થયું. Update ખરેખર લાગુ થયું હતું.** પુરાવા ✔️:
+
+| પુરાવો | પરિણામ | અર્થ |
+|---|---|---|
+| Consumer group, partition 1 | `CURRENT-OFFSET = 7`, `LAG = 0` | Offset 4 (update) સહિત બધા messages process થયા |
+| DLQ (`de_source_mongo.dlq`) | હજુ **3** messages (જૂના test ના) | Update message **DLQ માં નથી ગયો**, એટલે parse સફળ થયો |
+| Subscriber process | PID 9892, 00:41 થી સતત ચાલુ | MongoDB write fail થાય તો subscriber **બંધ થઈ જાય** છે. એ બંધ નથી થયો, એટલે write સફળ થયો |
+| પછીના messages | Replace અને delete બંને destination માં દેખાયા | Subscriber partition ના ક્રમમાં લાગુ કરે છે. Offset 4 છોડીને 5 અને 6 લાગુ થાય તે શક્ય નથી |
+
+Update message માં `fullDocument` છે, એટલે subscriber **આખો document replace** કરે છે, અને એનાથી `SHIPPED`/`Surat` જ આવે.
+
+➡️ Compass માં destination જોતી વખતે **Refresh (🔄)** દબાવો. Subscriber log માં `orders: 1 writes (matched=1, ...)` જેવી line પણ જોઈ શકો છો.
+
+> Document હવે delete થઈ ગયો છે, એટલે update પછીની bronze સ્થિતિ હવે ફરી જોઈ શકાતી નથી. આ નિષ્કર્ષ ઉપરના પુરાવા પરથી છે.
+
+### Note 3: `amount` નો type Double → Int32 બદલાયો
+
+| Step | `amount` | Type |
+|---|---|---|
+| Insert, update | `2499.5` | **Double** |
+| Replace | `2299` | **Int32** |
+
+**કારણ: source માં જ type બદલાયો.** Replace વખતે `2299` (દશાંશ વગર) લખ્યું, એટલે MongoDB એ Int32 તરીકે save કર્યું. Kafka (`{"$numberInt": "2299"}`) અને destination એ ચોક્કસ copy કરી. **Pipeline ની ભૂલ નથી.**
+
+**જોખમ:** એક જ field ના documents માં કોઈ જગ્યાએ Double અને કોઈ જગ્યાએ Int32 હોય, તો Spark/silver માં schema અને સરખામણીમાં તકલીફ થઈ શકે.
+
+**ઉકેલ (source બાજુ):** Amount હંમેશા એક જ type માં લખો:
+```javascript
+// Double
+db.orders.replaceOne({ orderId: 1001 }, { ..., amount: Double(2299) })     // mongosh 2.x
+// અથવા પૈસા માટે વધુ સારું: Decimal128 (ચોક્કસ digits)
+db.orders.replaceOne({ orderId: 1001 }, { ..., amount: NumberDecimal("2299.00") })
+```
+Silver layer માં `amount` ને એક જ type (જેમ કે `DECIMAL(12,2)`) માં cast કરવું પણ સારી પ્રથા છે.
+
+---
+
+## 8. નવા subscriber સાથે destination કેવું દેખાવું જોઈએ
+
+નવો subscriber (metadata + soft delete) ચલાવો, તો દરેક step પછી `de_bronze.orders` આવો દેખાશે. `_source_ts` = દરેક message નો `wallTime` (ખરી values). `_ingested_at` = subscriber એ લખ્યો તે સમય (ઉદાહરણ value, તમારા run માં અલગ).
+
+| Step | `status` | `amount` | `city` | `email` | `_op` | `_deleted` | `_source_ts` |
+|---|---|---|---|---|---|---|---|
+| Insert | `PLACED` | 2499.5 (Double) | Ahmedabad | aarav@example.com | `insert` | `false` | `1793211339483` |
+| Update | `SHIPPED` | 2499.5 (Double) | **Surat** | aarav@example.com | `update` | `false` | `1793211507427` |
+| Replace | `DELIVERED` | 2299 (Int32) | Ahmedabad | aarav.patel@example.com | `replace` | `false` | `1793211720863` |
+| Delete | `DELIVERED` | 2299 (Int32) | Ahmedabad | aarav.patel@example.com | `delete` | **`true`** | `1793211816458` |
+
+**Delete પછીનો આખો document (soft delete: document રહે છે):**
+```json
+{
+  "_id": { "$oid": "6ae23bcbbde98f5b55239830" },
+  "orderId": 1001,
+  "status": "DELIVERED",
+  "amount": 2299,
+  "buyer": {
+    "name": "Aarav Patel",
+    "email": "aarav.patel@example.com",
+    "address": { "city": "Ahmedabad", "state": "Gujarat", "pin": "380015" }
+  },
+  "_op": "delete",
+  "_deleted": true,
+  "_source_ts": 1793211816458,
+  "_ingested_at": 1793211816470
+}
+```
+
+| | જૂનો subscriber (હાલ ચાલે છે) | નવો subscriber |
+|---|---|---|
+| Insert / update / replace | Document, metadata વગર | Document + metadata |
+| Delete | Document **નીકળી જાય** | Document **રહે**, `_deleted: true` |
+| Spark ને દેખાય? | ❌ | ✅ |
+
+---
+
+## 9. સુધારવા શું કરવું
 
 1. **Subscriber બંધ કરો:** subscriber વાળા terminal માં `Ctrl + C`.
 2. **નવો code build કરો:**
@@ -315,11 +408,10 @@ Project ની files માં નવો code છે, પણ **ફરી build �
    cd D:\ClaudeProjects\dataEngineeringProjects\sparkProject\mongo-cdc-subscriber
    mvn -q clean package
    ```
-3. **જૂના (metadata વગરના) bronze collections drop કરો** (`mongosh`). ફક્ત source ના નામવાળા collections; `mysql_*` ને અડવું નહીં:
+3. **જૂના (metadata વગરના) bronze collections drop કરો** (`mongosh`). `mysql_*` ને અડવું નહીં:
    ```javascript
-   const s = db.getSiblingDB("de_source_mongo"), b = db.getSiblingDB("de_bronze");
-   s.getCollectionNames().forEach(c => { b[c].drop(); print("dropped de_bronze." + c); });
-   b.ordes.drop();   // ordes source માં ખાલી થઈ ગયું હોય તો list માં ન પણ આવે
+   const b = db.getSiblingDB("de_bronze");
+   ["orders", "weather_observations", "student", "ordes"].forEach(c => { b[c].drop(); print("dropped de_bronze." + c); });
    ```
 4. **Consumer group શરૂઆત પર લઈ જાઓ:**
    ```powershell
@@ -331,20 +423,21 @@ Project ની files માં નવો code છે, પણ **ફરી build �
    cd D:\ClaudeProjects\dataEngineeringProjects\sparkProject\mongo-cdc-subscriber
    java -jar target\mongo-cdc-subscriber-1.0.0-jar-with-dependencies.jar
    ```
-6. **ચકાસો:** Topic ના ત્રણેય `ordes` messages ફરી લાગુ થશે, અને છેલ્લે document **soft deleted** સ્થિતિમાં હશે (વિભાગ 7 નું છેલ્લું JSON):
+6. **ચકાસો:** Topic ના ચારેય `orders` messages ફરી લાગુ થશે, અને છેલ્લે document soft-deleted સ્થિતિમાં હશે (વિભાગ 8 નું JSON):
    ```javascript
-   db.getSiblingDB("de_bronze").ordes.find({}, { status: 1, _op: 1, _deleted: 1, _source_ts: 1 })
+   db.getSiblingDB("de_bronze").orders.find({}, { status: 1, amount: 1, _op: 1, _deleted: 1, _source_ts: 1 })
    ```
-   ➡️ `status: "Delevered"`, `_op: "delete"`, `_deleted: true`, `_source_ts: 1793164010166`
+   ➡️ `status: "DELIVERED"`, `amount: 2299`, `_op: "delete"`, `_deleted: true`, `_source_ts: 1793211816458`
 
 ---
 
-## 9. સારાંશ
+## 10. સારાંશ
 
 | Layer | પરિણામ |
 |---|---|
-| Source → Kafka | ✅ ત્રણેય operations (insert, replace, delete) સાચા ક્રમમાં, એક જ partition માં, સાચા types સાથે |
-| Kafka → Destination (data) | ✅ `_id`, `orderId` (Int32), `amount` (Double), nested `buyer`, fields નો ક્રમ: બધું source જેવું જ |
-| Kafka → Destination (delete) | ✅ લાગુ થયું (હાલ bronze માં 0 documents). તમે delete પહેલાનો state જોયો હતો |
-| Metadata fields | ⚠️ **નથી**, કારણ કે ચાલતો subscriber જૂના code નો છે. વિભાગ 8 પ્રમાણે rebuild + replay કરો |
-| Data quality | ℹ️ `ordes` અને `Delevered` ની spelling source માંથી જ આવી છે |
+| Source → Kafka | ✅ ચારેય operations (insert, update, replace, delete) સાચા ક્રમમાં (offsets 3–6), એક જ partition માં, સાચા types સાથે |
+| Kafka → Destination (data) | ✅ Insert અને replace ના values અને types source જેવા જ. Update પણ લાગુ થયો હતો (પુરાવા વિભાગ 7) |
+| Kafka → Destination (delete) | ✅ લાગુ થયું (bronze માં 0 documents), પણ hard delete તરીકે |
+| Metadata fields | ⚠️ **નથી**: ચાલતો subscriber જૂના code નો છે. વિભાગ 9 પ્રમાણે rebuild + replay |
+| Update પછી જૂની values દેખાઈ | ⚠️ જોવાનો સમય / refresh. Pipeline એ update લાગુ કર્યો હતો |
+| `amount` type | ℹ️ Replace માં source માં જ Double → Int32 બદલાયો. Pipeline એ ચોક્કસ copy કરી |
