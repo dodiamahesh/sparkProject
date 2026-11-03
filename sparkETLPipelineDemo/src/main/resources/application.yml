@@ -1,0 +1,78 @@
+# =====================================================================
+#  COMMON SETTINGS (shared by every profile)
+#  Environment specific values live in application-<profile>.yml
+# =====================================================================
+spring:
+  application:
+    name: spark-etl-pipeline
+  profiles:
+    # Default profile when nothing is passed. Override with:
+    #   java -jar app.jar --spring.profiles.active=prod
+    active: dev
+  flyway:
+    # Flyway creates/updates all PostgreSQL tables from src/main/resources/db/migration
+    enabled: true
+    locations: classpath:db/migration
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+etl:
+  spark:
+    app-name: ${spring.application.name}
+    master: local[*]
+    # Any Spark setting can be added here. Keep the [square brackets] so the dots stay in the key.
+    config:
+      "[spark.sql.shuffle.partitions]": "4"
+      # Spark UI is off because Spark 3.5 UI uses the javax servlet stack, Spring Boot 3 uses jakarta.
+      "[spark.ui.enabled]": "false"
+      # Invalid casts return NULL (instead of throwing). Our data-quality rules rely on this.
+      "[spark.sql.ansi.enabled]": "false"
+      "[spark.sql.legacy.timeParserPolicy]": "CORRECTED"
+
+  mongo:
+    uri: ${spring.data.mongodb.uri}
+    database: ${spring.data.mongodb.database}
+
+  postgres:
+    url: ${spring.datasource.url}
+    username: ${spring.datasource.username}
+    password: ${spring.datasource.password}
+    # Temporary tables used for UPSERT (Spark writes here, then SQL merges into the real table)
+    staging-schema: etl_staging
+    batch-size: 1000
+
+  source:
+    # Flag field in every MongoDB document that drives incremental load.
+    #   N (or missing) = new / changed   -> picked by INCREMENTAL
+    #   Y              = loaded          -> skipped
+    #   E              = rejected        -> picked by RETRY_REJECTED
+    #   D              = duplicate       -> skipped (kept in rejected table for audit)
+    flag-field: processedFlag
+
+  job:
+    # How many pipelines can run at the same time (async mode)
+    thread-pool-size: 2
+    queue-capacity: 10
+
+  sample-data:
+    load-on-startup: false
+    location: classpath:sample-data/*.json
+
+logging:
+  level:
+    root: INFO
+    org.apache.spark: WARN
+    org.sparkproject: WARN
+    org.apache.hadoop: ERROR
+    org.mongodb.driver: WARN
+    org.apache.parquet: WARN

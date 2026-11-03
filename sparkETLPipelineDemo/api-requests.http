@@ -1,0 +1,50 @@
+### Run these from IntelliJ / VS Code (REST Client extension), or copy the URLs into Postman.
+@host = http://localhost:8080
+
+### 1. List all pipelines
+GET {{host}}/api/etl/pipelines
+
+### 2. Example 1 - single collection (payments) - INCREMENTAL, wait for result
+POST {{host}}/api/etl/pipelines/payment-pipeline/run?loadType=INCREMENTAL
+
+### 3. Example 2 - multiple collections - run in background (HTTP 202), then poll step 5
+POST {{host}}/api/etl/pipelines/transaction-pipeline/run?loadType=INCREMENTAL&async=true
+X-Triggered-By: mahesh
+
+### 4. FULL load (truncate fact table, read every document again)
+POST {{host}}/api/etl/pipelines/payment-pipeline/run?loadType=FULL
+
+### 5. Job status + steps
+GET {{host}}/api/etl/jobs/1
+
+### 6. Job history (filters are optional)
+GET {{host}}/api/etl/jobs?pipelineName=payment-pipeline&limit=20
+
+### 7. Only failed jobs
+GET {{host}}/api/etl/jobs?status=FAILED
+
+### 8. Rejected records (filters are optional)
+GET {{host}}/api/etl/rejected-records?pipelineName=payment-pipeline&errorType=CORRUPT
+
+### 9. Rejected records count per pipeline / collection / error type
+GET {{host}}/api/etl/rejected-records/summary
+
+### 10. After fixing documents in MongoDB: re-process only the rejected ones
+POST {{host}}/api/etl/pipelines/payment-pipeline/run?loadType=RETRY_REJECTED
+
+### 11. DEV ONLY - reload sample data into MongoDB and empty all PostgreSQL tables
+POST {{host}}/api/dev/reset?cleanPostgres=true
+
+### 12. Health
+GET {{host}}/actuator/health
+
+### ---------------- DATA INGESTION (sample-data JSON files -> MongoDB) ----------------
+
+### 13. Files that can be ingested
+GET {{host}}/api/ingestion/sample-data/files
+
+### 14. Ingest ALL files (mode = REPLACE | APPEND | SKIP_IF_EXISTS, default REPLACE)
+POST {{host}}/api/ingestion/sample-data?mode=REPLACE
+
+### 15. Ingest ONE file (with or without .json)
+POST {{host}}/api/ingestion/sample-data/payments.json?mode=REPLACE
