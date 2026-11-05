@@ -1,0 +1,1811 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Airflow DAG Builder</title>
+<style>
+/* =====================================================================
+   THEMES
+   ===================================================================== */
+:root{
+  --radius:12px;
+  --font:"Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono:ui-monospace, "Cascadia Code", "JetBrains Mono", Consolas, "Fira Code", monospace;
+  --code-size:13px;
+}
+[data-theme="dark"]{
+  --bg:#0d1117;--panel:#151b26;--panel-2:#1b2230;--input:#0f141d;--text:#e6e9ef;--muted:#8b95a7;--border:#2a3242;
+  --accent:#4f8cff;--accent-2:#8b5cf6;--on-accent:#fff;--ok:#22c55e;--warn:#f59e0b;--danger:#ef4444;--pink:#ec4899;
+  --shadow:0 1px 0 rgba(255,255,255,.03),0 8px 24px rgba(0,0,0,.35);--shadow-sm:0 2px 10px rgba(0,0,0,.25);
+  --code-bg:#0a0e15;--code-text:#d6deeb;--ln:#3b4556;--tip-bg:#05070c;--tip-text:#e6e9ef;
+  --c-kw:#c792ea;--c-str:#c3e88d;--c-com:#6a7a8c;--c-num:#f78c6c;--c-fn:#82aaff;--c-dec:#ffcb6b;--c-bi:#89ddff;--c-cls:#ffcb6b;--c-const:#ff5370;--c-jinja:#f07178;
+}
+[data-theme="light"]{
+  --bg:#f3f5fa;--panel:#ffffff;--panel-2:#f8f9fc;--input:#ffffff;--text:#1d2433;--muted:#5f6b7f;--border:#dde2ec;
+  --accent:#2f6bff;--accent-2:#8a3ffc;--on-accent:#fff;--ok:#16a34a;--warn:#d97706;--danger:#dc2626;--pink:#db2777;
+  --shadow:0 1px 2px rgba(16,24,40,.06),0 6px 18px rgba(16,24,40,.06);--shadow-sm:0 1px 6px rgba(16,24,40,.06);
+  --code-bg:#fbfcfe;--code-text:#24292f;--ln:#b6bfcc;--tip-bg:#1f2937;--tip-text:#f9fafb;
+  --c-kw:#8250df;--c-str:#0a7f3f;--c-com:#6e7781;--c-num:#c4501b;--c-fn:#0550ae;--c-dec:#9a6700;--c-bi:#0969da;--c-cls:#953800;--c-const:#cf222e;--c-jinja:#bf3989;
+}
+[data-theme="midnight"]{
+  --bg:#081021;--panel:#0e1a33;--panel-2:#132242;--input:#0a1530;--text:#e2ecff;--muted:#89a0c8;--border:#1f3561;
+  --accent:#22d3ee;--accent-2:#3b82f6;--on-accent:#04111d;--ok:#34d399;--warn:#fbbf24;--danger:#f87171;--pink:#f472b6;
+  --shadow:0 10px 30px rgba(0,0,0,.45);--shadow-sm:0 2px 10px rgba(0,0,0,.3);
+  --code-bg:#06102a;--code-text:#d7e3ff;--ln:#2c4170;--tip-bg:#020817;--tip-text:#e2ecff;
+  --c-kw:#7dd3fc;--c-str:#a7f3d0;--c-com:#5b7099;--c-num:#fda4af;--c-fn:#93c5fd;--c-dec:#fde68a;--c-bi:#67e8f9;--c-cls:#fcd34d;--c-const:#f9a8d4;--c-jinja:#fb923c;
+}
+[data-theme="forest"]{
+  --bg:#0c1611;--panel:#122019;--panel-2:#172a20;--input:#0e1a14;--text:#e3efe6;--muted:#8fae99;--border:#25402f;
+  --accent:#34d399;--accent-2:#a3e635;--on-accent:#06150d;--ok:#4ade80;--warn:#facc15;--danger:#f87171;--pink:#f472b6;
+  --shadow:0 10px 30px rgba(0,0,0,.4);--shadow-sm:0 2px 10px rgba(0,0,0,.3);
+  --code-bg:#08110c;--code-text:#d9eadf;--ln:#2d4a38;--tip-bg:#040a06;--tip-text:#e3efe6;
+  --c-kw:#86efac;--c-str:#fde68a;--c-com:#5f7d69;--c-num:#fdba74;--c-fn:#5eead4;--c-dec:#d9f99d;--c-bi:#a7f3d0;--c-cls:#fcd34d;--c-const:#fca5a5;--c-jinja:#f9a8d4;
+}
+[data-theme="sunset"]{
+  --bg:#fff6ef;--panel:#ffffff;--panel-2:#fff3e9;--input:#ffffff;--text:#3b2418;--muted:#8a6a58;--border:#f1d6c1;
+  --accent:#f97316;--accent-2:#e11d48;--on-accent:#fff;--ok:#16a34a;--warn:#ca8a04;--danger:#dc2626;--pink:#db2777;
+  --shadow:0 6px 20px rgba(249,115,22,.10);--shadow-sm:0 1px 6px rgba(120,53,15,.08);
+  --code-bg:#fffaf6;--code-text:#3b2418;--ln:#e0bfa7;--tip-bg:#3b2418;--tip-text:#fff6ef;
+  --c-kw:#be185d;--c-str:#15803d;--c-com:#a8836c;--c-num:#c2410c;--c-fn:#1d4ed8;--c-dec:#a16207;--c-bi:#0e7490;--c-cls:#9a3412;--c-const:#b91c1c;--c-jinja:#7c3aed;
+}
+[data-theme="dracula"]{
+  --bg:#1e1f29;--panel:#282a36;--panel-2:#2f3141;--input:#21222c;--text:#f8f8f2;--muted:#a0a4c0;--border:#44475a;
+  --accent:#bd93f9;--accent-2:#ff79c6;--on-accent:#1e1f29;--ok:#50fa7b;--warn:#ffb86c;--danger:#ff5555;--pink:#ff79c6;
+  --shadow:0 10px 30px rgba(0,0,0,.4);--shadow-sm:0 2px 10px rgba(0,0,0,.3);
+  --code-bg:#1b1c25;--code-text:#f8f8f2;--ln:#4b4f66;--tip-bg:#111218;--tip-text:#f8f8f2;
+  --c-kw:#ff79c6;--c-str:#f1fa8c;--c-com:#6272a4;--c-num:#bd93f9;--c-fn:#50fa7b;--c-dec:#ffb86c;--c-bi:#8be9fd;--c-cls:#8be9fd;--c-const:#bd93f9;--c-jinja:#ffb86c;
+}
+[data-theme="contrast"]{
+  --bg:#000;--panel:#0a0a0a;--panel-2:#121212;--input:#000;--text:#fff;--muted:#d4d4d4;--border:#8a8a8a;
+  --accent:#ffde00;--accent-2:#00e5ff;--on-accent:#000;--ok:#00ff7f;--warn:#ffb000;--danger:#ff4d4d;--pink:#ff6ec7;
+  --shadow:none;--shadow-sm:none;
+  --code-bg:#000;--code-text:#fff;--ln:#7a7a7a;--tip-bg:#ffde00;--tip-text:#000;
+  --c-kw:#00e5ff;--c-str:#7CFC00;--c-com:#bdbdbd;--c-num:#ffb000;--c-fn:#ffde00;--c-dec:#ff6ec7;--c-bi:#00e5ff;--c-cls:#ffde00;--c-const:#ff4d4d;--c-jinja:#ff6ec7;
+}
+
+/* =====================================================================
+   BASE
+   ===================================================================== */
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{font:14px/1.45 var(--font);background:var(--bg);color:var(--text);display:flex;flex-direction:column;overflow:hidden;transition:background .2s,color .2s}
+button,input,select,textarea{font:inherit;color:inherit}
+code{font-family:var(--mono);font-size:.92em}
+::selection{background:color-mix(in srgb,var(--accent) 35%,transparent)}
+*::-webkit-scrollbar{width:10px;height:10px}
+*::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--muted) 35%,transparent);border-radius:10px;border:2px solid transparent;background-clip:padding-box}
+*::-webkit-scrollbar-track{background:transparent}
+
+/* ---------- top bar ---------- */
+.topbar{display:flex;align-items:center;gap:10px 14px;flex-wrap:wrap;padding:10px 16px;background:var(--panel);border-bottom:1px solid var(--border);box-shadow:var(--shadow-sm);z-index:5}
+.brand{display:flex;align-items:center;gap:10px;margin-right:auto;min-width:220px}
+.logo{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;background:linear-gradient(135deg,var(--accent),var(--accent-2));color:#fff;font-size:19px;box-shadow:0 6px 16px color-mix(in srgb,var(--accent) 35%,transparent)}
+.brand h1{font-size:16px;margin:0;letter-spacing:.2px}
+.brand small{color:var(--muted);font-size:12px}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.tb-group{display:flex;gap:6px;align-items:center;padding:3px;border:1px solid var(--border);border-radius:11px;background:var(--panel-2)}
+.tb-group select{border:none;background:transparent;padding:6px 6px;max-width:210px}
+.tb-label{font-size:11px;color:var(--muted);padding-left:6px;text-transform:uppercase;letter-spacing:.06em}
+
+.btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border);background:var(--panel-2);padding:7px 12px;border-radius:9px;cursor:pointer;font-weight:500;transition:transform .08s,background .15s,border-color .15s;white-space:nowrap}
+.btn:hover{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 8%,var(--panel-2))}
+.btn:active{transform:translateY(1px)}
+.btn.primary{background:linear-gradient(135deg,var(--accent),var(--accent-2));color:var(--on-accent);border-color:transparent;box-shadow:0 6px 16px color-mix(in srgb,var(--accent) 30%,transparent)}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.ghost{background:transparent}
+.btn.sm{padding:5px 9px;font-size:12.5px}
+.btn.danger:hover{border-color:var(--danger);color:var(--danger)}
+.icon-btn{width:30px;height:30px;padding:0;justify-content:center;border-radius:8px}
+input[type="color"]{width:30px;height:30px;padding:0;border:1px solid var(--border);border-radius:8px;background:none;cursor:pointer;flex:none}
+input[type="color"]::-webkit-color-swatch-wrapper{padding:3px}
+input[type="color"]::-webkit-color-swatch{border:none;border-radius:5px}
+
+/* ---------- workspace layout ---------- */
+#workspace{flex:1;min-height:0;display:grid;padding:12px;gap:0}
+#workspace.layout-side{grid-template-columns:minmax(0,var(--split,52%)) 12px minmax(0,1fr);grid-template-rows:minmax(0,1fr)}
+#workspace.layout-bottom{grid-template-rows:minmax(0,var(--splitV,55%)) 12px minmax(0,1fr);grid-template-columns:minmax(0,1fr)}
+#workspace.layout-config,#workspace.layout-preview{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr)}
+.layout-config #splitter,.layout-config #previewPane{display:none!important}
+.layout-preview #splitter,.layout-preview #configPane{display:none!important}
+#workspace.swap.layout-side #configPane{order:3}
+#workspace.swap.layout-side #previewPane{order:1}
+#workspace.swap.layout-side #splitter{order:2}
+#workspace.swap.layout-bottom #configPane{order:3}
+#workspace.swap.layout-bottom #previewPane{order:1}
+#workspace.swap.layout-bottom #splitter{order:2}
+
+.pane{min-height:0;min-width:0}
+#configPane{overflow:auto;padding-right:4px;scroll-behavior:smooth}
+#previewPane{display:flex;flex-direction:column;overflow:hidden;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow)}
+.splitter{position:relative;cursor:col-resize;touch-action:none}
+.splitter::after{content:"";position:absolute;inset:0;margin:auto;width:4px;height:48px;border-radius:4px;background:var(--border);transition:background .15s}
+.layout-bottom .splitter{cursor:row-resize}
+.layout-bottom .splitter::after{width:48px;height:4px}
+.splitter:hover::after,.splitter.dragging::after{background:var(--accent)}
+
+/* ---------- cards / sections ---------- */
+.card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:12px;box-shadow:var(--shadow-sm)}
+.sec-head{display:flex;align-items:center;gap:10px;padding:12px 14px;cursor:pointer;user-select:none;border-radius:var(--radius)}
+.sec-head:hover{background:color-mix(in srgb,var(--accent) 5%,transparent)}
+.sec-ico{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;background:color-mix(in srgb,var(--accent) 15%,transparent);color:var(--accent);font-size:15px;flex:none}
+.sec-head h2{font-size:14.5px;margin:0;font-weight:650}
+.sec-sub{color:var(--muted);font-size:12.5px;margin-left:auto;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:55%}
+.chev{color:var(--muted);transition:transform .2s;flex:none}
+.open>.sec-head .chev,.task-card.open>.task-head .chev{transform:rotate(90deg)}
+.sec-body{padding:4px 14px 16px;display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px 14px}
+.card:not(.open) .sec-body{display:none}
+
+/* ---------- fields ---------- */
+.field{display:flex;flex-direction:column;gap:5px;min-width:0}
+.field.wide{grid-column:1/-1}
+.flabel{font-size:12.5px;font-weight:600;color:var(--muted);display:flex;align-items:center;gap:4px;cursor:default;width:fit-content}
+.flabel[data-tip]{cursor:help}
+.info{display:inline-grid;place-items:center;width:15px;height:15px;border-radius:50%;font-size:10px;font-weight:800;font-style:normal;background:color-mix(in srgb,var(--accent) 18%,transparent);color:var(--accent);flex:none}
+.help{font-size:11.5px;color:var(--muted);line-height:1.45;background:color-mix(in srgb,var(--accent) 6%,transparent);border-left:2px solid color-mix(in srgb,var(--accent) 50%,transparent);padding:5px 8px;border-radius:0 6px 6px 0}
+.help code,.op-info code{background:color-mix(in srgb,var(--muted) 16%,transparent);padding:0 4px;border-radius:4px}
+input[type="text"],input[type="number"],input[type="date"],input[type="email"],select,textarea{width:100%;background:var(--input);border:1px solid var(--border);border-radius:8px;padding:8px 10px;outline:none;transition:border-color .15s,box-shadow .15s}
+input:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 22%,transparent)}
+select{cursor:pointer}
+select option,select optgroup{background:var(--panel);color:var(--text)}
+textarea{resize:vertical;min-height:38px;max-height:420px}
+textarea.code-in{font-family:var(--mono);font-size:12.5px;line-height:1.5;tab-size:4;white-space:pre;overflow:auto}
+input[type="date"]{color-scheme:light dark}
+.inline{display:flex;gap:8px;align-items:center}
+.cron-help{font-size:12px;color:var(--accent);padding:2px 2px}
+
+/* segmented radio */
+.seg{display:inline-flex;flex-wrap:wrap;background:var(--input);border:1px solid var(--border);border-radius:10px;padding:3px;gap:3px;width:fit-content;max-width:100%}
+.seg label{position:relative}
+.seg input{position:absolute;opacity:0;pointer-events:none}
+.seg span{display:block;padding:5px 11px;border-radius:7px;cursor:pointer;color:var(--muted);font-weight:550;font-size:12.5px;transition:background .15s,color .15s}
+.seg span:hover{color:var(--text)}
+.seg input:checked+span{background:var(--accent);color:var(--on-accent);box-shadow:0 2px 8px color-mix(in srgb,var(--accent) 35%,transparent)}
+.seg input:focus-visible+span{outline:2px solid var(--accent);outline-offset:1px}
+
+/* toggle switch */
+.switch{position:relative;display:inline-flex;align-items:center;gap:9px;cursor:pointer;user-select:none;padding:5px 0}
+.switch input{position:absolute;opacity:0;width:1px;height:1px}
+.slider{width:40px;height:22px;border-radius:22px;background:var(--border);position:relative;transition:background .2s;flex:none}
+.slider::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.35);transition:transform .2s}
+.switch input:checked+.slider{background:var(--accent)}
+.switch input:checked+.slider::after{transform:translateX(18px)}
+.switch input:focus-visible+.slider{outline:2px solid var(--accent);outline-offset:2px}
+.sw-text{font-size:12.5px;color:var(--muted)}
+
+/* chips (multi select) */
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{position:relative}
+.chip input{position:absolute;opacity:0;pointer-events:none}
+.chip span{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:999px;border:1px solid var(--border);background:var(--input);cursor:pointer;font-size:12.5px;color:var(--muted);transition:all .15s}
+.chip span::before{content:"+";font-weight:700}
+.chip input:checked+span{background:color-mix(in srgb,var(--accent) 18%,transparent);border-color:var(--accent);color:var(--text)}
+.chip input:checked+span::before{content:"✓";color:var(--accent)}
+.chip input:focus-visible+span{outline:2px solid var(--accent)}
+.empty-note{font-size:12.5px;color:var(--muted);font-style:italic}
+
+/* ---------- params ---------- */
+.param-row{grid-column:1/-1;display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;padding:12px;border:1px solid var(--border);border-radius:10px;background:var(--panel-2);position:relative}
+.param-row .del{position:absolute;top:8px;right:8px}
+
+/* ---------- tasks ---------- */
+.add-bar{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px;border:1px dashed var(--border);border-radius:10px;background:color-mix(in srgb,var(--accent) 4%,transparent)}
+.add-bar select{width:auto;min-width:220px;flex:1}
+.quick{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.quick .lbl{font-size:12px;color:var(--muted);margin-right:4px}
+.task-list{grid-column:1/-1;display:flex;flex-direction:column;gap:10px}
+.task-card{--cat:var(--accent);border:1px solid var(--border);border-left:4px solid var(--cat);border-radius:10px;background:var(--panel-2);transition:box-shadow .2s}
+.task-card.flash{box-shadow:0 0 0 3px color-mix(in srgb,var(--cat) 55%,transparent)}
+.cat-compute{--cat:var(--accent)}
+.cat-sensor{--cat:var(--warn)}
+.cat-control{--cat:var(--muted)}
+.cat-branch{--cat:var(--pink)}
+.cat-trigger{--cat:var(--accent-2)}
+.task-head{display:flex;align-items:center;gap:8px;padding:9px 10px 9px 12px;cursor:pointer;user-select:none;flex-wrap:wrap}
+.task-head b{font-family:var(--mono);font-size:13px;word-break:break-all}
+.badge{font-size:11px;padding:2px 8px;border-radius:20px;background:color-mix(in srgb,var(--cat) 18%,transparent);color:var(--cat);font-weight:700;letter-spacing:.02em;white-space:nowrap}
+.badge.role{--cat:var(--ok)}
+.badge.map{--cat:var(--accent-2)}
+.task-meta{font-size:12px;color:var(--muted)}
+.task-actions{margin-left:auto;display:flex;gap:4px}
+.task-body{padding:2px 12px 14px;display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
+.task-card:not(.open) .task-body{display:none}
+.op-info{grid-column:1/-1;background:color-mix(in srgb,var(--cat) 9%,transparent);border:1px dashed color-mix(in srgb,var(--cat) 45%,transparent);border-radius:8px;padding:8px 11px;font-size:12.5px;line-height:1.5}
+.op-info .pip{display:block;margin-top:3px;color:var(--muted)}
+.subhead{grid-column:1/-1;font-size:11.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);border-top:1px solid var(--border);padding-top:10px;display:flex;align-items:center;gap:8px;font-weight:700}
+.subhead.click{cursor:pointer}
+.subhead.click:hover{color:var(--accent)}
+.hint{grid-column:1/-1;font-size:12px;color:var(--muted)}
+.hint code{background:color-mix(in srgb,var(--muted) 16%,transparent);padding:1px 5px;border-radius:4px}
+
+/* ---------- preview ---------- */
+.preview-head{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid var(--border);flex-wrap:wrap;background:var(--panel)}
+.tabs{display:flex;gap:2px;background:var(--input);padding:3px;border-radius:10px;border:1px solid var(--border)}
+.tab{border:none;background:transparent;padding:5px 12px;border-radius:7px;cursor:pointer;color:var(--muted);font-weight:600;font-size:12.5px}
+.tab.active{background:var(--panel-2);color:var(--text);box-shadow:var(--shadow-sm)}
+.preview-actions{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap}
+.status-pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;padding:4px 10px;border-radius:999px;cursor:pointer;border:1px solid transparent}
+.status-pill.ok{background:color-mix(in srgb,var(--ok) 15%,transparent);color:var(--ok)}
+.status-pill.warn{background:color-mix(in srgb,var(--warn) 15%,transparent);color:var(--warn)}
+.status-pill.error{background:color-mix(in srgb,var(--danger) 15%,transparent);color:var(--danger)}
+#issues{max-height:32%;overflow:auto;border-bottom:1px solid var(--border);padding:6px 12px;font-size:12.5px;background:var(--panel-2)}
+#issues[hidden]{display:none}
+.issue{display:flex;gap:8px;padding:4px 0;align-items:flex-start}
+.issue .lv{font-weight:700;font-size:10.5px;padding:1px 6px;border-radius:5px;text-transform:uppercase;flex:none;margin-top:1px}
+.issue.lv-error .lv{background:var(--danger);color:#fff}
+.issue.lv-warn .lv{background:var(--warn);color:#111}
+.issue.lv-info .lv{background:var(--accent);color:var(--on-accent)}
+.preview-body{flex:1;min-height:0;overflow:auto;background:var(--code-bg);position:relative}
+pre.code{margin:0;padding:12px 0 24px;font:var(--code-size)/1.6 var(--mono);color:var(--code-text);counter-reset:l;white-space:pre;min-width:fit-content;font-variant-ligatures:none}
+pre.code .ln{display:grid;grid-template-columns:4.2em 1fr;padding-right:16px}
+pre.code .ln::before{content:counter(l);counter-increment:l;color:var(--ln);text-align:right;padding-right:1.2em;user-select:none}
+pre.code .ln:hover{background:color-mix(in srgb,var(--accent) 6%,transparent)}
+.wrap pre.code{white-space:pre-wrap;min-width:0}
+.wrap pre.code .lc{word-break:break-word}
+.t-kw{color:var(--c-kw);font-weight:600}.t-str{color:var(--c-str)}.t-com{color:var(--c-com);font-style:italic}.t-num{color:var(--c-num)}
+.t-fn{color:var(--c-fn)}.t-fn-def{color:var(--c-fn);font-weight:700}.t-dec{color:var(--c-dec)}.t-bi{color:var(--c-bi)}.t-cls{color:var(--c-cls)}.t-const{color:var(--c-const);font-weight:600}.t-jinja{color:var(--c-jinja);font-weight:600}
+.json-key{color:var(--c-fn)}.json-str{color:var(--c-str)}.json-num{color:var(--c-num)}.json-bool{color:var(--c-const)}
+.status-bar{display:flex;gap:14px;padding:6px 12px;border-top:1px solid var(--border);font-size:11.5px;color:var(--muted);flex-wrap:wrap;background:var(--panel)}
+.status-bar b{color:var(--text);font-weight:600}
+
+/* graph */
+#graphView{padding:16px;min-height:100%}
+#graphView svg{display:block}
+.gedge{fill:none;stroke:var(--muted);stroke-width:1.6;opacity:.75}
+.gedge.dash{stroke-dasharray:5 4;stroke:var(--ok)}
+.gedge.auto{stroke-dasharray:2 4;stroke:var(--accent-2)}
+.gnode{cursor:pointer}
+.gnode rect.box{fill:var(--panel-2);stroke:var(--cat);stroke-width:1.6;transition:stroke-width .15s}
+.gnode:hover rect.box{stroke-width:3}
+.gnode rect.bar{fill:var(--cat)}
+.gnode text{fill:var(--text);font-family:var(--mono);font-size:12px}
+.gnode text.sub{fill:var(--muted);font-family:var(--font);font-size:10.5px}
+.legend{display:flex;flex-wrap:wrap;gap:12px;margin-top:14px;font-size:12px;color:var(--muted)}
+.legend i{display:inline-block;width:12px;height:12px;border-radius:3px;background:var(--cat);margin-right:5px;vertical-align:-2px}
+.empty{color:var(--muted);text-align:center;padding:60px 20px}
+
+/* tooltip & toast */
+#tip{position:fixed;z-index:1000;max-width:360px;padding:10px 12px;border-radius:10px;background:var(--tip-bg);color:var(--tip-text);font-size:12.5px;line-height:1.55;box-shadow:0 12px 32px rgba(0,0,0,.35);border:1px solid color-mix(in srgb,var(--tip-text) 12%,transparent);pointer-events:none;opacity:0;transform:translateY(4px);transition:opacity .12s,transform .12s;left:0;top:0}
+#tip.show{opacity:1;transform:none}
+#tip code{background:color-mix(in srgb,var(--tip-text) 14%,transparent);padding:0 4px;border-radius:4px}
+#tip b{color:var(--accent)}
+#toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(20px);opacity:0;pointer-events:none;background:var(--tip-bg);color:var(--tip-text);padding:10px 14px;border-radius:10px;box-shadow:0 12px 32px rgba(0,0,0,.35);display:flex;gap:12px;align-items:center;z-index:1001;transition:all .2s;font-size:13px}
+#toast.show{opacity:1;transform:translateX(-50%);pointer-events:auto}
+#toast button{background:var(--accent);color:var(--on-accent);border:none;border-radius:7px;padding:4px 10px;cursor:pointer;font-weight:600}
+.fab{display:none}
+
+/* ---------- responsive ---------- */
+@media (max-width: 1560px){
+  .btn .lbl-hide{display:none}
+}
+@media (max-width: 900px){
+  body{overflow:auto;height:auto;min-height:100%}
+  #workspace,#workspace.layout-side,#workspace.layout-bottom{display:flex;flex-direction:column;padding:8px;gap:12px}
+  #workspace.swap #previewPane{order:-1}
+  .splitter{display:none!important}
+  #configPane{overflow:visible;padding-right:0}
+  #previewPane{height:78vh;flex:none}
+  .layout-preview #previewPane{height:calc(100vh - 140px)}
+  .sec-sub{display:none}
+  .sec-head .chev{margin-left:auto}
+  .brand{min-width:0}
+  .fab{display:grid;place-items:center;position:fixed;right:16px;bottom:16px;width:50px;height:50px;border-radius:50%;border:none;background:linear-gradient(135deg,var(--accent),var(--accent-2));color:var(--on-accent);font-size:20px;box-shadow:0 10px 24px rgba(0,0,0,.35);cursor:pointer;z-index:50}
+  .layout-config .fab,.layout-preview .fab{display:none}
+}
+@media (max-width: 560px){
+  .topbar{padding:8px 10px}
+  .toolbar{width:100%}
+  .tb-group{flex:1 1 auto}
+  .tb-group select{max-width:none;flex:1}
+  .sec-body,.task-body{grid-template-columns:1fr}
+}
+@media (prefers-reduced-motion: reduce){*{transition:none!important;scroll-behavior:auto!important}}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <div class="logo" aria-hidden="true">✦</div>
+    <div>
+      <h1>Airflow DAG Builder</h1>
+      <small>Configure → Preview → Download <code>.py</code></small>
+    </div>
+  </div>
+
+  <div class="toolbar">
+    <div class="tb-group" data-tip="**Templates** – start from a ready-made pipeline and then change anything you like. Loading a template replaces the current config (you can Undo).">
+      <span class="tb-label">Template</span>
+      <select id="templateSel" aria-label="Template"></select>
+      <button class="btn sm" id="loadTplBtn">Load</button>
+    </div>
+
+    <div class="seg" id="layoutSeg" role="radiogroup" aria-label="Layout" data-tip="**Layout** – put the preview beside or below the configuration, or show only one of them. Drag the divider to resize.">
+      <label><input type="radio" name="layout" value="side"><span>◧ Side</span></label>
+      <label><input type="radio" name="layout" value="bottom"><span>⬓ Bottom</span></label>
+      <label><input type="radio" name="layout" value="config"><span>☰ Config</span></label>
+      <label><input type="radio" name="layout" value="preview"><span>&lt;/&gt; Code</span></label>
+    </div>
+    <button class="btn icon-btn" id="swapBtn" data-tip="Swap positions of the configuration and the preview panes.">⇄</button>
+
+    <div class="tb-group" data-tip="**Theme** – change the colours of the whole tool. The colour picker overrides the accent colour.">
+      <span class="tb-label">Theme</span>
+      <select id="themeSel" aria-label="Theme">
+        <option value="dark">🌙 Dark</option>
+        <option value="light">☀️ Light</option>
+        <option value="midnight">🌌 Midnight</option>
+        <option value="forest">🌲 Forest</option>
+        <option value="sunset">🌅 Sunset</option>
+        <option value="dracula">🧛 Dracula</option>
+        <option value="contrast">◐ High contrast</option>
+      </select>
+      <input type="color" id="accentPick" aria-label="Accent colour">
+    </div>
+
+    <label class="switch" data-tip="**Inline help** – show the explanation of every field directly below it (instead of only on hover).">
+      <input type="checkbox" id="inlineHelp"><span class="slider"></span><span class="sw-text">Inline help</span>
+    </label>
+
+    <button class="btn" id="importBtn" data-tip="Import a configuration you exported before (<code>.json</code>).">⤒ <span class="lbl-hide">Import</span></button>
+    <input type="file" id="importFile" accept=".json,application/json" hidden>
+    <button class="btn" id="exportBtn" data-tip="Export the current configuration as <code>.json</code> so you can reuse it or share it with your team.">⤓ <span class="lbl-hide">Export</span></button>
+    <button class="btn danger" id="resetBtn" data-tip="Clear everything and start from the blank template (you can Undo).">↺ <span class="lbl-hide">Reset</span></button>
+    <button class="btn primary" id="downloadBtn" data-tip="Download the generated DAG as a <code>.py</code> file named after the DAG id. Shortcut: <code>Ctrl + S</code>">⬇ Download .py</button>
+  </div>
+</header>
+
+<main id="workspace" class="layout-side">
+  <section id="configPane" class="pane" aria-label="Configuration">
+    <div id="configRoot"></div>
+  </section>
+
+  <div id="splitter" class="splitter" role="separator" aria-label="Resize panes" tabindex="0"></div>
+
+  <section id="previewPane" class="pane" aria-label="Preview">
+    <div class="preview-head">
+      <div class="tabs" role="tablist">
+        <button class="tab active" data-tab="code" data-tip="The generated Python DAG file, with syntax highlighting.">Code</button>
+        <button class="tab" data-tab="graph" data-tip="Visual dependency graph. Click a task to jump to its settings.">Graph</button>
+        <button class="tab" data-tab="json" data-tip="The raw configuration (what Export saves).">Config JSON</button>
+      </div>
+      <span id="statusPill" class="status-pill ok" data-tip="Validation result. Click to show / hide the details.">✓ OK</span>
+      <div class="preview-actions">
+        <button class="btn sm icon-btn" id="fontDown" data-tip="Smaller code font">A−</button>
+        <button class="btn sm icon-btn" id="fontUp" data-tip="Bigger code font">A+</button>
+        <button class="btn sm" id="wrapBtn" data-tip="Wrap long lines">↩ Wrap</button>
+        <button class="btn sm" id="copyBtn" data-tip="Copy the whole file to the clipboard">⧉ Copy</button>
+      </div>
+    </div>
+    <div id="issues" hidden></div>
+    <div class="preview-body" id="previewBody">
+      <pre class="code" id="codeView"></pre>
+      <div id="graphView" hidden></div>
+      <pre class="code" id="jsonView" hidden></pre>
+    </div>
+    <div class="status-bar" id="statusBar"></div>
+  </section>
+  <button class="fab" id="fab" aria-label="Jump to preview" data-tip="Jump to preview">&lt;/&gt;</button>
+</main>
+
+<div id="tip" role="tooltip"></div>
+<div id="toast" role="status"><span id="toastMsg"></span><button id="toastAction" hidden>Undo</button></div>
+
+<script>
+'use strict';
+/* =====================================================================
+   UTILITIES
+   ===================================================================== */
+const $  = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const clone = o => JSON.parse(JSON.stringify(o));
+const getPath = (o, p) => p.split('.').reduce((a, k) => (a == null ? undefined : a[k]), o);
+function setPath(o, p, v){ const ks = p.split('.'); let cur = o; for (let i = 0; i < ks.length - 1; i++){ if (cur[ks[i]] == null) cur[ks[i]] = {}; cur = cur[ks[i]]; } cur[ks[ks.length - 1]] = v; }
+let uidSeed = Date.now();
+const newUid = () => 't' + (uidSeed++).toString(36);
+const num = (v, d = 0) => (v === '' || v == null || isNaN(+v)) ? d : +v;
+const isBlank = v => v === '' || v == null;
+function fmtTip(t){
+  return esc(t).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>')
+    .replace(/&lt;code&gt;/g,'<code>').replace(/&lt;\/code&gt;/g,'</code>');
+}
+
+/* ---------- Python literal helpers ---------- */
+function pyStr(s){
+  s = String(s ?? '');
+  if (s.includes('\n')){
+    let body = s.replace(/\\/g, '\\\\').replace(/"""/g, '\\"\\"\\"');
+    if (body.endsWith('"')) body = body.slice(0, -1) + '\\"';
+    return '"""' + body + '"""';
+  }
+  return JSON.stringify(s);
+}
+function pyVal(v){
+  if (v === null || v === undefined) return 'None';
+  if (typeof v === 'boolean') return v ? 'True' : 'False';
+  if (typeof v === 'number') return String(v);
+  if (typeof v === 'string') return pyStr(v);
+  if (Array.isArray(v)) return '[' + v.map(pyVal).join(', ') + ']';
+  return '{' + Object.entries(v).map(([k, x]) => `${pyStr(k)}: ${pyVal(x)}`).join(', ') + '}';
+}
+const PY_KW = new Set('False None True and as assert async await break class continue def del elif else except finally for from global if import in is lambda nonlocal not or pass raise return try while with yield match case'.split(' '));
+const RESERVED = new Set(['task','dag','DAG','Param','TaskGroup','Variable','Asset','Dataset','pendulum','timedelta','log','logging','default_args','annotations','chain','context',
+  'EmptyOperator','BashOperator','PythonOperator','LatestOnlyOperator','TriggerDagRunOperator','FileSensor','ExternalTaskSensor','EmailOperator','SparkSubmitOperator',
+  'SQLExecuteQueryOperator','HttpOperator','DockerOperator','KubernetesPodOperator','_notify','_get_variable','on_task_failure','on_task_retry','on_task_success','on_dag_failure','on_dag_success']);
+function ident(s){
+  let r = String(s || 'task').replace(/[^A-Za-z0-9_]/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '');
+  if (!r) r = 'task';
+  if (/^[0-9]/.test(r)) r = 't_' + r;
+  if (PY_KW.has(r)) r += '_';
+  return r;
+}
+function dedent(code){
+  const lines = String(code ?? '').replace(/\t/g, '    ').split('\n');
+  while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+  while (lines.length && !lines[0].trim()) lines.shift();
+  const ind = Math.min(...lines.filter(l => l.trim()).map(l => l.match(/^ */)[0].length), 99);
+  return lines.map(l => l.slice(Math.min(ind, l.match(/^ */)[0].length)));
+}
+const indentLines = (code, I) => { const ls = dedent(code); return ls.length ? ls.map(l => l.trim() ? I + l : '') : [I + 'pass']; };
+function td(sec){
+  sec = num(sec, 0);
+  if (sec && sec % 86400 === 0) return `timedelta(days=${sec / 86400})`;
+  if (sec && sec % 3600 === 0) return `timedelta(hours=${sec / 3600})`;
+  if (sec && sec % 60 === 0) return `timedelta(minutes=${sec / 60})`;
+  return `timedelta(seconds=${sec})`;
+}
+function parseKV(text){
+  return String(text || '').split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#')).map(l => {
+    const i = l.indexOf('='); return i < 0 ? [l, ''] : [l.slice(0, i).trim(), l.slice(i + 1).trim()];
+  }).filter(([k]) => k);
+}
+const kvDict = text => '{' + parseKV(text).map(([k, v]) => `${pyStr(k)}: ${pyStr(v)}`).join(', ') + '}';
+function parseArgs(text){
+  // keeps Jinja like {{ ds }} together as one argument
+  const out = []; const re = /"([^"]*)"|'([^']*)'|((?:\{\{[\s\S]*?\}\}|[^\s"'])+)/g; let m;
+  while ((m = re.exec(String(text || '')))) out.push(m[1] ?? m[2] ?? m[3]);
+  return out;
+}
+function parseList(text){
+  const t = String(text || '');
+  return (t.includes('\n') ? t.split('\n') : t.split(',')).map(x => x.trim()).filter(Boolean);
+}
+function smartVal(x){
+  if (/^-?\d+(\.\d+)?$/.test(x)) return +x;
+  if (x === 'True' || x === 'true') return true;
+  if (x === 'False' || x === 'false') return false;
+  return x.replace(/^["']|["']$/g, '');
+}
+function callExpr(name, args, I){
+  const one = `${name}(${args.join(', ')})`;
+  if (one.length + I.length <= 92 && !args.some(a => a.includes('\n'))) return one;
+  return `${name}(\n` + args.map(a => `${I}    ${a},`).join('\n') + `\n${I})`;
+}
+
+/* =====================================================================
+   OPERATOR CATALOG
+   ===================================================================== */
+const SENSOR_FIELDS = [
+  {k:'poke_interval', type:'number', label:'Poke interval (sec)', def:60, min:1, tip:'How often (in seconds) the sensor checks its condition.'},
+  {k:'timeout', type:'number', label:'Timeout (sec)', def:3600, min:1, tip:'Give up after this many seconds. The task then **fails** – or is **skipped** if Soft fail is on.'},
+  {k:'mode', type:'radio', label:'Mode', def:'reschedule', options:[['poke','poke'],['reschedule','reschedule']], tip:'`poke` keeps a worker slot busy the whole time (good for very short waits).\n`reschedule` frees the worker slot between checks (best for long waits).'},
+  {k:'soft_fail', type:'toggle', label:'Soft fail (skip on timeout)', def:false, tip:'If on, a timeout marks the task **skipped** instead of failed, so the DAG does not go red.'},
+];
+const sensorKw = c => {
+  const a = [['poke_interval', num(c.poke_interval, 60)], ['timeout', num(c.timeout, 3600)], ['mode', pyStr(c.mode || 'reschedule')]];
+  if (c.soft_fail) a.push(['soft_fail', 'True']);
+  return a;
+};
+
+const OPS = {
+  empty: {label:'EmptyOperator', short:'Empty', cat:'control', imp:'EmptyOperator',
+    desc:'Does nothing. Use it as a <b>start / end</b> marker or as a <b>join</b> point after branches.', fields:[], kw:() => []},
+  latest_only: {label:'LatestOnlyOperator', short:'LatestOnly', cat:'control', imp:'LatestOnlyOperator',
+    desc:'Skips everything downstream unless this is the <b>latest</b> scheduled run. Useful so that backfills / catchup runs do not send reports or e-mails.', fields:[], kw:() => []},
+  python: {label:'@task – TaskFlow Python', short:'Python', cat:'compute', deco:'task', mappable:true,
+    desc:'Runs a Python function. The return value is stored in <b>XCom</b> automatically. Inside the body you get <code>context</code> (e.g. <code>context["ds"]</code>, <code>context["params"]</code>, <code>context["ti"]</code>).',
+    fields:[
+      {k:'code', type:'py', label:'Function body (Python)', wide:true, rows:6, def:'log.info("Running for %s", context["ds"])\nreturn "done"', tip:'Write only the **body** of the function – the `def ...(**context):` line is generated for you.\nUse `context["ti"].xcom_pull(task_ids="other_task")` to read another task\'s result.\n`log` is a ready-to-use logger.'},
+      {k:'multiple_outputs', type:'toggle', label:'multiple_outputs', def:false, tip:'If the function returns a **dict**, store every key as a separate XCom (e.g. `xcom_pull(task_ids="x", key="rows")`).'},
+    ]},
+  python_classic: {label:'PythonOperator (classic)', short:'PyOp', cat:'compute', imp:'PythonOperator',
+    desc:'The classic way to run Python. A module-level function <code>&lt;task&gt;_callable(**context)</code> is generated and passed as <code>python_callable</code>.',
+    fields:[
+      {k:'code', type:'py', label:'Callable body (Python)', wide:true, rows:5, def:'log.info("op_kwargs + context keys: %s", sorted(context))\nreturn "done"', tip:'Body of the python callable. Values from **op_kwargs** arrive in `context` too (e.g. `context["run_date"]`).'},
+      {k:'op_kwargs', type:'kv', label:'op_kwargs (KEY=value per line)', wide:true, rows:2, def:'run_date={{ ds }}', tip:'Keyword arguments passed to the callable. One per line as `KEY=value`. Values are **Jinja templated**, e.g. `run_date={{ ds }}`.'},
+    ],
+    kw:(c, g, t, fn) => {
+      g.callables.push(`def ${fn}_callable(**context):`, ...indentLines(c.code, '    '), '', '');
+      const a = [['python_callable', `${fn}_callable`]];
+      if (parseKV(c.op_kwargs).length) a.push(['op_kwargs', kvDict(c.op_kwargs)]);
+      return a;
+    }},
+  bash: {label:'BashOperator', short:'Bash', cat:'compute', imp:'BashOperator', mappable:true,
+    desc:'Runs a shell command or script on the worker. Supports Jinja like <code>{{ ds }}</code>, <code>{{ params.env }}</code>, <code>{{ macros.ds_add(ds, -1) }}</code>.',
+    fields:[
+      {k:'bash_command', type:'code', label:'Bash command', wide:true, rows:3, def:'echo "Run date: {{ ds }}"', tip:'Any shell command. Multi-line is allowed.\nTip: a command ending in `.sh` is treated as a template file – the builder adds a trailing space automatically to avoid that.'},
+      {k:'env', type:'kv', label:'Environment variables (KEY=value)', wide:true, rows:2, def:'', tip:'Extra environment variables, one per line: `KEY=value`. Values can use Jinja.'},
+      {k:'append_env', type:'toggle', label:'Keep worker env (append_env)', def:true, tip:'When env vars are set, also keep the worker\'s existing environment (PATH, JAVA_HOME …). Usually you want this **on**.'},
+      {k:'cwd', type:'text', label:'Working directory (cwd)', def:'', ph:'/opt/project', tip:'Directory in which the command runs. Empty = a temporary directory.'},
+    ],
+    kw:(c, g, t) => {
+      let cmd = String(c.bash_command || 'echo "hello"');
+      if (/\.(sh|bash)\s*$/.test(cmd) && !cmd.endsWith(' ')) cmd += ' ';
+      const a = [['bash_command', pyStr(cmd)]];
+      if (parseKV(c.env).length){ a.push(['env', kvDict(c.env)]); if (c.append_env) a.push(['append_env', 'True']); }
+      if (c.cwd) a.push(['cwd', pyStr(c.cwd)]);
+      return a;
+    }},
+  branch: {label:'@task.branch – Branch', short:'Branch', cat:'branch', deco:'task.branch',
+    desc:'Decides at runtime <b>which downstream task(s) to run</b>. All other direct downstream tasks are <b>skipped</b>. Remember to give the join task the trigger rule <code>none_failed_min_one_success</code>.',
+    fields:[
+      {k:'mode', type:'radio', label:'Decide by', def:'param', wide:true, options:[['param','Param value (no code)'],['custom','Custom Python code']], tip:'**Param value** – route by the value of a DAG Param (e.g. `env`). No code needed.\n**Custom code** – write your own Python that returns a task_id or a list of task_ids.'},
+      {k:'param_name', type:'text', label:'Param name', def:'env', show:c => c.mode === 'param', tip:'Name of a DAG Param (see the **Params** section). Its value is read with `context["params"]["<name>"]`.'},
+      {k:'default_target', type:'select', label:'Default target', def:'', show:c => c.mode === 'param', options:'downstream', tip:'Task used when the value matches no rule. Empty = the first downstream task.'},
+      {k:'rules', type:'code', label:'Rules (value => task_id[, task_id])', wide:true, rows:3, def:'dev => load_dev\nprod => load_prod', show:c => c.mode === 'param', tip:'One rule per line: `value => task_id`. Several targets: `qa => load_dev, load_prod`.\nTask ids inside a TaskGroup can be written with or without the group prefix.'},
+      {k:'code', type:'py', label:'Function body (return task_id / list)', wide:true, rows:6, def:'if context["params"].get("env") == "prod":\n    return "load_prod"\nreturn "load_dev"', show:c => c.mode === 'custom', tip:'Must **return** the task_id (string) or a list of task_ids to follow. Use the full id (`group.task`) for tasks inside a TaskGroup.'},
+    ]},
+  short_circuit: {label:'@task.short_circuit', short:'ShortCircuit', cat:'branch', deco:'task.short_circuit',
+    desc:'If the function returns a <b>falsy</b> value, downstream tasks are <b>skipped</b>. Great for "only continue if there is new data".',
+    fields:[
+      {k:'code', type:'py', label:'Condition (return True / False)', wide:true, rows:4, def:'# return False to skip everything downstream\nreturn True', tip:'Return `True` to continue, `False` to skip downstream tasks.'},
+      {k:'ignore_downstream_trigger_rules', type:'toggle', label:'Skip ALL downstream', def:true, tip:'**On** (default): skip every downstream task, ignoring their trigger rules.\n**Off**: only the direct downstream tasks are skipped; tasks further down still respect their own trigger rules (e.g. a cleanup with `all_done` still runs).'},
+    ]},
+  sensor_python: {label:'@task.sensor – Python sensor', short:'Sensor', cat:'sensor', deco:'task.sensor',
+    desc:'Waits until your Python condition returns <b>True</b>. Checks again every <i>poke interval</i> until <i>timeout</i>.',
+    fields:[
+      {k:'code', type:'py', label:'Condition (return True when ready)', wide:true, rows:4, def:'import os\n\nreturn os.path.exists("/tmp/ready.flag")', tip:'Return `True` when the condition is met (the sensor succeeds), `False` to check again later.'},
+      ...SENSOR_FIELDS,
+    ]},
+  file_sensor: {label:'FileSensor', short:'FileSensor', cat:'sensor', imp:'FileSensor',
+    desc:'Waits until a file or folder exists on the worker\'s filesystem (or a mounted volume).',
+    fields:[
+      {k:'filepath', type:'text', label:'File path', def:'/data/input/{{ ds }}/_SUCCESS', wide:true, tip:'Path to wait for. Supports Jinja (e.g. `{{ ds }}`) and glob patterns (`*.csv`). Relative paths are joined to the connection\'s base path.'},
+      {k:'fs_conn_id', type:'text', label:'Filesystem connection', def:'fs_default', tip:'Connection of type **File (path)**. `fs_default` exists by default.'},
+      ...SENSOR_FIELDS,
+    ],
+    kw:c => [['filepath', pyStr(c.filepath)], ['fs_conn_id', pyStr(c.fs_conn_id || 'fs_default')], ...sensorKw(c)]},
+  external_sensor: {label:'ExternalTaskSensor', short:'ExtSensor', cat:'sensor', imp:'ExternalTaskSensor',
+    desc:'Waits for a task (or a whole DAG run) in <b>another DAG</b> to finish successfully for the same logical date.',
+    fields:[
+      {k:'external_dag_id', type:'text', label:'External DAG id', def:'upstream_dag', tip:'The DAG to wait for.'},
+      {k:'external_task_id', type:'text', label:'External task id', def:'', ph:'(empty = whole DAG run)', tip:'Task inside that DAG. Leave empty to wait for the **whole DAG run** to succeed.'},
+      {k:'execution_delta', type:'number', label:'Time offset (minutes)', def:'', ph:'0', tip:'If the other DAG runs at a different time, the difference in minutes (positive = the other DAG runs **earlier**). Empty = same logical date.'},
+      ...SENSOR_FIELDS,
+    ],
+    kw:c => {
+      const a = [['external_dag_id', pyStr(c.external_dag_id)], ['external_task_id', c.external_task_id ? pyStr(c.external_task_id) : 'None']];
+      if (!isBlank(c.execution_delta) && num(c.execution_delta)) a.push(['execution_delta', `timedelta(minutes=${num(c.execution_delta)})`]);
+      return [...a, ...sensorKw(c)];
+    }},
+  spark: {label:'SparkSubmitOperator', short:'Spark', cat:'compute', imp:'SparkSubmitOperator', pip:'apache-airflow-providers-apache-spark',
+    desc:'Runs <code>spark-submit</code> for a PySpark file or a JAR. Needs a Spark connection (default <code>spark_default</code>, host e.g. <code>local[*]</code>, <code>yarn</code> or <code>spark://host:7077</code>).',
+    fields:[
+      {k:'application', type:'text', label:'Application (.py / .jar)', def:'/opt/spark-apps/etl_job.py', wide:true, tip:'Path of the PySpark script or JAR on the worker.'},
+      {k:'conn_id', type:'text', label:'Spark connection id', def:'spark_default', tip:'Airflow connection of type **Spark**. The host decides the master (`yarn`, `local[*]`, `spark://…`, `k8s://…`).'},
+      {k:'name', type:'text', label:'Spark app name', def:'airflow_{{ dag.dag_id }}_{{ ds_nodash }}', tip:'Name shown in the Spark UI / YARN. Jinja allowed.'},
+      {k:'java_class', type:'text', label:'Main class (JAR only)', def:'', ph:'com.example.Main', tip:'For Scala / Java jobs: the main class. Leave empty for PySpark.'},
+      {k:'application_args', type:'text', label:'Application arguments', def:'--run-date {{ ds }}', wide:true, tip:'Arguments passed to your job, separated by spaces. Use quotes for values with spaces.'},
+      {k:'conf', type:'kv', label:'Spark conf (key=value)', def:'spark.sql.shuffle.partitions=200', wide:true, rows:2, tip:'Spark configuration, one per line, e.g. `spark.executor.memoryOverhead=1g`.'},
+      {k:'executor_memory', type:'text', label:'Executor memory', def:'2g', tip:'Memory per executor, e.g. `2g`, `4096m`.'},
+      {k:'driver_memory', type:'text', label:'Driver memory', def:'1g', tip:'Memory for the driver.'},
+      {k:'num_executors', type:'number', label:'Num executors', def:2, min:1, tip:'Number of executors (YARN / K8s).'},
+      {k:'executor_cores', type:'number', label:'Executor cores', def:2, min:1, tip:'CPU cores per executor.'},
+      {k:'packages', type:'text', label:'Packages (--packages)', def:'', ph:'org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1', wide:true, tip:'Comma-separated Maven coordinates, e.g. the Kafka or Delta connector.'},
+      {k:'verbose', type:'toggle', label:'Verbose', def:false, tip:'Print spark-submit debug output in the task log.'},
+    ],
+    kw:c => {
+      const a = [['application', pyStr(c.application)], ['conn_id', pyStr(c.conn_id || 'spark_default')]];
+      if (c.name) a.push(['name', pyStr(c.name)]);
+      if (c.java_class) a.push(['java_class', pyStr(c.java_class)]);
+      const args = parseArgs(c.application_args); if (args.length) a.push(['application_args', pyVal(args)]);
+      if (parseKV(c.conf).length) a.push(['conf', kvDict(c.conf)]);
+      if (c.executor_memory) a.push(['executor_memory', pyStr(c.executor_memory)]);
+      if (c.driver_memory) a.push(['driver_memory', pyStr(c.driver_memory)]);
+      if (!isBlank(c.num_executors)) a.push(['num_executors', num(c.num_executors, 1)]);
+      if (!isBlank(c.executor_cores)) a.push(['executor_cores', num(c.executor_cores, 1)]);
+      if (c.packages) a.push(['packages', pyStr(c.packages)]);
+      if (c.verbose) a.push(['verbose', 'True']);
+      return a;
+    }},
+  sql: {label:'SQLExecuteQueryOperator', short:'SQL', cat:'compute', imp:'SQLExecuteQueryOperator', pip:'apache-airflow-providers-common-sql (+ your DB provider, e.g. -postgres)',
+    desc:'Runs SQL against any database that has an Airflow connection (Postgres, MySQL, Snowflake, BigQuery, Trino …).',
+    fields:[
+      {k:'conn_id', type:'text', label:'Connection id', def:'postgres_default', tip:'Airflow connection of your database (Admin → Connections).'},
+      {k:'sql', type:'code', label:'SQL', wide:true, rows:4, def:"DELETE FROM sales WHERE sale_date = '{{ ds }}';\nINSERT INTO sales SELECT * FROM staging_sales WHERE sale_date = '{{ ds }}';", tip:'SQL statement(s). Jinja is supported (`{{ ds }}`). You can also give a file path ending in `.sql`.'},
+      {k:'autocommit', type:'toggle', label:'Autocommit', def:false, tip:'Commit after every statement instead of once at the end.'},
+    ],
+    kw:c => { const a = [['conn_id', pyStr(c.conn_id)], ['sql', pyStr(c.sql)]]; if (c.autocommit) a.push(['autocommit', 'True']); return a; }},
+  http: {label:'HttpOperator', short:'HTTP', cat:'compute', imp:'HttpOperator', pip:'apache-airflow-providers-http',
+    desc:'Calls a REST API endpoint. The base URL comes from an HTTP connection.',
+    fields:[
+      {k:'http_conn_id', type:'text', label:'HTTP connection id', def:'http_default', tip:'Connection of type **HTTP** holding the base URL (and auth).'},
+      {k:'endpoint', type:'text', label:'Endpoint', def:'api/v1/refresh', tip:'Path appended to the connection\'s base URL. Jinja allowed.'},
+      {k:'method', type:'radio', label:'Method', def:'GET', options:[['GET','GET'],['POST','POST'],['PUT','PUT'],['DELETE','DELETE']], tip:'HTTP method.'},
+      {k:'data', type:'code', label:'Body / data', wide:true, rows:2, def:'', tip:'Request body (for POST / PUT), e.g. a JSON string. Jinja allowed.'},
+      {k:'headers', type:'kv', label:'Headers (Key=value)', wide:true, rows:2, def:'Content-Type=application/json', tip:'Request headers, one per line.'},
+      {k:'log_response', type:'toggle', label:'Log response', def:true, tip:'Write the response body into the task log.'},
+    ],
+    kw:c => {
+      const a = [['http_conn_id', pyStr(c.http_conn_id)], ['endpoint', pyStr(c.endpoint)], ['method', pyStr(c.method || 'GET')]];
+      if (c.data) a.push(['data', pyStr(c.data)]);
+      if (parseKV(c.headers).length) a.push(['headers', kvDict(c.headers)]);
+      if (c.log_response) a.push(['log_response', 'True']);
+      return a;
+    }},
+  docker: {label:'DockerOperator', short:'Docker', cat:'compute', imp:'DockerOperator', pip:'apache-airflow-providers-docker',
+    desc:'Runs a command inside a Docker container – good for isolating dependencies.',
+    fields:[
+      {k:'image', type:'text', label:'Image', def:'python:3.12-slim', tip:'Docker image (and tag) to run.'},
+      {k:'command', type:'text', label:'Command', def:'python -c "print(\'hello\')"', wide:true, tip:'Command executed inside the container. Jinja allowed.'},
+      {k:'docker_url', type:'text', label:'Docker URL', def:'unix://var/run/docker.sock', tip:'Docker daemon address. On Windows / Docker Desktop: `tcp://host.docker.internal:2375` or `npipe:////./pipe/docker_engine`.'},
+      {k:'auto_remove', type:'select', label:'Auto remove', def:'success', options:[['never','never'],['success','success'],['force','force']], tip:'Remove the container after it finishes: `never`, only on `success`, or always (`force`).'},
+      {k:'environment', type:'kv', label:'Environment (KEY=value)', wide:true, rows:2, def:'', tip:'Environment variables for the container.'},
+      {k:'mount_tmp_dir', type:'toggle', label:'Mount tmp dir', def:false, tip:'Bind-mount a temp dir from the host. Often fails on Docker Desktop / remote daemons – keep **off** unless needed.'},
+    ],
+    kw:c => {
+      const a = [['image', pyStr(c.image)]];
+      if (c.command) a.push(['command', pyStr(c.command)]);
+      a.push(['docker_url', pyStr(c.docker_url)], ['auto_remove', pyStr(c.auto_remove || 'success')]);
+      if (parseKV(c.environment).length) a.push(['environment', kvDict(c.environment)]);
+      a.push(['mount_tmp_dir', c.mount_tmp_dir ? 'True' : 'False']);
+      return a;
+    }},
+  k8s: {label:'KubernetesPodOperator', short:'K8sPod', cat:'compute', imp:'KubernetesPodOperator', pip:'apache-airflow-providers-cncf-kubernetes',
+    desc:'Starts a Kubernetes pod for the task. Each task can have its own image and resources.',
+    fields:[
+      {k:'name', type:'text', label:'Pod name', def:'etl-pod', tip:'Base name of the pod (a random suffix is added).'},
+      {k:'namespace', type:'text', label:'Namespace', def:'default', tip:'Kubernetes namespace.'},
+      {k:'image', type:'text', label:'Image', def:'python:3.12-slim', wide:true, tip:'Container image.'},
+      {k:'cmds', type:'text', label:'Entrypoint (cmds)', def:'python -c', tip:'Entrypoint, separated by spaces (becomes a list).'},
+      {k:'arguments', type:'text', label:'Arguments', def:'"print(\'hello from k8s\')"', tip:'Arguments, separated by spaces. Use quotes for values with spaces.'},
+      {k:'get_logs', type:'toggle', label:'Stream logs', def:true, tip:'Show the pod\'s stdout in the Airflow task log.'},
+      {k:'on_finish_action', type:'select', label:'On finish', def:'delete_pod', options:[['delete_pod','delete_pod'],['delete_succeeded_pod','delete_succeeded_pod'],['keep_pod','keep_pod']], tip:'What to do with the pod when it finishes.'},
+    ],
+    kw:c => {
+      const a = [['name', pyStr(c.name)], ['namespace', pyStr(c.namespace)], ['image', pyStr(c.image)]];
+      const cm = parseArgs(c.cmds); if (cm.length) a.push(['cmds', pyVal(cm)]);
+      const ar = parseArgs(c.arguments); if (ar.length) a.push(['arguments', pyVal(ar)]);
+      a.push(['get_logs', c.get_logs ? 'True' : 'False'], ['on_finish_action', pyStr(c.on_finish_action || 'delete_pod')]);
+      return a;
+    }},
+  trigger: {label:'TriggerDagRunOperator', short:'TriggerDAG', cat:'trigger', imp:'TriggerDagRunOperator',
+    desc:'Starts a run of <b>another DAG</b> and can pass it a <code>conf</code> dictionary (read there with <code>context["dag_run"].conf</code>).',
+    fields:[
+      {k:'trigger_dag_id', type:'text', label:'DAG id to trigger', def:'child_dag', tip:'The DAG that will be started.'},
+      {k:'conf', type:'code', label:'conf (JSON)', wide:true, rows:3, def:'{\n  "source_run_id": "{{ run_id }}",\n  "run_date": "{{ ds }}"\n}', tip:'JSON object passed to the triggered run. String values may use Jinja.'},
+      {k:'wait_for_completion', type:'toggle', label:'Wait for completion', def:false, tip:'If on, this task waits until the triggered run finishes (and fails if it fails).'},
+      {k:'poke_interval', type:'number', label:'Check interval (sec)', def:30, show:c => c.wait_for_completion, tip:'How often to check the triggered run\'s state.'},
+    ],
+    kw:(c, g, t) => {
+      const a = [['trigger_dag_id', pyStr(c.trigger_dag_id)]];
+      if (String(c.conf || '').trim()){
+        try { const o = JSON.parse(c.conf); a.push(['conf', pyVal(o)]); }
+        catch { g.issues.push({lv:'error', m:`Task "${t.id}": conf is not valid JSON.`}); }
+      }
+      if (c.wait_for_completion) a.push(['wait_for_completion', 'True'], ['poke_interval', num(c.poke_interval, 30)]);
+      return a;
+    }},
+  email: {label:'EmailOperator', short:'Email', cat:'trigger', imp:'EmailOperator', pip:'apache-airflow-providers-smtp (Airflow 3)',
+    desc:'Sends an e-mail. Needs SMTP configured (<code>smtp_default</code> connection or <code>[smtp]</code> config).',
+    fields:[
+      {k:'to', type:'text', label:'To (comma separated)', def:'team@example.com', wide:true, tip:'Recipients, separated by commas.'},
+      {k:'subject', type:'text', label:'Subject', def:'[Airflow] {{ dag.dag_id }} finished for {{ ds }}', wide:true, tip:'Subject line. Jinja allowed.'},
+      {k:'html_content', type:'code', label:'HTML body', wide:true, rows:3, def:'<h3>Pipeline finished</h3>\n<p>Run: {{ run_id }}</p>', tip:'HTML body of the mail. Jinja allowed.'},
+    ],
+    kw:c => [['to', pyVal(parseList(c.to))], ['subject', pyStr(c.subject)], ['html_content', pyStr(c.html_content)]]},
+};
+const OP_GROUPS = [
+  ['Control flow', ['empty','branch','short_circuit','latest_only']],
+  ['Compute', ['python','python_classic','bash','spark','sql','http','docker','k8s']],
+  ['Sensors (wait)', ['sensor_python','file_sensor','external_sensor']],
+  ['Cross-DAG / notify', ['trigger','email']],
+];
+const QUICK_OPS = ['python','bash','spark','branch','sensor_python','empty'];
+function defaultCfg(op){ const c = {}; (OPS[op]?.fields || []).forEach(f => c[f.k] = clone(f.def ?? '')); return c; }
+
+/* =====================================================================
+   IMPORT CATALOG   [airflow 3 module, airflow 2 module]
+   ===================================================================== */
+const STD3 = 'airflow.providers.standard';
+const IMPORTS = {
+  DAG:['airflow.sdk','airflow'], task:['airflow.sdk','airflow.decorators'], TaskGroup:['airflow.sdk','airflow.utils.task_group'],
+  Param:['airflow.sdk','airflow.models.param'], Variable:['airflow.sdk','airflow.models'], Asset:['airflow.sdk','airflow.datasets'],
+  EmptyOperator:[`${STD3}.operators.empty`,'airflow.operators.empty'], LatestOnlyOperator:[`${STD3}.operators.latest_only`,'airflow.operators.latest_only'],
+  BashOperator:[`${STD3}.operators.bash`,'airflow.operators.bash'], PythonOperator:[`${STD3}.operators.python`,'airflow.operators.python'],
+  TriggerDagRunOperator:[`${STD3}.operators.trigger_dagrun`,'airflow.operators.trigger_dagrun'],
+  FileSensor:[`${STD3}.sensors.filesystem`,'airflow.sensors.filesystem'], ExternalTaskSensor:[`${STD3}.sensors.external_task`,'airflow.sensors.external_task'],
+  EmailOperator:['airflow.providers.smtp.operators.smtp','airflow.operators.email'],
+  SparkSubmitOperator:['airflow.providers.apache.spark.operators.spark_submit','airflow.providers.apache.spark.operators.spark_submit'],
+  SQLExecuteQueryOperator:['airflow.providers.common.sql.operators.sql','airflow.providers.common.sql.operators.sql'],
+  HttpOperator:['airflow.providers.http.operators.http','airflow.providers.http.operators.http'],
+  DockerOperator:['airflow.providers.docker.operators.docker','airflow.providers.docker.operators.docker'],
+  KubernetesPodOperator:['airflow.providers.cncf.kubernetes.operators.pod','airflow.providers.cncf.kubernetes.operators.pod'],
+};
+
+/* =====================================================================
+   STATE
+   ===================================================================== */
+function baseState(){
+  return {
+    meta:{af:'3', comments:true, dagTest:true},
+    dag:{dag_id:'my_pipeline', description:'', owner:'data_engineering', tags:'', doc_md:'',
+      schedule_type:'cron', preset:'@daily', cron:'0 6 * * *', td_value:1, td_unit:'hours', datasets:'', dataset_logic:'all',
+      start_date:'2026-01-01', end_date:'', timezone:'Asia/Kolkata', catchup:false, max_active_runs:1, max_active_tasks:16,
+      dagrun_timeout:120, paused:true, render_native:false},
+    defaults:{retries:1, retry_delay:300, retry_backoff:false, max_retry_delay:1800, execution_timeout:60, depends_on_past:false, email:'', email_on_failure:false, email_on_retry:false},
+    callbacks:{channel:'log', webhook_var:'slack_webhook_url', events:['task_failure','dag_failure']},
+    params:[],
+    tasks:[],
+  };
+}
+const defMap = () => ({enabled:false, source:'static', arg:'item', values:'', from:'', max:''});
+function newTask(op = 'empty', id){
+  return {uid:newUid(), id:id || uniqueId(op), op, group:'', upstream:[], trigger_rule:'all_success', retries:'', retry_delay:'', execution_timeout:'',
+    pool:'', priority_weight:'', role:'normal', doc:'', outlets:'', map:defMap(), cfg:defaultCfg(op), open:true, adv:false};
+}
+function uniqueId(op){
+  const base = (OPS[op]?.short || 'task').toLowerCase().replace(/[^a-z0-9]+/g, '_') + '_task';
+  const ids = new Set((state?.tasks || []).map(t => t.id));
+  let i = 1; while (ids.has(`${base}_${i}`)) i++;
+  return `${base}_${i}`;
+}
+function normalize(s){
+  const b = baseState();
+  const out = {...b, ...s, meta:{...b.meta, ...s.meta}, dag:{...b.dag, ...s.dag}, defaults:{...b.defaults, ...s.defaults}, callbacks:{...b.callbacks, ...s.callbacks}};
+  out.params = (s.params || []).map(p => ({name:'', type:'string', def:'', enum:'', min:'', max:'', desc:'', ...p}));
+  out.tasks = (s.tasks || []).filter(t => OPS[t.op]).map(t => {
+    const n = newTask(t.op, t.id);
+    return {...n, ...t, map:{...defMap(), ...(t.map || {})}, cfg:{...defaultCfg(t.op), ...(t.cfg || {})}, upstream:[...(t.upstream || [])]};
+  });
+  return out;
+}
+const fullId = t => t.group ? `${t.group}.${t.id}` : t.id;
+
+/* =====================================================================
+   TEMPLATES
+   ===================================================================== */
+function build(s, defs){
+  const byId = {};
+  s.tasks = defs.map(d => {
+    const t = newTask(d.op, d.id);
+    const {up, cfg, map, ...rest} = d;
+    Object.assign(t, rest, {open:false});
+    t.cfg = {...t.cfg, ...(cfg || {})};
+    if (map) t.map = {...t.map, ...map};
+    byId[d.id] = t; return t;
+  });
+  defs.forEach((d, i) => { s.tasks[i].upstream = (d.up || []).map(id => byId[id].uid); });
+  s.tasks.forEach(t => {
+    if (t.map.from && byId[t.map.from]) t.map.from = byId[t.map.from].uid;
+    if (t.cfg.default_target && byId[t.cfg.default_target]) t.cfg.default_target = byId[t.cfg.default_target].uid;
+  });
+  if (s.tasks[0]) s.tasks[0].open = true;
+  return s;
+}
+const P = (name, type, def, extra = {}) => ({name, type, def, enum:'', min:'', max:'', desc:'', ...extra});
+const TEMPLATES = {
+  blank: {label:'Blank (start → end)', make(){ const s = baseState(); s.dag.dag_id = 'my_pipeline'; return build(s, [{id:'start', op:'empty'}, {id:'end', op:'empty', up:['start']}]); }},
+  simple_etl: {label:'Simple ETL (extract → transform → load)', make(){
+    const s = baseState(); Object.assign(s.dag, {dag_id:'simple_etl_pipeline', description:'Daily ETL: extract → transform → load', tags:'etl, daily'});
+    s.params = [P('env', 'enum', 'dev', {enum:'dev, qa, prod', desc:'Target environment'})];
+    return build(s, [
+      {id:'start', op:'empty'},
+      {id:'extract', op:'python', up:['start'], cfg:{code:'rows = [{"id": i, "amount": i * 10} for i in range(1, 6)]\nlog.info("Extracted %d rows", len(rows))\nreturn rows'}},
+      {id:'transform', op:'python', up:['extract'], cfg:{code:'rows = context["ti"].xcom_pull(task_ids="extract")\ntotal = sum(r["amount"] for r in rows)\nlog.info("Total amount = %s", total)\nreturn total'}},
+      {id:'load', op:'bash', up:['transform'], cfg:{bash_command:'echo "Loading total={{ ti.xcom_pull(task_ids=\'transform\') }} into {{ params.env }}"'}},
+      {id:'end', op:'empty', up:['load']},
+    ]);
+  }},
+  spark_etl: {label:'Spark ETL + setup / teardown', make(){
+    const s = baseState(); Object.assign(s.dag, {dag_id:'spark_daily_etl', description:'Wait for input → Spark job with setup/teardown → notify', tags:'spark, etl', cron:'30 2 * * *'});
+    s.defaults.retries = 2;
+    return build(s, [
+      {id:'wait_for_input', op:'file_sensor', cfg:{filepath:'/data/input/{{ ds }}/_SUCCESS', timeout:7200}},
+      {id:'create_workspace', op:'python', role:'setup', cfg:{code:'import os\n\npath = f"/tmp/spark_ws/{context[\'ds_nodash\']}"\nos.makedirs(path, exist_ok=True)\nreturn path'}},
+      {id:'spark_job', op:'spark', up:['wait_for_input', 'create_workspace'], cfg:{application_args:'--run-date {{ ds }} --input /data/input/{{ ds }} --output /data/output/{{ ds }}'}},
+      {id:'delete_workspace', op:'python', role:'teardown', up:['spark_job', 'create_workspace'], cfg:{code:'import shutil\n\nshutil.rmtree(f"/tmp/spark_ws/{context[\'ds_nodash\']}", ignore_errors=True)'}},
+      {id:'notify_done', op:'bash', up:['spark_job'], cfg:{bash_command:'echo "Spark job finished for {{ ds }}"'}},
+    ]);
+  }},
+  branching: {label:'Branching by Param (dev / qa / prod)', make(){
+    const s = baseState(); Object.assign(s.dag, {dag_id:'branching_by_env', description:'Route the load step based on the env param', tags:'branching', schedule_type:'none'});
+    s.params = [P('env', 'enum', 'dev', {enum:'dev, qa, prod', desc:'Where to load the data'})];
+    return build(s, [
+      {id:'start', op:'empty'},
+      {id:'choose_env', op:'branch', up:['start'], cfg:{param_name:'env', rules:'dev => load_dev\nqa => load_dev, load_prod\nprod => load_prod', default_target:'load_dev'}},
+      {id:'load_dev', op:'bash', up:['choose_env'], cfg:{bash_command:'echo "Loading into DEV"'}},
+      {id:'load_prod', op:'bash', up:['choose_env'], cfg:{bash_command:'echo "Loading into PROD"'}},
+      {id:'join', op:'empty', up:['load_dev', 'load_prod'], trigger_rule:'none_failed_min_one_success'},
+      {id:'end', op:'empty', up:['join']},
+    ]);
+  }},
+  dynamic: {label:'Dynamic task mapping (fan-out / fan-in)', make(){
+    const s = baseState(); Object.assign(s.dag, {dag_id:'dynamic_mapping_demo', description:'One task copy per file, decided at runtime', tags:'mapping', preset:'@hourly', schedule_type:'preset'});
+    return build(s, [
+      {id:'list_files', op:'python', cfg:{code:'# In real life: list S3 / HDFS / folder\nreturn ["sales_1.csv", "sales_2.csv", "sales_3.csv"]'}},
+      {id:'process_file', op:'python', up:['list_files'], map:{enabled:true, source:'upstream', from:'list_files', arg:'file_name', max:2}, cfg:{code:'log.info("Processing %s", file_name)\nreturn len(file_name)'}},
+      {id:'summarize', op:'python', up:['process_file'], cfg:{code:'sizes = list(context["ti"].xcom_pull(task_ids="process_file"))\nlog.info("Processed %d files: %s", len(sizes), sizes)'}},
+      {id:'clean_tables', op:'bash', up:['summarize'], map:{enabled:true, source:'static', values:'echo "clean orders"\necho "clean customers"\necho "clean products"'}},
+    ]);
+  }},
+  producer: {label:'Dataset / Asset producer', make(){
+    const s = baseState(); Object.assign(s.dag, {dag_id:'sales_producer', description:'Writes the daily sales file and marks the Asset as updated', tags:'assets, producer'});
+    return build(s, [
+      {id:'export_sales', op:'python', outlets:'s3://my-bucket/sales/daily.parquet', cfg:{code:'log.info("Writing sales file for %s", context["ds"])\n# df.write.parquet("s3://my-bucket/sales/daily.parquet")'}},
+    ]);
+  }},
+  consumer: {label:'Dataset / Asset triggered consumer', make(){
+    const s = baseState(); Object.assign(s.dag, {dag_id:'sales_consumer', description:'Runs whenever the sales Asset is updated', tags:'assets, consumer', schedule_type:'dataset', datasets:'s3://my-bucket/sales/daily.parquet'});
+    return build(s, [
+      {id:'read_sales', op:'python', cfg:{code:'events = context.get("triggering_asset_events") or context.get("triggering_dataset_events")\nlog.info("Triggered by: %s", events)'}},
+      {id:'build_report', op:'bash', up:['read_sales'], cfg:{bash_command:'echo "Building report"'}},
+    ]);
+  }},
+  showcase: {label:'All operators showcase (groups, sensors, branch…)', make(){
+    const s = baseState(); Object.assign(s.dag, {dag_id:'all_operators_showcase', description:'Every operator type, task groups, branching, mapping and trigger rules', tags:'learning, showcase', schedule_type:'none'});
+    s.params = [P('engine', 'enum', 'spark', {enum:'spark, docker, k8s', desc:'Which compute engine to use'})];
+    s.callbacks.events = ['task_failure', 'task_retry', 'dag_failure', 'dag_success'];
+    return build(s, [
+      {id:'start', op:'empty'},
+      {id:'latest_only', op:'latest_only', up:['start']},
+      {id:'wait_for_file', op:'file_sensor', group:'ingest', up:['start'], cfg:{timeout:600, soft_fail:true}},
+      {id:'fetch_api', op:'http', group:'ingest', up:['start']},
+      {id:'wait_upstream_dag', op:'external_sensor', group:'ingest', up:['start'], cfg:{timeout:600, soft_fail:true}},
+      {id:'has_data', op:'short_circuit', up:['wait_for_file', 'fetch_api', 'wait_upstream_dag'], trigger_rule:'none_failed', cfg:{ignore_downstream_trigger_rules:false}},
+      {id:'choose_engine', op:'branch', up:['has_data'], cfg:{param_name:'engine', rules:'spark => spark_job\ndocker => docker_job\nk8s => k8s_job', default_target:'spark_job'}},
+      {id:'spark_job', op:'spark', group:'process', up:['choose_engine']},
+      {id:'docker_job', op:'docker', group:'process', up:['choose_engine']},
+      {id:'k8s_job', op:'k8s', group:'process', up:['choose_engine']},
+      {id:'load_sql', op:'sql', up:['spark_job', 'docker_job', 'k8s_job'], trigger_rule:'none_failed_min_one_success'},
+      {id:'clean_tables', op:'bash', up:['load_sql'], map:{enabled:true, source:'static', values:'echo "vacuum orders"\necho "vacuum customers"'}},
+      {id:'trigger_reporting', op:'trigger', up:['load_sql'], cfg:{trigger_dag_id:'reporting_dag'}},
+      {id:'send_email', op:'email', up:['latest_only', 'trigger_reporting']},
+      {id:'end', op:'empty', up:['clean_tables', 'send_email'], trigger_rule:'none_failed_min_one_success'},
+    ]);
+  }},
+};
+
+/* =====================================================================
+   CONFIG SECTIONS (schema)
+   ===================================================================== */
+const F = (type, path, label, tip, o = {}) => ({type, path, label, tip, ...o});
+const TZS = ['UTC','Asia/Kolkata','Asia/Dubai','Asia/Singapore','Asia/Tokyo','Europe/London','Europe/Berlin','Europe/Paris','America/New_York','America/Chicago','America/Los_Angeles','America/Sao_Paulo','Australia/Sydney'];
+const PRESETS = [['@once','@once – run a single time'],['@hourly','@hourly – every hour'],['@daily','@daily – every day at 00:00'],['@weekly','@weekly – Sunday 00:00'],['@monthly','@monthly – 1st of month 00:00'],['@quarterly','@quarterly'],['@yearly','@yearly – 1 Jan 00:00'],['@continuous','@continuous – start again as soon as a run finishes']];
+const CRON_EX = [['', 'Pick an example…'],['*/15 * * * *','Every 15 minutes'],['0 * * * *','Every hour'],['0 6 * * *','Every day at 06:00'],['30 2 * * *','Every day at 02:30'],['0 6 * * 1-5','Weekdays at 06:00'],['0 0 * * 0','Every Sunday at 00:00'],['0 0 1 * *','1st of every month'],['0 9,18 * * *','Every day at 09:00 and 18:00']];
+const TRIGGER_RULES = [['all_success','all_success (default)'],['all_failed','all_failed'],['all_done','all_done'],['all_skipped','all_skipped'],['one_success','one_success'],['one_failed','one_failed'],['one_done','one_done'],['none_failed','none_failed'],['none_failed_min_one_success','none_failed_min_one_success'],['none_skipped','none_skipped'],['always','always']];
+
+const SECTIONS = [
+  {id:'output', icon:'⚙', title:'Output settings', tip:'How the Python file is generated.',
+    sum:s => `Airflow ${s.meta.af === 'both' ? '2 + 3' : s.meta.af + '.x'}${s.meta.comments ? ' · comments' : ''}`,
+    fields:[
+      F('radio','meta.af','Airflow version','Which Airflow version the file targets.\n**3.x** uses `airflow.sdk` + standard provider imports.\n**2.x** uses the classic imports.\n**Both** generates try/except imports that work on either.', {options:[['3','Airflow 3.x'],['2','Airflow 2.x'],['both','Both (auto-detect)']], wide:true}),
+      F('toggle','meta.comments','Explanatory comments','Add a docstring and short comments that explain each part of the file – great for learning and code reviews.'),
+      F('toggle','meta.dagTest','Add dag.test() block','Adds `if __name__ == "__main__": dag.test()` so you can run the whole DAG locally with `python my_dag.py` (no scheduler needed).'),
+    ]},
+  {id:'basics', icon:'🏷', title:'DAG basics', tip:'Name, owner and description of the DAG.',
+    sum:s => s.dag.dag_id || '(no id)',
+    fields:[
+      F('text','dag.dag_id','DAG id','**Unique** name of the DAG across your whole Airflow. Letters, numbers, `_`, `-`, `.` only. The downloaded file is named `<dag_id>.py`.', {ph:'sales_daily_etl'}),
+      F('text','dag.owner','Owner','Team or person responsible. Shown in the UI and used for filtering.', {ph:'data_engineering'}),
+      F('text','dag.description','Description','Short one-line description shown in the DAG list.', {wide:true, ph:'Daily sales ETL from MySQL to the data lake'}),
+      F('text','dag.tags','Tags (comma separated)','Tags let you filter DAGs in the UI, e.g. `etl, daily, finance`.', {wide:true, ph:'etl, daily'}),
+      F('code','dag.doc_md','Documentation (Markdown)','Markdown shown on the DAG page (**Docs** button). Leave empty to use the generated docstring.', {wide:true, rows:2, ph:'## What this DAG does…'}),
+    ]},
+  {id:'schedule', icon:'🕒', title:'Schedule & runs', tip:'When the DAG runs and how many runs can happen at once.',
+    sum:s => { const d = s.dag; const m = {cron:d.cron, preset:d.preset, interval:`every ${d.td_value} ${d.td_unit}`, dataset:'on Asset update', none:'manual only'}; return `${m[d.schedule_type]} · ${d.timezone}`; },
+    fields:[
+      F('radio','dag.schedule_type','Schedule type','**Cron** – exact times, e.g. `0 6 * * *`.\n**Preset** – shortcuts like `@daily`.\n**Interval** – every N minutes / hours / days.\n**Dataset / Asset** – run when another DAG updates some data.\n**Manual only** – `schedule=None`, run by trigger or API.', {wide:true, options:[['cron','Cron'],['preset','Preset'],['interval','Interval'],['dataset','Dataset / Asset'],['none','Manual only']]}),
+      F('text','dag.cron','Cron expression','5 fields: `minute hour day-of-month month day-of-week`.\n`0 6 * * *` = every day 06:00\n`*/15 * * * *` = every 15 min\n`0 6 * * 1-5` = weekdays 06:00\nTimes are in the timezone chosen below.', {show:s => s.dag.schedule_type === 'cron', ph:'0 6 * * *', mono:true}),
+      F('select','dag.cron','Cron examples','Pick a common cron expression to fill the field.', {show:s => s.dag.schedule_type === 'cron', options:CRON_EX, skipEmpty:true, matchOnly:true}),
+      F('cronhelp','dag.cron','', '', {show:s => s.dag.schedule_type === 'cron', wide:true}),
+      F('select','dag.preset','Preset','Airflow schedule shortcuts. `@continuous` needs **max_active_runs = 1**.', {show:s => s.dag.schedule_type === 'preset', options:PRESETS, wide:true}),
+      F('number','dag.td_value','Every','Run every N units (a `timedelta` schedule). Unlike cron, it is relative to the start date.', {show:s => s.dag.schedule_type === 'interval', min:1}),
+      F('select','dag.td_unit','Unit','Unit of the interval.', {show:s => s.dag.schedule_type === 'interval', options:[['minutes','minutes'],['hours','hours'],['days','days'],['weeks','weeks']]}),
+      F('code','dag.datasets','Asset / Dataset URIs (one per line)','The DAG runs when these data items are updated by a producer task (a task with matching **outlets**).\nExample: `s3://bucket/sales/daily.parquet`', {show:s => s.dag.schedule_type === 'dataset', wide:true, rows:2, ph:'s3://my-bucket/sales/daily.parquet'}),
+      F('radio','dag.dataset_logic','Run when','**ALL** – every listed Asset was updated since the last run.\n**ANY** – any one of them was updated (Airflow 2.9+).', {show:s => s.dag.schedule_type === 'dataset', options:[['all','ALL updated (AND)'],['any','ANY updated (OR)']]}),
+      F('date','dag.start_date','Start date','First date the scheduler considers. With catchup off it is only a lower bound. Use a **fixed** date (never `now()`).'),
+      F('date','dag.end_date','End date (optional)','After this date no new runs are scheduled. Leave empty for no end.'),
+      F('select','dag.timezone','Timezone','Timezone for the start date and cron times. Uses `pendulum`, so daylight-saving is handled.', {options:TZS.map(z => [z, z])}),
+      F('toggle','dag.catchup','Catchup (backfill)','**On**: when the DAG is enabled, Airflow creates a run for every missed interval since the start date.\n**Off**: only the latest interval runs. Off is safer for most pipelines.'),
+      F('number','dag.max_active_runs','Max active runs','How many runs of this DAG may run at the same time. `1` = runs never overlap.', {min:1}),
+      F('number','dag.max_active_tasks','Max active tasks','How many task instances of this DAG may run at the same time (across all runs).', {min:1}),
+      F('number','dag.dagrun_timeout','Run timeout (minutes)','If a whole DAG run takes longer than this, it is marked failed. `0` = no timeout.', {min:0}),
+      F('toggle','dag.paused','Paused when created','New DAGs start **paused** – you have to switch them on in the UI. Turn off to start scheduling immediately after deploy.'),
+      F('toggle','dag.render_native','Render templates as Python objects','`render_template_as_native_obj=True`: Jinja results become real Python types (lists, dicts, ints) instead of strings.'),
+    ]},
+  {id:'defaults', icon:'🛡', title:'Default args (all tasks)', tip:'Settings applied to every task. Each task can override them in its Advanced section.',
+    sum:s => `${s.defaults.retries} retries · ${s.defaults.execution_timeout || '∞'} min timeout`,
+    fields:[
+      F('number','defaults.retries','Retries','How many times a failed task is retried before it is marked failed.', {min:0}),
+      F('number','defaults.retry_delay','Retry delay (seconds)','Wait time before a retry. `300` = 5 minutes.', {min:0}),
+      F('toggle','defaults.retry_backoff','Exponential backoff','Each retry waits longer than the previous one (5 min → 10 → 20 …). Good for flaky APIs.'),
+      F('number','defaults.max_retry_delay','Max retry delay (seconds)','Upper limit for the backoff wait.', {show:s => s.defaults.retry_backoff, min:0}),
+      F('number','defaults.execution_timeout','Task timeout (minutes)','A task running longer than this is killed and failed. `0` = no limit (not recommended).', {min:0}),
+      F('toggle','defaults.depends_on_past','depends_on_past','A task only runs if the **same task succeeded in the previous run**. Useful for incremental loads that must run in order.'),
+      F('text','defaults.email','Alert e-mails (comma separated)','Recipients of Airflow\'s built-in failure / retry e-mails. Needs SMTP configured.', {wide:true, ph:'team@example.com'}),
+      F('toggle','defaults.email_on_failure','E-mail on failure','Send an e-mail when a task fails.'),
+      F('toggle','defaults.email_on_retry','E-mail on retry','Send an e-mail when a task is retried.'),
+    ]},
+  {id:'alerts', icon:'🔔', title:'Alerts & callbacks', tip:'Python callbacks that run on success / failure / retry and send a notification.',
+    sum:s => s.callbacks.channel === 'none' ? 'off' : `${s.callbacks.channel} · ${(s.callbacks.events || []).length} events`,
+    fields:[
+      F('radio','callbacks.channel','Notification channel','**Log only** – write to the task log.\n**Slack / Teams** – POST the message to an incoming-webhook URL stored in an Airflow **Variable** (never hard-code secrets).', {wide:true, options:[['none','Off'],['log','Log only'],['slack','Slack webhook'],['teams','MS Teams webhook']]}),
+      F('text','callbacks.webhook_var','Variable holding webhook URL','Name of the Airflow Variable (Admin → Variables) that contains the webhook URL.', {show:s => ['slack','teams'].includes(s.callbacks.channel), ph:'slack_webhook_url'}),
+      F('multi','callbacks.events','Notify on','Which events call the notification.\nTask events are set in `default_args`, DAG-run events on the DAG.', {show:s => s.callbacks.channel !== 'none', wide:true, options:[['task_failure','Task failure'],['task_retry','Task retry'],['task_success','Task success'],['dag_failure','DAG run failure'],['dag_success','DAG run success']]}),
+    ]},
+];
+
+/* =====================================================================
+   PREFS / PERSISTENCE
+   ===================================================================== */
+const LS_STATE = 'airflowDagBuilder.state.v1', LS_PREFS = 'airflowDagBuilder.prefs.v1';
+const defaultPrefs = {theme:'dark', accent:'', layout:'side', swap:false, split:52, splitV:55, inlineHelp:false, fontSize:13, wrap:false, tab:'code', collapsed:{defaults:true, alerts:true}, showIssues:false, template:'simple_etl'};
+let prefs = {...defaultPrefs, ...safeJSON(localStorage.getItem(LS_PREFS))};
+let state;
+function safeJSON(t){ try { return JSON.parse(t) || {}; } catch { return {}; } }
+const savePrefs = () => localStorage.setItem(LS_PREFS, JSON.stringify(prefs));
+let saveTimer; const saveState = () => { clearTimeout(saveTimer); saveTimer = setTimeout(() => localStorage.setItem(LS_STATE, JSON.stringify(state)), 250); };
+let undoSnap = null;
+const snapshot = () => { undoSnap = clone(state); };
+
+/* =====================================================================
+   VALIDATION
+   ===================================================================== */
+function topo(tasks){
+  const ids = new Set(tasks.map(t => t.uid)); const indeg = new Map(); const kids = new Map();
+  tasks.forEach(t => { indeg.set(t.uid, 0); kids.set(t.uid, []); });
+  tasks.forEach(t => t.upstream.filter(u => ids.has(u)).forEach(u => { indeg.set(t.uid, indeg.get(t.uid) + 1); kids.get(u).push(t.uid); }));
+  const q = tasks.filter(t => indeg.get(t.uid) === 0).map(t => t.uid); const order = [];
+  const byUid = new Map(tasks.map(t => [t.uid, t]));
+  while (q.length){ const u = q.shift(); order.push(byUid.get(u)); kids.get(u).forEach(k => { indeg.set(k, indeg.get(k) - 1); if (!indeg.get(k)) q.push(k); }); }
+  return {order, cyclic: order.length !== tasks.length, stuck: tasks.filter(t => !order.includes(t))};
+}
+function validate(s){
+  const I = []; const err = m => I.push({lv:'error', m}), warn = m => I.push({lv:'warn', m}), info = m => I.push({lv:'info', m});
+  const d = s.dag;
+  if (!/^[A-Za-z0-9_.\-]+$/.test(d.dag_id || '')) err('DAG id is required and may only contain letters, numbers, _ . -');
+  if (d.schedule_type === 'cron'){ const n = String(d.cron || '').trim().split(/\s+/).filter(Boolean).length; if (n !== 5) err(`Cron expression must have 5 fields (has ${n}).`); }
+  if (d.schedule_type === 'dataset' && !parseList(d.datasets).length) err('Dataset / Asset schedule needs at least one URI.');
+  if (d.schedule_type === 'preset' && d.preset === '@continuous' && num(d.max_active_runs) !== 1) err('@continuous schedule requires Max active runs = 1.');
+  if (d.schedule_type === 'interval' && num(d.td_value) <= 0) err('Interval must be greater than 0.');
+  if (!d.start_date) err('Start date is required.');
+  if (d.end_date && d.start_date && d.end_date < d.start_date) err('End date is before the start date.');
+  if (d.catchup && d.schedule_type !== 'none') info('Catchup is ON: enabling the DAG creates a run for every missed interval since the start date.');
+  if (s.defaults.email_on_failure && !s.defaults.email.trim()) warn('"E-mail on failure" is on but no e-mail address is set.');
+  if (['slack','teams'].includes(s.callbacks.channel) && !s.callbacks.webhook_var.trim()) err('Set the Variable name that holds the webhook URL.');
+  // params
+  const pn = new Set();
+  s.params.forEach((p, i) => {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(p.name || '')) err(`Param #${i + 1}: name must be a valid identifier.`);
+    else if (pn.has(p.name)) err(`Param "${p.name}" is defined twice.`);
+    pn.add(p.name);
+    if (p.type === 'enum'){ const ev = parseList(p.enum); if (!ev.length) err(`Param "${p.name}": enter the allowed values.`); else if (p.def && !ev.includes(String(p.def))) warn(`Param "${p.name}": default "${p.def}" is not one of the allowed values.`); }
+    if (['integer','number'].includes(p.type) && p.def !== '' && isNaN(+p.def)) err(`Param "${p.name}": default must be a number.`);
+  });
+  // tasks
+  const T = s.tasks; const byUid = new Map(T.map(t => [t.uid, t]));
+  if (!T.length) warn('The DAG has no tasks yet – add some in the Tasks section.');
+  const seen = new Map();
+  T.forEach(t => {
+    if (!/^[A-Za-z0-9_.\-]+$/.test(t.id || '')) err(`Task id "${t.id}" is invalid (letters, numbers, _ . - only).`);
+    if (t.group && !/^[A-Za-z0-9_\-]+(\.[A-Za-z0-9_\-]+)*$/.test(t.group)) err(`Task "${t.id}": group "${t.group}" is invalid.`);
+    const f = fullId(t); if (seen.has(f)) err(`Duplicate task id "${f}".`); seen.set(f, t);
+  });
+  const tp = topo(T); if (tp.cyclic) err(`Circular dependency between: ${tp.stuck.map(t => t.id).join(', ')}. A DAG must not contain cycles.`);
+  const down = uid => T.filter(x => x.upstream.includes(uid));
+  T.forEach(t => {
+    const op = OPS[t.op];
+    if (t.op === 'branch'){
+      const ds = down(t.uid);
+      if (!ds.length) warn(`Branch "${t.id}" has no downstream tasks to choose from.`);
+      if (t.cfg.mode === 'param' && t.cfg.param_name && !s.params.some(p => p.name === t.cfg.param_name)) warn(`Branch "${t.id}" reads Param "${t.cfg.param_name}", which is not defined in Params.`);
+    }
+    if (t.role === 'teardown' && !t.upstream.some(u => byUid.get(u)?.role === 'setup')) warn(`Teardown "${t.id}" has no setup task as upstream – select its setup task in "Depends on".`);
+    if (t.map.enabled && t.map.source === 'upstream'){
+      const src = byUid.get(t.map.from);
+      if (!src) err(`Task "${t.id}": choose the upstream task whose output (a list) is mapped.`);
+      else if (src.op !== 'python') warn(`Task "${t.id}": mapping source "${src.id}" should be a TaskFlow Python task returning a list.`);
+    }
+    if (t.map.enabled && t.map.source === 'static' && !parseList(t.map.values).length) err(`Task "${t.id}": add at least one value to map over.`);
+    if (t.trigger_rule === 'all_success'){
+      const ups = t.upstream.map(u => byUid.get(u)).filter(Boolean);
+      const br = T.filter(b => ['branch','short_circuit'].includes(b.op));
+      for (const b of br){ if (ups.filter(u => u.upstream.includes(b.uid)).length >= 2){ warn(`"${t.id}" joins branches of "${b.id}" but uses all_success – it will be skipped. Use none_failed_min_one_success.`); break; } }
+    }
+    if (op.pip) info(`"${t.id}" (${op.label}) needs: pip install ${op.pip}`);
+  });
+  return I;
+}
+
+/* =====================================================================
+   CODE GENERATOR
+   ===================================================================== */
+function generate(s){
+  const d = s.dag, df = s.defaults, cb = s.callbacks, af = s.meta.af, C = !!s.meta.comments;
+  const g = {af, C, issues:[], pip:new Set(), imp:new Set(['DAG']), names:new Set(RESERVED), fn:new Map(), v:new Map(), assets:new Map(), callables:[], DS: af === '2' ? 'Dataset' : 'Asset'};
+  const S = pyStr; const T = s.tasks; const byUid = new Map(T.map(t => [t.uid, t]));
+  T.forEach(t => { const base = ident(t.id); let n = base, k = 2; while (g.names.has(n) || g.names.has(n + '_task')) n = `${base}_${k++}`; g.names.add(n); g.names.add(n + '_task'); g.fn.set(t.uid, n); g.v.set(t.uid, n + '_task'); });
+  const V = uid => g.v.get(uid);
+  const assetRef = uri => {
+    if (!g.assets.has(uri)){
+      const tail = uri.split(/[\/:]/).filter(Boolean).pop() || 'data';
+      let n = ident(tail).toUpperCase() + '_' + g.DS.toUpperCase(); let k = 2; const used = new Set(g.assets.values());
+      while (used.has(n)) n = `${ident(tail).toUpperCase()}_${k++}_${g.DS.toUpperCase()}`;
+      g.assets.set(uri, n); g.imp.add('Asset');
+    }
+    return g.assets.get(uri);
+  };
+  const events = cb.channel === 'none' ? [] : (cb.events || []);
+
+  /* ---------- tasks ---------- */
+  const commonKw = t => {
+    const a = [];
+    if (t.trigger_rule && t.trigger_rule !== 'all_success') a.push(`trigger_rule=${S(t.trigger_rule)}`);
+    if (!isBlank(t.retries)) a.push(`retries=${num(t.retries)}`);
+    if (!isBlank(t.retry_delay)) a.push(`retry_delay=${td(t.retry_delay)}`);
+    if (!isBlank(t.execution_timeout) && num(t.execution_timeout) > 0) a.push(`execution_timeout=timedelta(minutes=${num(t.execution_timeout)})`);
+    if (t.pool) a.push(`pool=${S(t.pool)}`);
+    if (!isBlank(t.priority_weight)) a.push(`priority_weight=${num(t.priority_weight, 1)}`);
+    if (t.map.enabled && !isBlank(t.map.max) && num(t.map.max) > 0) a.push(`max_active_tis_per_dag=${num(t.map.max)}`);
+    const outs = parseList(t.outlets); if (outs.length) a.push(`outlets=[${outs.map(assetRef).join(', ')}]`);
+    if (t.doc) a.push(`doc_md=${S(t.doc)}`);
+    return a;
+  };
+  const resolveTarget = (txt, t) => {
+    const x = String(txt).trim(); const hit = T.find(o => fullId(o) === x) || T.find(o => o.id === x);
+    if (!hit){ g.issues.push({lv:'warn', m:`Branch "${t.id}": target "${x}" is not a task id.`}); return x; }
+    if (!hit.upstream.includes(t.uid)) g.issues.push({lv:'warn', m:`Branch "${t.id}": target "${fullId(hit)}" is not directly downstream of the branch.`});
+    return fullId(hit);
+  };
+  const mapSource = (t) => {
+    if (t.map.source === 'upstream'){ const src = byUid.get(t.map.from); return src ? V(src.uid) : '[]'; }
+    const vals = parseList(t.map.values);
+    return pyVal(t.op === 'bash' ? vals : vals.map(smartVal));
+  };
+  const genTask = (t, I, out) => {
+    const op = OPS[t.op], c = t.cfg || {}, fn = g.fn.get(t.uid), v = V(t.uid);
+    if (op.pip && !(g.af === '2' && t.op === 'email')) g.pip.add(op.pip.split(' ')[0]);
+    if (C) out.push(`${I}# ── ${fullId(t)} · ${op.label}${t.role !== 'normal' ? ` · ${t.role}` : ''}${t.map.enabled && op.mappable ? ' · mapped' : ''}`);
+    const base = [`task_id=${S(t.id)}`], common = commonKw(t);
+    const mapped = op.mappable && t.map.enabled;
+    if (op.deco){
+      g.imp.add('task');
+      const extra = [];
+      if (t.op === 'python' && c.multiple_outputs) extra.push('multiple_outputs=True');
+      if (t.op === 'short_circuit' && !c.ignore_downstream_trigger_rules) extra.push('ignore_downstream_trigger_rules=False');
+      if (t.op === 'sensor_python') sensorKw(c).forEach(([k, x]) => extra.push(`${k}=${x}`));
+      out.push(I + '@' + callExpr(op.deco, [...base, ...extra, ...common], I));
+      const arg = ident(t.map.arg || 'item');
+      out.push(`${I}def ${fn}(${mapped ? arg + ', ' : ''}**context):`);
+      let body = c.code;
+      if (t.op === 'branch' && c.mode !== 'custom'){
+        const downs = T.filter(x => x.upstream.includes(t.uid));
+        const rules = String(c.rules || '').split('\n').map(l => l.trim()).filter(l => l && l.includes('=>')).map(l => { const [val, tg] = l.split('=>'); return [val.trim(), tg.split(',').map(x => x.trim()).filter(Boolean)]; });
+        const dflt = byUid.get(c.default_target) ? fullId(byUid.get(c.default_target)) : (downs[0] ? fullId(downs[0]) : null);
+        const L = [`value = str(context["params"].get(${S(c.param_name || 'env')}, ""))`];
+        if (rules.length){
+          L.push('routes = {');
+          rules.forEach(([val, tgs]) => { const r = tgs.map(x => resolveTarget(x, t)); L.push(`    ${S(val)}: ${r.length === 1 ? S(r[0]) : pyVal(r)},`); });
+          L.push('}', `log.info("Branching on %s -> %s", value, routes.get(value, ${dflt ? S(dflt) : 'None'}))`, `return routes.get(value, ${dflt ? S(dflt) : 'None'})`);
+        } else L.push(`return ${dflt ? S(dflt) : 'None'}`);
+        body = L.join('\n');
+      }
+      out.push(...indentLines(body, I + '    '), '');
+      if (mapped) out.push(`${I}${v} = ${fn}.expand(${arg}=${mapSource(t)})`);
+      else out.push(`${I}${v} = ${fn}()`);
+      out.push('');
+      return;
+    }
+    g.imp.add(op.imp);
+    let pairs = op.kw(c, g, t, fn);
+    if (mapped && t.op === 'bash'){
+      pairs = pairs.filter(([k]) => k !== 'bash_command');
+      const kws = [...base, ...pairs.map(([k, x]) => `${k}=${x}`), ...common];
+      out.push(`${I}${v} = ${callExpr(op.imp + '.partial', kws, I)}.expand(bash_command=${mapSource(t)})`);
+    } else {
+      const kws = [...base, ...pairs.map(([k, x]) => `${k}=${x}`), ...common];
+      out.push(`${I}${v} = ${callExpr(op.imp, kws, I)}`);
+    }
+    out.push('');
+  };
+
+  // group tree
+  const root = {path:'', items:[], kids:new Map()};
+  T.forEach(t => {
+    let node = root;
+    if (t.group) t.group.split('.').filter(Boolean).forEach(seg => {
+      if (!node.kids.has(seg)){ const child = {name:seg, path:node.path ? `${node.path}.${seg}` : seg, items:[], kids:new Map()}; node.kids.set(seg, child); node.items.push({group:child}); }
+      node = node.kids.get(seg);
+    });
+    node.items.push({task:t});
+  });
+  const body = [];
+  const genNode = (node, I) => node.items.forEach(it => {
+    if (it.task) genTask(it.task, I, body);
+    else { g.imp.add('TaskGroup'); body.push(`${I}with TaskGroup(group_id=${S(it.group.name)}) as tg_${ident(it.group.path)}:`); genNode(it.group, I + '    '); }
+  });
+  genNode(root, '    ');
+  while (body.length && body[body.length - 1] === '') body.pop();
+
+  /* ---------- setup / teardown + dependencies ---------- */
+  const auto = new Set(); const st = []; const setupsUsed = new Set();
+  T.forEach(t => { if (t.map.enabled && OPS[t.op].mappable && t.map.source === 'upstream' && byUid.has(t.map.from)) auto.add(`${t.map.from}>${t.uid}`); });
+  T.filter(t => t.role === 'teardown').forEach(t => {
+    const sets = t.upstream.filter(u => byUid.get(u)?.role === 'setup');
+    sets.forEach(u => { auto.add(`${u}>${t.uid}`); setupsUsed.add(u); });
+    st.push(sets.length ? `    ${V(t.uid)}.as_teardown(setups=${sets.length > 1 ? '[' + sets.map(V).join(', ') + ']' : V(sets[0])})` : `    ${V(t.uid)}.as_teardown()`);
+  });
+  T.filter(t => t.role === 'setup' && !setupsUsed.has(t.uid)).forEach(t => st.unshift(`    ${V(t.uid)}.as_setup()`));
+  const tp = topo(T); const ord = tp.cyclic ? T : tp.order;
+  const groups = new Map();
+  ord.forEach(t => {
+    const ups = t.upstream.filter(u => byUid.has(u) && !auto.has(`${u}>${t.uid}`));
+    if (!ups.length) return;
+    const key = ups.slice().sort().join(',');
+    if (!groups.has(key)) groups.set(key, {ups, downs:[]});
+    groups.get(key).downs.push(t.uid);
+  });
+  const deps = [...groups.values()].map(({ups, downs}) => {
+    const l = ups.length > 1 ? `[${ups.map(V).join(', ')}]` : V(ups[0]);
+    const r = downs.length > 1 ? `[${downs.map(V).join(', ')}]` : V(downs[0]);
+    return `    ${l} >> ${r}`;
+  });
+
+  /* ---------- schedule ---------- */
+  let schedule;
+  switch (d.schedule_type){
+    case 'none': schedule = 'None'; break;
+    case 'preset': schedule = S(d.preset); break;
+    case 'interval': schedule = `timedelta(${d.td_unit}=${num(d.td_value, 1)})`; break;
+    case 'dataset': { const refs = parseList(d.datasets).map(assetRef); schedule = d.dataset_logic === 'any' && refs.length > 1 ? `(${refs.join(' | ')})` : `[${refs.join(', ')}]`; break; }
+    default: schedule = S(String(d.cron || '').trim());
+  }
+  const pdate = (x) => { const [y, m, dd] = String(x || '2026-01-01').split('-').map(Number); return `pendulum.datetime(${y || 2026}, ${m || 1}, ${dd || 1}, tz=${S(d.timezone || 'UTC')})`; };
+
+  /* ---------- params ---------- */
+  const params = s.params.filter(p => /^[A-Za-z_]\w*$/.test(p.name || '')).map(p => {
+    const a = [];
+    const desc = p.desc ? `description=${S(p.desc)}` : null;
+    switch (p.type){
+      case 'integer': a.push(String(parseInt(p.def, 10) || 0), 'type="integer"'); break;
+      case 'number': a.push(String(parseFloat(p.def) || 0), 'type="number"'); break;
+      case 'boolean': a.push(String(p.def) === 'true' ? 'True' : 'False', 'type="boolean"'); break;
+      case 'array': a.push(pyVal(parseList(p.def).map(smartVal)), 'type="array"'); break;
+      case 'enum': { const ev = parseList(p.enum); const dv = ev.includes(String(p.def)) ? p.def : (ev[0] || ''); a.push(S(dv), 'type="string"', `enum=${pyVal(ev)}`); break; }
+      default: a.push(S(p.def), 'type="string"');
+    }
+    if (['integer','number'].includes(p.type)){ if (p.min !== '') a.push(`minimum=${num(p.min)}`); if (p.max !== '') a.push(`maximum=${num(p.max)}`); }
+    if (desc) a.push(desc);
+    return `        ${S(p.name)}: Param(${a.join(', ')}),`;
+  });
+  if (params.length) g.imp.add('Param');
+
+  /* ---------- callbacks ---------- */
+  const cbl = [];
+  if (events.length){
+    const hook = ['slack','teams'].includes(cb.channel);
+    if (hook){
+      g.imp.add('Variable');
+      cbl.push('def _get_variable(key: str, default=None):', '    """Read an Airflow Variable at runtime (never at module top level)."""');
+      if (af === '3') cbl.push('    return Variable.get(key, default=default)');
+      else if (af === '2') cbl.push('    return Variable.get(key, default_var=default)');
+      else cbl.push('    try:', '        return Variable.get(key, default=default)  # Airflow 3', '    except TypeError:', '        return Variable.get(key, default_var=default)  # Airflow 2');
+      cbl.push('', '');
+    }
+    cbl.push('def _notify(message: str) -> None:', `    """Send an alert (${cb.channel === 'log' ? 'task log only' : cb.channel === 'slack' ? 'Slack incoming webhook' : 'MS Teams incoming webhook'}). Change the channel in one place."""`, '    log.info(message)');
+    if (hook){
+      cbl.push(`    webhook_url = _get_variable(${S(cb.webhook_var || 'slack_webhook_url')})`, '    if not webhook_url:', `        log.warning("Variable %s is not set - notification skipped", ${S(cb.webhook_var || 'slack_webhook_url')})`, '        return',
+        '    try:', '        import requests', '', '        requests.post(webhook_url, json={"text": message}, timeout=10)', '    except Exception as exc:  # an alert must never break the task', '        log.warning("Notification failed: %s", exc)');
+    }
+    cbl.push('', '');
+    const E = {
+      task_failure:['on_task_failure', 'ti = context["task_instance"]', `_notify(f"❌ Task FAILED: {ti.dag_id}.{ti.task_id} | run_id={context['run_id']} | error={context.get('exception')}")`],
+      task_retry:['on_task_retry', 'ti = context["task_instance"]', `_notify(f"🔁 Task RETRY: {ti.dag_id}.{ti.task_id} | try {ti.try_number}")`],
+      task_success:['on_task_success', 'ti = context["task_instance"]', `_notify(f"✅ Task succeeded: {ti.dag_id}.{ti.task_id}")`],
+      dag_failure:['on_dag_failure', 'dag_run = context["dag_run"]', `_notify(f"🚨 DAG run FAILED: {dag_run.dag_id} | run_id={dag_run.run_id} | reason={context.get('reason')}")`],
+      dag_success:['on_dag_success', 'dag_run = context["dag_run"]', `_notify(f"🎉 DAG run succeeded: {dag_run.dag_id} | run_id={dag_run.run_id}")`],
+    };
+    events.filter(e => E[e]).forEach(e => cbl.push(`def ${E[e][0]}(context):`, `    ${E[e][1]}`, `    ${E[e][2]}`, '', ''));
+  }
+
+  /* ---------- default_args ---------- */
+  const da = [];
+  const cm = (txt) => C ? `  # ${txt}` : '';
+  da.push(`    "owner": ${S(d.owner || 'airflow')},`);
+  da.push(`    "depends_on_past": ${df.depends_on_past ? 'True' : 'False'},${cm('run only if this task succeeded in the previous run')}`);
+  da.push(`    "retries": ${num(df.retries)},${cm('retry a failed task this many times')}`);
+  da.push(`    "retry_delay": ${td(df.retry_delay)},`);
+  if (df.retry_backoff){ da.push(`    "retry_exponential_backoff": True,${cm('wait longer after every retry')}`); if (num(df.max_retry_delay) > 0) da.push(`    "max_retry_delay": ${td(df.max_retry_delay)},`); }
+  if (num(df.execution_timeout) > 0) da.push(`    "execution_timeout": timedelta(minutes=${num(df.execution_timeout)}),${cm('kill tasks that run longer')}`);
+  const mails = parseList(df.email);
+  if (mails.length) da.push(`    "email": ${pyVal(mails)},`);
+  if (df.email_on_failure || mails.length) da.push(`    "email_on_failure": ${df.email_on_failure ? 'True' : 'False'},`);
+  if (df.email_on_retry || mails.length) da.push(`    "email_on_retry": ${df.email_on_retry ? 'True' : 'False'},`);
+  if (events.includes('task_failure')) da.push('    "on_failure_callback": on_task_failure,');
+  if (events.includes('task_retry')) da.push('    "on_retry_callback": on_task_retry,');
+  if (events.includes('task_success')) da.push('    "on_success_callback": on_task_success,');
+
+  /* ---------- DAG kwargs ---------- */
+  const dk = [`    dag_id=${S(d.dag_id || 'my_dag')},`];
+  if (d.description) dk.push(`    description=${S(d.description)},`);
+  dk.push(`    schedule=${schedule},${C ? '  # ' + scheduleComment(d) : ''}`);
+  dk.push(`    start_date=${pdate(d.start_date)},`);
+  if (d.end_date) dk.push(`    end_date=${pdate(d.end_date)},`);
+  dk.push(`    catchup=${d.catchup ? 'True' : 'False'},${cm(d.catchup ? 'backfill missed intervals' : 'do not backfill missed intervals')}`);
+  if (num(d.max_active_runs) > 0) dk.push(`    max_active_runs=${num(d.max_active_runs)},`);
+  if (num(d.max_active_tasks) > 0) dk.push(`    max_active_tasks=${num(d.max_active_tasks)},`);
+  if (num(d.dagrun_timeout) > 0) dk.push(`    dagrun_timeout=timedelta(minutes=${num(d.dagrun_timeout)}),`);
+  dk.push('    default_args=default_args,');
+  const tags = parseList(d.tags.replace(/\n/g, ','));
+  if (tags.length) dk.push(`    tags=${pyVal(tags)},`);
+  if (params.length) dk.push(`    params={${C ? '  # shown in "Trigger DAG w/ config"; use {{ params.x }} or context["params"]["x"]' : ''}`, ...params, '    },');
+  if (d.doc_md) dk.push(`    doc_md=${S(d.doc_md)},`); else if (C) dk.push('    doc_md=__doc__,');
+  if (d.render_native) dk.push('    render_template_as_native_obj=True,');
+  if (!d.paused) dk.push('    is_paused_upon_creation=False,');
+  if (events.includes('dag_success')) dk.push('    on_success_callback=on_dag_success,');
+  if (events.includes('dag_failure')) dk.push('    on_failure_callback=on_dag_failure,');
+
+  /* ---------- imports ---------- */
+  const imports = renderImports(g);
+  const pip = [af === '2' ? '"apache-airflow>=2.7,<3"' : af === 'both' ? '"apache-airflow>=2.7"' : '"apache-airflow>=3.0"', ...[...g.pip].sort()];
+
+  /* ---------- assemble ---------- */
+  const out = [];
+  const now = new Date(); const stamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  out.push('"""');
+  out.push(`${d.dag_id || 'my_dag'}${d.description ? ' - ' + d.description : ''}`.replace(/"""/g, "'''"));
+  out.push('');
+  if (C){
+    out.push(`Schedule : ${scheduleComment(d)} (${d.timezone})`);
+    out.push(`Tasks    : ${T.length}`);
+    out.push(`Target   : Airflow ${af === 'both' ? '2.7+ and 3.x' : af + '.x'}`);
+    out.push('', 'Install:', `    pip install ${pip.join(' ')}`);
+    out.push('', `Generated by Airflow DAG Builder on ${stamp}.`);
+  } else out.push(`Generated by Airflow DAG Builder on ${stamp}.`);
+  out.push('"""', '', 'from __future__ import annotations', '', 'import logging', 'from datetime import timedelta', '', 'import pendulum', '');
+  out.push(...imports, '', 'log = logging.getLogger(__name__)', '');
+  if (g.assets.size){
+    out.push('');
+    if (C) out.push(`# Data-aware scheduling: a producer task with outlets=[...] marks the ${g.DS} as updated.`);
+    g.assets.forEach((name, uri) => out.push(`${name} = ${g.DS}(${S(uri)})`));
+    out.push('');
+  }
+  if (cbl.length){ out.push(''); if (C) out.push('# ─── Alerts / callbacks ' + '─'.repeat(52)); out.push(...cbl); while (out[out.length - 1] === '') out.pop(); out.push(''); }
+  if (g.callables.length){ out.push(''); if (C) out.push('# ─── Python callables (PythonOperator) ' + '─'.repeat(37)); out.push(...g.callables); while (out[out.length - 1] === '') out.pop(); out.push(''); }
+  out.push('');
+  if (C) out.push('# default_args are applied to every task; a task can override any of them.');
+  out.push('default_args = {', ...da, '}', '', '');
+  out.push('with DAG(', ...dk, ') as dag:');
+  if (body.length) out.push(...body); else out.push('    pass  # add tasks in the builder');
+  if (st.length){ out.push(''); if (C) out.push('    # ─── Setup / teardown (teardown always runs, like "finally") ───'); out.push(...st); }
+  if (deps.length){ out.push(''); if (C) out.push('    # ─── Dependencies ───'); if (tp.cyclic) out.push('    # WARNING: the dependencies contain a cycle - fix them in the builder!'); out.push(...deps); }
+  if (s.meta.dagTest) out.push('', '', 'if __name__ == "__main__":', `    # Run the whole DAG locally: python ${d.dag_id || 'my_dag'}.py`, '    dag.test()');
+  out.push('');
+  return {code: out.join('\n'), issues: g.issues};
+}
+function scheduleComment(d){
+  switch (d.schedule_type){
+    case 'none': return 'manual / API trigger only';
+    case 'preset': return d.preset;
+    case 'interval': return `every ${d.td_value} ${d.td_unit}`;
+    case 'dataset': return `when ${d.dataset_logic === 'any' ? 'any' : 'all'} listed Assets are updated`;
+    default: return describeCron(d.cron).replace(/^🕒\s*/, '').replace(/^⚠\s*/, '');
+  }
+}
+function renderImports(g){
+  const af = g.af, L = [];
+  const fmt = (mod, names) => { const line = `from ${mod} import ${names.join(', ')}`; return line.length <= 88 ? [line] : [`from ${mod} import (`, ...names.map(n => `    ${n},`), ')']; };
+  const groupBy = (list, which) => { const m = new Map(); list.forEach(n => { const mod = IMPORTS[n][which]; let nm = n; if (n === 'Asset' && which === 1) nm = af === 'both' ? 'Dataset as Asset' : 'Dataset'; if (!m.has(mod)) m.set(mod, []); m.get(mod).push(nm); }); return [...m.entries()].sort(([a], [b]) => a.localeCompare(b)).flatMap(([mod, ns]) => fmt(mod, ns.sort())); };
+  const all = [...g.imp];
+  if (af === '3') return groupBy(all, 0);
+  if (af === '2') return groupBy(all, 1);
+  const same = all.filter(n => IMPORTS[n][0] === IMPORTS[n][1]), diff = all.filter(n => IMPORTS[n][0] !== IMPORTS[n][1]);
+  L.push('try:  # Airflow 3.x', ...groupBy(diff, 0).map(l => '    ' + l), 'except ImportError:  # Airflow 2.x', ...groupBy(diff, 1).map(l => '    ' + l));
+  if (same.length) L.push('', ...groupBy(same, 0));
+  return L;
+}
+function describeCron(expr){
+  const p = String(expr || '').trim().split(/\s+/).filter(Boolean);
+  if (String(expr || '').trim().startsWith('@')) return '⚠ This looks like a preset – choose the "Preset" schedule type instead.';
+  if (p.length !== 5) return '⚠ A cron expression needs 5 fields: minute hour day-of-month month day-of-week';
+  const [mi, h, dom, mon, dow] = p; const isN = x => /^\d+$/.test(x);
+  const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+  const MON = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  let time;
+  if (isN(mi) && isN(h)) time = `At ${h.padStart(2, '0')}:${mi.padStart(2, '0')}`;
+  else if (mi === '*' && h === '*') time = 'Every minute';
+  else if (mi.startsWith('*/') && h === '*') time = `Every ${mi.slice(2)} minutes`;
+  else if (isN(mi) && h === '*') time = `At minute ${mi} of every hour`;
+  else if (isN(mi) && h.startsWith('*/')) time = `At minute ${mi}, every ${h.slice(2)} hours`;
+  else if (isN(mi) && /^[\d,\-]+$/.test(h)) time = `At minute ${mi} past hour ${h.replace(/,/g, ', ')}`;
+  else time = `Minute "${mi}", hour "${h}"`;
+  let day;
+  if (dom === '*' && dow === '*') day = 'every day';
+  else { const parts = []; if (dom !== '*') parts.push(`on day ${dom} of the month`); if (dow !== '*') parts.push(`on ${dow.replace(/\d/g, x => DAYS[+x] || x)}`); day = parts.join(' and '); }
+  const month = mon === '*' ? '' : ` in ${mon.replace(/\d+/g, n => MON[+n] || n)}`;
+  return `🕒 ${time}, ${day}${month}`;
+}
+
+/* =====================================================================
+   SYNTAX HIGHLIGHTER (Python)
+   ===================================================================== */
+const HL_KW = new Set('and as assert async await break class continue def del elif else except finally for from global if import in is lambda nonlocal not or pass raise return try while with yield'.split(' '));
+const HL_CONST = new Set(['True','False','None']);
+const HL_BI = new Set('print len range str int float dict list set tuple sum min max open isinstance sorted enumerate zip any all bool repr type super Exception RuntimeError ValueError TypeError ImportError KeyError __name__ __doc__ self'.split(' '));
+function highlight(code){
+  const re = /(#[^\n]*)|((?:[rRbBuUfF]{1,2})?(?:"""[\s\S]*?"""|'''[\s\S]*?'''|"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'))|(@[A-Za-z_][\w.]*)|(\b\d[\d_]*(?:\.\d+)?\b)|([A-Za-z_]\w*)/g;
+  const toks = []; let last = 0, m, prev = '';
+  while ((m = re.exec(code))){
+    if (m.index > last) toks.push(['', code.slice(last, m.index)]);
+    last = re.lastIndex; const t = m[0];
+    if (m[1]){ toks.push(['com', t]); prev = ''; }
+    else if (m[2]){ t.split(/(\{\{[\s\S]*?\}\}|\{%[\s\S]*?%\})/).forEach((p, i) => p && toks.push([i % 2 ? 'jinja' : 'str', p])); prev = ''; }
+    else if (m[3]){ toks.push(['dec', t]); prev = ''; }
+    else if (m[4]){ toks.push(['num', t]); prev = ''; }
+    else {
+      let c = '';
+      if (HL_KW.has(t)) c = 'kw'; else if (HL_CONST.has(t)) c = 'const'; else if (prev === 'def' || prev === 'class') c = 'fn-def';
+      else if (HL_BI.has(t)) c = 'bi'; else if (/^[A-Z][a-z]/.test(t) || /^[A-Z]\w*(Operator|Sensor|Group)$/.test(t)) c = 'cls'; else if (code[last] === '(') c = 'fn';
+      toks.push([c, t]); prev = t;
+    }
+  }
+  if (last < code.length) toks.push(['', code.slice(last)]);
+  const lines = []; let line = '';
+  toks.forEach(([c, txt]) => txt.split('\n').forEach((part, i) => { if (i){ lines.push(line); line = ''; } if (part) line += c ? `<span class="t-${c}">${esc(part)}</span>` : esc(part); }));
+  lines.push(line);
+  if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
+  return lines.map(l => `<span class="ln"><span class="lc">${l || ' '}</span></span>`).join('');
+}
+function highlightJSON(obj){
+  const j = esc(JSON.stringify(obj, null, 2));
+  const h = j.replace(/(&quot;(?:\\.|[^&\\]|&(?!quot;))*?&quot;)(\s*:)?|\b(true|false|null)\b|(-?\d+(?:\.\d+)?)/g, (m, s, colon, b, n) => s ? (colon ? `<span class="json-key">${s}</span>${colon}` : `<span class="json-str">${s}</span>`) : b ? `<span class="json-bool">${b}</span>` : `<span class="json-num">${n}</span>`);
+  return h.split('\n').map(l => `<span class="ln"><span class="lc">${l || ' '}</span></span>`).join('');
+}
+
+/* =====================================================================
+   FIELD RENDERING
+   ===================================================================== */
+let fid = 0;
+function fieldHTML(f, value, path, opts = {}){
+  const id = 'f' + (fid++);
+  const tipAttr = f.tip ? ` data-tip="${esc(f.tip)}"` : '';
+  const label = f.label ? `<label class="flabel" for="${id}"${tipAttr}>${esc(f.label)}${f.tip ? '<i class="info">i</i>' : ''}</label>` : '';
+  const help = prefs.inlineHelp && f.tip && f.type !== 'cronhelp' ? `<div class="help">${fmtTip(f.tip)}</div>` : '';
+  const rr = f.rerender ? ' data-rerender' : '';
+  const ph = f.ph ? ` placeholder="${esc(f.ph)}"` : '';
+  let ctl = '';
+  const options = typeof f.options === 'function' ? f.options() : (opts.options || f.options || []);
+  switch (f.type){
+    case 'text': ctl = `<input type="text" id="${id}" data-path="${path}" value="${esc(value)}"${ph}${rr}${f.mono ? ' style="font-family:var(--mono)"' : ''} spellcheck="false">`; break;
+    case 'number': ctl = `<input type="number" id="${id}" data-path="${path}" data-num value="${esc(value)}"${f.min !== undefined ? ` min="${f.min}"` : ''}${ph}>`; break;
+    case 'date': ctl = `<input type="date" id="${id}" data-path="${path}" value="${esc(value)}">`; break;
+    case 'code': case 'py': case 'kv': {
+      const rows = Math.min(16, Math.max(f.rows || 2, String(value ?? '').split('\n').length));
+      ctl = `<textarea id="${id}" class="code-in" data-path="${path}" rows="${rows}" spellcheck="false"${ph}>${esc(value)}</textarea>`; break;
+    }
+    case 'toggle': ctl = `<label class="switch"><input type="checkbox" id="${id}" data-path="${path}"${value ? ' checked' : ''}><span class="slider"></span><span class="sw-text">${value ? 'On' : 'Off'}</span></label>`; break;
+    case 'select': {
+      let has = false;
+      const o = options.map(([v, l]) => { const sel = String(v) === String(value); if (sel) has = true; return `<option value="${esc(v)}"${sel ? ' selected' : ''}>${esc(l)}</option>`; }).join('');
+      ctl = `<select id="${id}" data-path="${path}"${f.skipEmpty ? ' data-skip-empty' : ''}>${f.matchOnly && !has ? '' : ''}${o}</select>`;
+      if (f.matchOnly && !has) ctl = ctl.replace('<option value=""', '<option selected value=""');
+      break;
+    }
+    case 'radio': ctl = `<div class="seg" role="radiogroup">${options.map(([v, l]) => `<label><input type="radio" name="${path}" value="${esc(v)}" data-path="${path}"${String(v) === String(value) ? ' checked' : ''}><span>${esc(l)}</span></label>`).join('')}</div>`; break;
+    case 'multi': {
+      const arr = Array.isArray(value) ? value : [];
+      ctl = options.length ? `<div class="chips">${options.map(([v, l]) => `<label class="chip"><input type="checkbox" data-multi data-path="${path}" value="${esc(v)}"${arr.includes(v) ? ' checked' : ''}><span>${esc(l)}</span></label>`).join('')}</div>` : `<div class="empty-note">${esc(f.emptyText || 'Nothing to choose yet')}</div>`;
+      break;
+    }
+    case 'cronhelp': return `<div class="field wide"><div class="cron-help" id="cronHelp">${esc(describeCron(value))}</div></div>`;
+  }
+  return `<div class="field${f.wide ? ' wide' : ''}">${label}${ctl}${help}</div>`;
+}
+
+/* =====================================================================
+   CONFIG PANEL RENDER
+   ===================================================================== */
+const configPane = $('#configPane'), configRoot = $('#configRoot');
+function sectionShell(id, icon, title, tip, sum, inner){
+  const open = !prefs.collapsed[id];
+  return `<section class="card${open ? ' open' : ''}" id="sec-${id}">
+    <header class="sec-head" data-action="toggle-section" data-id="${id}"><span class="sec-ico">${icon}</span><h2${tip ? ` data-tip="${esc(tip)}"` : ''}>${esc(title)}</h2><span class="sec-sub">${esc(sum)}</span><span class="chev">▸</span></header>
+    <div class="sec-body">${inner}</div></section>`;
+}
+function renderConfig(){
+  const st = configPane.scrollTop; fid = 0;
+  let h = '';
+  for (const sec of SECTIONS){
+    const inner = sec.fields.filter(f => !f.show || f.show(state)).map(f => fieldHTML(f, getPath(state, f.path), f.path)).join('');
+    h += sectionShell(sec.id, sec.icon, sec.title, sec.tip, sec.sum(state), inner);
+  }
+  h += renderParams();
+  h += renderTasks();
+  configRoot.innerHTML = h;
+  configPane.scrollTop = st;
+}
+function renderParams(){
+  const rows = state.params.map((p, i) => {
+    const b = `params.${i}`;
+    const cells = [
+      fieldHTML({type:'text', label:'Name', tip:'Param name. Use it in templates as `{{ params.NAME }}` or in Python as `context["params"]["NAME"]`.', ph:'env'}, p.name, `${b}.name`),
+      fieldHTML({type:'select', label:'Type', tip:'**string** text · **integer / number** numeric with optional min / max · **boolean** checkbox · **enum** drop-down of allowed values · **array** list.', options:[['string','string'],['integer','integer'],['number','number'],['boolean','boolean'],['enum','enum (drop-down)'],['array','array (list)']]}, p.type, `${b}.type`),
+      p.type === 'boolean'
+        ? fieldHTML({type:'select', label:'Default', tip:'Default value used for scheduled runs.', options:[['false','false'],['true','true']]}, String(p.def) === 'true' ? 'true' : 'false', `${b}.def`)
+        : fieldHTML({type:'text', label:'Default', tip:'Default value used for scheduled runs and pre-filled in the trigger form. For arrays: comma separated.', ph: p.type === 'array' ? 'a, b, c' : ''}, p.def, `${b}.def`),
+    ];
+    if (p.type === 'enum') cells.push(fieldHTML({type:'text', label:'Allowed values', tip:'Comma separated list, e.g. `dev, qa, prod`. Shown as a drop-down in the trigger form.', ph:'dev, qa, prod'}, p.enum, `${b}.enum`));
+    if (['integer','number'].includes(p.type)) cells.push(fieldHTML({type:'number', label:'Minimum', tip:'Lowest allowed value (optional).'}, p.min, `${b}.min`), fieldHTML({type:'number', label:'Maximum', tip:'Highest allowed value (optional).'}, p.max, `${b}.max`));
+    cells.push(fieldHTML({type:'text', label:'Description', tip:'Help text shown under the field in the trigger form.', wide:true}, p.desc, `${b}.desc`));
+    return `<div class="param-row">${cells.join('')}<button class="btn sm icon-btn ghost danger del" data-action="del-param" data-i="${i}" data-tip="Delete this param">✕</button></div>`;
+  }).join('');
+  const inner = `<div class="hint">Params appear as a form when you click <b>Trigger DAG w/ config</b>, and are validated before the run starts.</div>${rows}
+    <div class="quick"><button class="btn sm" data-action="add-param">＋ Add param</button></div>`;
+  return sectionShell('params', '🎛', 'Params (trigger form)', 'Runtime inputs for the DAG – typed, validated, with defaults.', `${state.params.length} param(s)`, inner);
+}
+function opOptions(sel){
+  return OP_GROUPS.map(([g, ops]) => `<optgroup label="${esc(g)}">${ops.map(o => `<option value="${o}"${o === sel ? ' selected' : ''}>${esc(OPS[o].label)}</option>`).join('')}</optgroup>`).join('');
+}
+function renderTasks(){
+  const T = state.tasks;
+  const quick = QUICK_OPS.map(o => `<button class="btn sm" data-action="add-task" data-op="${o}" data-tip="${esc(OPS[o].label + ': ' + OPS[o].desc.replace(/<[^>]+>/g, ''))}">＋ ${esc(OPS[o].short)}</button>`).join('');
+  const inner = `
+    <div class="add-bar">
+      <select id="addOpSel" aria-label="Operator to add">${opOptions(prefs.lastOp || 'python')}</select>
+      <button class="btn primary sm" data-action="add-task">＋ Add task</button>
+      <label class="switch" data-tip="When on, a new task automatically depends on the last task in the list."><input type="checkbox" id="autoLink"${prefs.autoLink !== false ? ' checked' : ''}><span class="slider"></span><span class="sw-text">Link to previous</span></label>
+    </div>
+    <div class="quick"><span class="lbl">Quick add:</span>${quick}<span style="margin-left:auto"></span>
+      <button class="btn sm ghost" data-action="expand-all">Expand all</button><button class="btn sm ghost" data-action="collapse-all">Collapse all</button></div>
+    <div class="task-list">${T.map(renderTask).join('') || '<div class="empty-note">No tasks yet – add one above.</div>'}</div>`;
+  return sectionShell('tasks', '🧩', 'Tasks & dependencies', 'Add tasks, choose their operator, and select which tasks they depend on.', `${T.length} task(s)`, inner);
+}
+function renderTask(t, i){
+  const op = OPS[t.op], b = `tasks.${i}`, T = state.tasks;
+  const downs = T.filter(x => x.upstream.includes(t.uid));
+  const others = T.filter(x => x.uid !== t.uid);
+  const roleBadge = t.role !== 'normal' ? `<span class="badge role">${t.role === 'setup' ? '▲ setup' : '▼ teardown'}</span>` : '';
+  const mapBadge = op.mappable && t.map.enabled ? '<span class="badge map">[ ] mapped</span>' : '';
+  const upNames = t.upstream.map(u => T.find(x => x.uid === u)).filter(Boolean).map(fullId);
+  const head = `<div class="task-head" data-action="toggle-task" data-i="${i}">
+      <span class="chev">▸</span><span class="badge">${esc(op.short)}</span><b>${esc(fullId(t))}</b>${roleBadge}${mapBadge}
+      <span class="task-meta">${upNames.length ? '← ' + esc(upNames.join(', ')) : 'root'}</span>
+      <div class="task-actions">
+        <button class="btn icon-btn sm ghost" data-action="up" data-i="${i}" data-tip="Move up">↑</button>
+        <button class="btn icon-btn sm ghost" data-action="down" data-i="${i}" data-tip="Move down">↓</button>
+        <button class="btn icon-btn sm ghost" data-action="dup" data-i="${i}" data-tip="Duplicate task">⧉</button>
+        <button class="btn icon-btn sm ghost danger" data-action="del-task" data-i="${i}" data-tip="Delete task">✕</button>
+      </div></div>`;
+  if (!t.open) return `<div class="task-card cat-${op.cat}" id="card-${t.uid}">${head}</div>`;
+  const parts = [];
+  parts.push(fieldHTML({type:'text', label:'Task id', rerender:true, tip:'Unique id inside the DAG (within its group). Letters, numbers, `_ . -`. Used in the UI, logs and `xcom_pull(task_ids=...)`.'}, t.id, `${b}.id`));
+  parts.push(`<div class="field"><label class="flabel" data-tip="${esc('Which kind of work this task does. Changing it resets the operator-specific settings.')}">Operator<i class="info">i</i></label><select data-path="${b}.op">${opOptions(t.op)}</select></div>`);
+  parts.push(fieldHTML({type:'text', label:'Task group', rerender:true, ph:'(none)', tip:'Put the task in a **TaskGroup** (a collapsible box in the UI). Use dots for nested groups, e.g. `extract.database`. The full task id becomes `group.task_id`.'}, t.group, `${b}.group`));
+  parts.push(fieldHTML({type:'radio', label:'Role', tip:'**Setup** – prepares resources (e.g. create a cluster).\n**Teardown** – cleans up and **always runs**, even if work in between failed (like `finally`). Select the setup task in "Depends on".', options:[['normal','normal'],['setup','setup'],['teardown','teardown']]}, t.role, `${b}.role`));
+  parts.push(`<div class="op-info">${op.desc}${op.pip ? `<span class="pip">📦 pip install ${esc(op.pip)}</span>` : ''}</div>`);
+  // operator specific
+  const fields = (op.fields || []).filter(f => !f.show || f.show(t.cfg));
+  fields.forEach(f => {
+    let o = {};
+    if (f.options === 'downstream') o.options = [['', '(first downstream task)'], ...downs.map(x => [x.uid, fullId(x)])];
+    parts.push(fieldHTML({...f, options: f.options === 'downstream' ? undefined : f.options}, t.cfg[f.k], `${b}.cfg.${f.k}`, o));
+  });
+  if (t.op === 'branch'){
+    parts.push(`<div class="hint">Downstream tasks you can return: ${downs.length ? downs.map(x => `<code>${esc(fullId(x))}</code>`).join(' ') : '<i>none yet – make other tasks depend on this one</i>'}</div>`);
+  }
+  // mapping
+  if (op.mappable){
+    parts.push(`<div class="subhead">Dynamic task mapping</div>`);
+    parts.push(fieldHTML({type:'toggle', label:'Map this task (fan-out)', tip:'Create **one copy of this task per value** at runtime (`.expand()`). Perfect for "process every file / table / partition in parallel".'}, t.map.enabled, `${b}.map.enabled`));
+    if (t.map.enabled){
+      parts.push(fieldHTML({type:'radio', label:'Values come from', tip:'**Static list** – values you type here.\n**Upstream output** – the list returned by a TaskFlow Python task (known only at runtime).', options:[['static','Static list'],['upstream','Upstream output']]}, t.map.source, `${b}.map.source`));
+      if (t.op === 'python') parts.push(fieldHTML({type:'text', label:'Argument name', tip:'Name of the function argument that receives one value, e.g. `file_name`.', ph:'item'}, t.map.arg, `${b}.map.arg`));
+      if (t.map.source === 'static') parts.push(fieldHTML({type:'code', label: t.op === 'bash' ? 'Commands (one per line)' : 'Values (comma or one per line)', wide:true, rows:3, tip: t.op === 'bash' ? 'One bash command per line – one task copy runs each command.' : 'Values to map over. Numbers and True/False are converted automatically.'}, t.map.values, `${b}.map.values`));
+      else {
+        const srcs = others.filter(x => x.op === 'python');
+        parts.push(fieldHTML({type:'select', label:'Upstream task (returns a list)', tip:'The TaskFlow Python task whose **returned list** is mapped. The dependency is created automatically.'}, t.map.from, `${b}.map.from`, {options:[['', 'Select task…'], ...srcs.map(x => [x.uid, fullId(x)])]}));
+      }
+      parts.push(fieldHTML({type:'number', label:'Max parallel copies', min:1, ph:'no limit', tip:'`max_active_tis_per_dag` – at most this many mapped copies run at once (protects APIs / databases).'}, t.map.max, `${b}.map.max`));
+    }
+  }
+  // dependencies
+  parts.push(`<div class="subhead">Depends on (upstream)</div>`);
+  parts.push(fieldHTML({type:'multi', label:'', wide:true, emptyText:'Add more tasks to create dependencies.'}, t.upstream, `${b}.upstream`, {options: others.map(x => [x.uid, fullId(x)])}));
+  parts.push(fieldHTML({type:'select', label:'Trigger rule', tip:'When should this task run, based on its upstream tasks?\n**all_success** – all upstream succeeded (default)\n**none_failed_min_one_success** – use after a branch (join)\n**all_done** – always run when upstream finished (cleanup)\n**one_failed** – run as soon as one failed (alerting)\n**none_failed** – none failed (skips are OK)\n**always** – run no matter what'}, t.trigger_rule, `${b}.trigger_rule`, {options:TRIGGER_RULES}));
+  // advanced
+  parts.push(`<div class="subhead click" data-action="toggle-adv" data-i="${i}">${t.adv ? '▾' : '▸'} Advanced (overrides, pool, Assets, docs)</div>`);
+  if (t.adv){
+    parts.push(fieldHTML({type:'number', label:'Retries (override)', min:0, ph:`default: ${state.defaults.retries}`, tip:'Overrides the retries from Default args for this task only. Empty = use default.'}, t.retries, `${b}.retries`));
+    parts.push(fieldHTML({type:'number', label:'Retry delay sec (override)', min:0, ph:`default: ${state.defaults.retry_delay}`, tip:'Overrides the retry delay for this task. Empty = use default.'}, t.retry_delay, `${b}.retry_delay`));
+    parts.push(fieldHTML({type:'number', label:'Timeout min (override)', min:0, ph:`default: ${state.defaults.execution_timeout}`, tip:'Overrides the execution timeout (minutes) for this task.'}, t.execution_timeout, `${b}.execution_timeout`));
+    parts.push(fieldHTML({type:'text', label:'Pool', ph:'default_pool', tip:'Pools limit how many tasks use a shared resource at once (Admin → Pools), e.g. a pool `mysql` with 3 slots.'}, t.pool, `${b}.pool`));
+    parts.push(fieldHTML({type:'number', label:'Priority weight', ph:'1', tip:'Higher numbers are scheduled first when slots are limited.'}, t.priority_weight, `${b}.priority_weight`));
+    parts.push(fieldHTML({type:'text', label:'Outlets – Asset URIs (comma)', wide:true, ph:'s3://bucket/path/file.parquet', tip:'When this task succeeds it marks these **Assets / Datasets** as updated. DAGs scheduled on them start automatically.'}, t.outlets, `${b}.outlets`));
+    parts.push(fieldHTML({type:'code', label:'Task documentation (Markdown)', wide:true, rows:2, tip:'Shown in the task\'s detail page (`doc_md`).'}, t.doc, `${b}.doc`));
+  }
+  return `<div class="task-card open cat-${op.cat}" id="card-${t.uid}">${head}<div class="task-body">${parts.join('')}</div></div>`;
+}
+
+/* =====================================================================
+   EVENTS – config
+   ===================================================================== */
+function readInput(el){ if (el.type === 'checkbox') return el.checked; if (el.dataset.num !== undefined) return el.value === '' ? '' : Number(el.value); return el.value; }
+function commit(rerender){ saveState(); if (rerender) renderConfig(); refreshPreview(); }
+configRoot.addEventListener('input', e => {
+  const el = e.target, p = el.dataset.path; if (!p) return;
+  if (el.type === 'checkbox' || el.type === 'radio' || el.tagName === 'SELECT') return;
+  setPath(state, p, readInput(el));
+  if (p === 'dag.cron'){ const hlp = $('#cronHelp'); if (hlp) hlp.textContent = describeCron(el.value); }
+  commit(false);
+});
+configRoot.addEventListener('change', e => {
+  const el = e.target;
+  if (el.id === 'addOpSel'){ prefs.lastOp = el.value; savePrefs(); return; }
+  if (el.id === 'autoLink'){ prefs.autoLink = el.checked; savePrefs(); return; }
+  const p = el.dataset.path; if (!p) return;
+  if (el.dataset.multi !== undefined){
+    let arr = getPath(state, p); if (!Array.isArray(arr)) arr = [];
+    arr = el.checked ? [...new Set([...arr, el.value])] : arr.filter(x => x !== el.value);
+    setPath(state, p, arr); commit(true); return;
+  }
+  if (el.type === 'checkbox' || el.type === 'radio' || el.tagName === 'SELECT'){
+    const v = readInput(el);
+    if (el.tagName === 'SELECT' && el.dataset.skipEmpty !== undefined && v === '') return;
+    setPath(state, p, v);
+    const m = p.match(/^tasks\.(\d+)\.op$/);
+    if (m){ const t = state.tasks[+m[1]]; t.cfg = defaultCfg(v); if (!OPS[v].mappable) t.map.enabled = false; }
+    commit(true); return;
+  }
+  if (el.dataset.rerender !== undefined) commit(true);
+});
+configRoot.addEventListener('keydown', e => {
+  if (e.key === 'Tab' && e.target.classList.contains('code-in') && !e.shiftKey){
+    e.preventDefault(); const el = e.target, s = el.selectionStart, en = el.selectionEnd;
+    el.setRangeText('    ', s, en, 'end'); el.dispatchEvent(new Event('input', {bubbles:true}));
+  }
+});
+configRoot.addEventListener('click', e => {
+  const b = e.target.closest('[data-action]'); if (!b) return;
+  const a = b.dataset.action, i = +b.dataset.i, T = state.tasks;
+  switch (a){
+    case 'toggle-section': prefs.collapsed[b.dataset.id] = !prefs.collapsed[b.dataset.id]; savePrefs(); b.parentElement.classList.toggle('open'); return;
+    case 'toggle-task': T[i].open = !T[i].open; break;
+    case 'toggle-adv': T[i].adv = !T[i].adv; break;
+    case 'expand-all': T.forEach(t => t.open = true); break;
+    case 'collapse-all': T.forEach(t => t.open = false); break;
+    case 'add-param': state.params.push(P(`param_${state.params.length + 1}`, 'string', '')); prefs.collapsed.params = false; break;
+    case 'del-param': snapshot(); state.params.splice(i, 1); toast('Param deleted', true); break;
+    case 'add-task': {
+      const op = b.dataset.op || $('#addOpSel')?.value || 'python';
+      const t = newTask(op);
+      const last = T[T.length - 1];
+      if (last && prefs.autoLink !== false) t.upstream = [last.uid];
+      T.forEach(x => x.open = false); T.push(t);
+      commit(true);
+      requestAnimationFrame(() => focusCard(t.uid, true));
+      toast(`Added ${OPS[op].label}`);
+      return;
+    }
+    case 'del-task': {
+      snapshot(); const [rm] = T.splice(i, 1);
+      T.forEach(x => { x.upstream = x.upstream.filter(u => u !== rm.uid); if (x.map.from === rm.uid) x.map.from = ''; if (x.cfg.default_target === rm.uid) x.cfg.default_target = ''; });
+      toast(`Deleted "${rm.id}"`, true); break;
+    }
+    case 'up': if (i > 0) [T[i - 1], T[i]] = [T[i], T[i - 1]]; break;
+    case 'down': if (i < T.length - 1) [T[i + 1], T[i]] = [T[i], T[i + 1]]; break;
+    case 'dup': {
+      const c = clone(T[i]); c.uid = newUid(); let n = c.id + '_copy', k = 2; while (T.some(x => x.id === n && x.group === c.group)) n = `${c.id}_copy${k++}`; c.id = n; c.open = true;
+      T.splice(i + 1, 0, c); toast(`Duplicated as "${n}"`); break;
+    }
+    default: return;
+  }
+  commit(true);
+});
+function focusCard(uid, flash){
+  const el = document.getElementById('card-' + uid); if (!el) return;
+  el.scrollIntoView({behavior:'smooth', block:'center'});
+  if (flash){ el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1200); }
+}
+
+/* =====================================================================
+   PREVIEW
+   ===================================================================== */
+const codeView = $('#codeView'), graphView = $('#graphView'), jsonView = $('#jsonView');
+let lastCode = '', lastIssues = [], prevTimer;
+function refreshPreview(){ clearTimeout(prevTimer); prevTimer = setTimeout(renderPreview, 90); }
+function renderPreview(){
+  const res = generate(state); lastCode = res.code;
+  lastIssues = [...validate(state), ...res.issues];
+  const tab = prefs.tab;
+  codeView.hidden = tab !== 'code'; graphView.hidden = tab !== 'graph'; jsonView.hidden = tab !== 'json';
+  if (tab === 'code') codeView.innerHTML = highlight(lastCode);
+  if (tab === 'graph') renderGraph();
+  if (tab === 'json') jsonView.innerHTML = highlightJSON(stripUi(state));
+  $$('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  renderIssues();
+  const lines = lastCode.split('\n').length;
+  $('#statusBar').innerHTML = `<span><b>${state.tasks.length}</b> tasks</span><span><b>${lines}</b> lines</span><span>Airflow <b>${state.meta.af === 'both' ? '2 + 3' : state.meta.af + '.x'}</b></span><span>File <b>${esc((state.dag.dag_id || 'my_dag') + '.py')}</b></span><span style="margin-left:auto">✓ autosaved in this browser</span>`;
+}
+function stripUi(s){ const c = clone(s); c.tasks.forEach(t => { delete t.open; delete t.adv; }); return c; }
+function renderIssues(){
+  const e = lastIssues.filter(x => x.lv === 'error').length, w = lastIssues.filter(x => x.lv === 'warn').length, n = lastIssues.filter(x => x.lv === 'info').length;
+  const pill = $('#statusPill');
+  pill.className = 'status-pill ' + (e ? 'error' : w ? 'warn' : 'ok');
+  pill.textContent = e ? `✕ ${e} error${e > 1 ? 's' : ''}${w ? ` · ${w} warning${w > 1 ? 's' : ''}` : ''}` : w ? `⚠ ${w} warning${w > 1 ? 's' : ''}` : `✓ Valid${n ? ` · ${n} note${n > 1 ? 's' : ''}` : ''}`;
+  const box = $('#issues');
+  box.hidden = !prefs.showIssues || !lastIssues.length;
+  const order = {error:0, warn:1, info:2};
+  box.innerHTML = lastIssues.slice().sort((a, b) => order[a.lv] - order[b.lv]).map(x => `<div class="issue lv-${x.lv}"><span class="lv">${x.lv === 'warn' ? 'warn' : x.lv}</span><span>${esc(x.m)}</span></div>`).join('');
+}
+function renderGraph(){
+  const T = state.tasks;
+  if (!T.length){ graphView.innerHTML = '<div class="empty">No tasks yet – add some in the Tasks section.</div>'; return; }
+  const tp = topo(T); const seq = tp.cyclic ? T : tp.order; const lvl = new Map();
+  seq.forEach(t => { let L = 0; t.upstream.forEach(u => { if (lvl.has(u)) L = Math.max(L, lvl.get(u) + 1); }); lvl.set(t.uid, L); });
+  const cols = []; seq.forEach(t => { const L = lvl.get(t.uid); (cols[L] = cols[L] || []).push(t); });
+  const W = 190, H = 52, GX = 64, GY = 18, PAD = 20;
+  const maxRows = Math.max(...cols.map(c => c.length));
+  const width = PAD * 2 + cols.length * W + (cols.length - 1) * GX, height = PAD * 2 + maxRows * H + (maxRows - 1) * GY;
+  const pos = new Map();
+  cols.forEach((col, ci) => { const off = (maxRows - col.length) * (H + GY) / 2; col.forEach((t, ri) => pos.set(t.uid, {x: PAD + ci * (W + GX), y: PAD + off + ri * (H + GY)})); });
+  const byUid = new Map(T.map(t => [t.uid, t]));
+  let edges = '';
+  const edge = (a, b, cls) => { const p1 = pos.get(a), p2 = pos.get(b); if (!p1 || !p2) return; const x1 = p1.x + W, y1 = p1.y + H / 2, x2 = p2.x - 2, y2 = p2.y + H / 2, mx = (x1 + x2) / 2; edges += `<path class="gedge ${cls}" d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}" marker-end="url(#arr)"/>`; };
+  T.forEach(t => {
+    t.upstream.forEach(u => edge(u, t.uid, t.role === 'teardown' && byUid.get(u)?.role === 'setup' ? 'dash' : ''));
+    if (t.map.enabled && OPS[t.op].mappable && t.map.source === 'upstream' && t.map.from && !t.upstream.includes(t.map.from)) edge(t.map.from, t.uid, 'auto');
+  });
+  const trunc = (s, n) => s.length > n ? s.slice(0, n - 1) + '…' : s;
+  const nodes = T.map(t => {
+    const p = pos.get(t.uid); if (!p) return ''; const op = OPS[t.op];
+    const sub = [op.short, t.group, t.role !== 'normal' ? t.role : '', t.map.enabled && op.mappable ? '[ ] mapped' : '', t.trigger_rule !== 'all_success' ? t.trigger_rule : ''].filter(Boolean).join(' · ');
+    return `<g class="gnode cat-${op.cat}" data-uid="${t.uid}" transform="translate(${p.x},${p.y})"><title>${esc(fullId(t))} – ${esc(op.label)}</title>
+      <rect class="box" width="${W}" height="${H}" rx="10"/><rect class="bar" width="5" height="${H - 16}" x="7" y="8" rx="2.5"/>
+      <text x="20" y="22">${esc(trunc(t.id, 21))}</text><text class="sub" x="20" y="39">${esc(trunc(sub, 30))}</text></g>`;
+  }).join('');
+  graphView.innerHTML = `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="DAG graph">
+    <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--muted)"/></marker></defs>${edges}${nodes}</svg>
+    <div class="legend"><span class="cat-compute"><i></i>compute</span><span class="cat-sensor"><i></i>sensor</span><span class="cat-branch"><i></i>branch / short-circuit</span><span class="cat-control"><i></i>control</span><span class="cat-trigger"><i></i>cross-DAG / notify</span>
+    <span>┄ green dashed = setup→teardown</span><span>┄ purple dotted = mapped from output</span>${tp.cyclic ? '<span style="color:var(--danger)">⚠ cycle detected</span>' : ''}</div>`;
+}
+graphView.addEventListener('click', e => {
+  const n = e.target.closest('.gnode'); if (!n) return;
+  const t = state.tasks.find(x => x.uid === n.dataset.uid); if (!t) return;
+  t.open = true; prefs.collapsed.tasks = false; savePrefs();
+  if (prefs.layout === 'preview') setLayout('side');
+  renderConfig(); requestAnimationFrame(() => focusCard(t.uid, true));
+});
+
+/* =====================================================================
+   TOOLTIP
+   ===================================================================== */
+const tip = $('#tip'); let tipEl = null;
+function showTip(el){
+  tipEl = el; tip.innerHTML = fmtTip(el.dataset.tip); tip.classList.add('show');
+  const r = el.getBoundingClientRect(), tw = tip.offsetWidth, th = tip.offsetHeight;
+  let x = Math.min(Math.max(8, r.left), window.innerWidth - tw - 8), y = r.bottom + 8;
+  if (y + th > window.innerHeight - 8) y = r.top - th - 8;
+  tip.style.left = x + 'px'; tip.style.top = Math.max(8, y) + 'px';
+}
+const hideTip = () => { tipEl = null; tip.classList.remove('show'); };
+document.addEventListener('mouseover', e => { const el = e.target.closest('[data-tip]'); if (el === tipEl) return; el ? showTip(el) : hideTip(); });
+document.addEventListener('focusin', e => { const el = e.target.closest('[data-tip]'); el ? showTip(el) : hideTip(); });
+document.addEventListener('scroll', hideTip, true);
+document.addEventListener('click', e => { if (e.target.classList.contains('info')){ e.preventDefault(); const el = e.target.closest('[data-tip]'); if (el) showTip(el); } });
+
+/* =====================================================================
+   TOAST
+   ===================================================================== */
+let toastTimer;
+function toast(msg, undo = false){
+  $('#toastMsg').textContent = msg; $('#toastAction').hidden = !undo;
+  $('#toast').classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => $('#toast').classList.remove('show'), undo ? 6000 : 2200);
+}
+$('#toastAction').addEventListener('click', () => {
+  if (!undoSnap) return; state = normalize(undoSnap); undoSnap = null; commit(true); $('#toast').classList.remove('show'); toast('Restored');
+});
+
+/* =====================================================================
+   TOOLBAR / LAYOUT / THEME
+   ===================================================================== */
+const ws = $('#workspace');
+function applyPrefs(){
+  document.documentElement.dataset.theme = prefs.theme;
+  $('#themeSel').value = prefs.theme;
+  const root = document.documentElement.style;
+  if (prefs.accent){ root.setProperty('--accent', prefs.accent); } else root.removeProperty('--accent');
+  $('#accentPick').value = prefs.accent || getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#4f8cff';
+  ws.className = 'layout-' + prefs.layout + (prefs.swap ? ' swap' : '');
+  ws.style.setProperty('--split', prefs.split + '%'); ws.style.setProperty('--splitV', prefs.splitV + '%');
+  $$('#layoutSeg input').forEach(r => r.checked = r.value === prefs.layout);
+  $('#inlineHelp').checked = prefs.inlineHelp;
+  document.documentElement.style.setProperty('--code-size', prefs.fontSize + 'px');
+  $('#previewBody').classList.toggle('wrap', prefs.wrap);
+  $('#wrapBtn').classList.toggle('primary', prefs.wrap);
+}
+function setLayout(l){ prefs.layout = l; savePrefs(); applyPrefs(); }
+$$('#layoutSeg input').forEach(r => r.addEventListener('change', () => setLayout(r.value)));
+$('#swapBtn').addEventListener('click', () => { prefs.swap = !prefs.swap; savePrefs(); applyPrefs(); });
+$('#themeSel').addEventListener('change', e => { prefs.theme = e.target.value; prefs.accent = ''; savePrefs(); applyPrefs(); });
+$('#accentPick').addEventListener('input', e => { prefs.accent = e.target.value; savePrefs(); applyPrefs(); });
+$('#inlineHelp').addEventListener('change', e => { prefs.inlineHelp = e.target.checked; savePrefs(); renderConfig(); });
+$('#fontUp').addEventListener('click', () => { prefs.fontSize = Math.min(22, prefs.fontSize + 1); savePrefs(); applyPrefs(); });
+$('#fontDown').addEventListener('click', () => { prefs.fontSize = Math.max(10, prefs.fontSize - 1); savePrefs(); applyPrefs(); });
+$('#wrapBtn').addEventListener('click', () => { prefs.wrap = !prefs.wrap; savePrefs(); applyPrefs(); });
+$$('.tab').forEach(b => b.addEventListener('click', () => { prefs.tab = b.dataset.tab; savePrefs(); renderPreview(); }));
+$('#statusPill').addEventListener('click', () => { prefs.showIssues = !prefs.showIssues; savePrefs(); renderIssues(); });
+$('#fab').addEventListener('click', () => $('#previewPane').scrollIntoView({behavior:'smooth'}));
+
+// splitter
+(() => {
+  const sp = $('#splitter'); let drag = false;
+  sp.addEventListener('pointerdown', e => { drag = true; sp.classList.add('dragging'); sp.setPointerCapture(e.pointerId); document.body.style.userSelect = 'none'; });
+  sp.addEventListener('pointermove', e => {
+    if (!drag) return; const r = ws.getBoundingClientRect();
+    if (prefs.layout === 'side'){ let pct = (e.clientX - r.left) / r.width * 100; if (prefs.swap) pct = 100 - pct; prefs.split = Math.round(Math.min(80, Math.max(20, pct))); }
+    else { let pct = (e.clientY - r.top) / r.height * 100; if (prefs.swap) pct = 100 - pct; prefs.splitV = Math.round(Math.min(85, Math.max(15, pct))); }
+    applyPrefs();
+  });
+  const end = () => { if (!drag) return; drag = false; sp.classList.remove('dragging'); document.body.style.userSelect = ''; savePrefs(); };
+  sp.addEventListener('pointerup', end); sp.addEventListener('pointercancel', end);
+  sp.addEventListener('keydown', e => {
+    const k = {ArrowLeft:-2, ArrowUp:-2, ArrowRight:2, ArrowDown:2}[e.key]; if (!k) return; e.preventDefault();
+    if (prefs.layout === 'side') prefs.split = Math.min(80, Math.max(20, prefs.split + k)); else prefs.splitV = Math.min(85, Math.max(15, prefs.splitV + k));
+    savePrefs(); applyPrefs();
+  });
+})();
+
+// templates
+const tplSel = $('#templateSel');
+tplSel.innerHTML = Object.entries(TEMPLATES).map(([k, t]) => `<option value="${k}">${esc(t.label)}</option>`).join('');
+tplSel.value = prefs.template in TEMPLATES ? prefs.template : 'simple_etl';
+$('#loadTplBtn').addEventListener('click', () => {
+  snapshot(); const k = tplSel.value; prefs.template = k; savePrefs();
+  const keepMeta = clone(state.meta); state = normalize(TEMPLATES[k].make()); state.meta = keepMeta;
+  prefs.collapsed.tasks = false; savePrefs(); commit(true); configPane.scrollTop = 0;
+  toast(`Loaded template "${TEMPLATES[k].label}"`, true);
+});
+$('#resetBtn').addEventListener('click', () => { snapshot(); state = normalize(TEMPLATES.blank.make()); commit(true); toast('Reset to blank', true); });
+
+// import / export / download / copy
+$('#exportBtn').addEventListener('click', () => download(`${state.dag.dag_id || 'dag'}.config.json`, JSON.stringify(stripUi(state), null, 2), 'application/json'));
+$('#importBtn').addEventListener('click', () => $('#importFile').click());
+$('#importFile').addEventListener('change', async e => {
+  const f = e.target.files[0]; if (!f) return;
+  try {
+    const obj = JSON.parse(await f.text());
+    if (!obj || typeof obj !== 'object' || !obj.dag) throw new Error('not a DAG Builder config');
+    snapshot(); state = normalize(obj); commit(true); toast(`Imported ${f.name}`, true);
+  } catch (err){ toast('Import failed: ' + err.message); }
+  e.target.value = '';
+});
+function download(name, text, type = 'text/x-python'){
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], {type})); a.download = name;
+  document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+}
+function downloadPy(){
+  const res = generate(state); const errs = validate(state).filter(x => x.lv === 'error').length + res.issues.filter(x => x.lv === 'error').length;
+  download(`${(state.dag.dag_id || 'my_dag').replace(/[^\w.\-]/g, '_')}.py`, res.code);
+  toast(errs ? `Downloaded – but there ${errs > 1 ? 'are' : 'is'} ${errs} error${errs > 1 ? 's' : ''} to fix` : 'Downloaded .py file ✓');
+}
+$('#downloadBtn').addEventListener('click', downloadPy);
+$('#copyBtn').addEventListener('click', async () => {
+  const text = prefs.tab === 'json' ? JSON.stringify(stripUi(state), null, 2) : lastCode;
+  try { await navigator.clipboard.writeText(text); }
+  catch { const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); }
+  toast('Copied to clipboard ✓');
+});
+document.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's'){ e.preventDefault(); downloadPy(); } });
+
+/* =====================================================================
+   INIT
+   ===================================================================== */
+(function init(){
+  const saved = safeJSON(localStorage.getItem(LS_STATE));
+  state = saved && saved.dag ? normalize(saved) : normalize(TEMPLATES.simple_etl.make());
+  applyPrefs(); renderConfig(); renderPreview();
+})();
+</script>
+</body>
+</html>
