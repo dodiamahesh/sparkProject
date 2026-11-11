@@ -1,0 +1,8 @@
+[
+  {"carrierId":"CRR-01","carrierName":"Delhivery","serviceType":"STANDARD","contactEmail":"support@delhivery.example","status":"ACTIVE","updatedAt":"2026-01-02T10:00:00","processedFlag":"N"},
+  {"carrierId":"CRR-02","carrierName":"Blue Dart","serviceType":"EXPRESS","contactEmail":"care@bluedart.example","status":"ACTIVE","updatedAt":"2026-01-02T10:00:00","processedFlag":"N"},
+  {"carrierId":"CRR-03","carrierName":"Ekart Logistics","serviceType":"standard","contactEmail":"help@ekart.example","status":"ACTIVE","updatedAt":"2026-01-02T10:00:00","processedFlag":"N"},
+  {"carrierId":"CRR-04","carrierName":"Shadowfax","serviceType":"SAME_DAY","contactEmail":"ops@shadowfax.example","status":"ACTIVE","updatedAt":"2026-01-02T10:00:00","processedFlag":"N"},
+  {"carrierId":"CRR-05","carrierName":"XpressBees","serviceType":"EXPRESS","contactEmail":"CS@XpressBees.example","status":"ACTIVE","updatedAt":"2026-01-02T10:00:00","processedFlag":"N"},
+  {"carrierId":"CRR-06","carrierName":"SkyDrop","serviceType":"DRONE","contactEmail":"hello@skydrop.example","status":"ACTIVE","updatedAt":"2026-01-02T10:00:00","processedFlag":"N"}
+]

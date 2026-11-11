@@ -32,8 +32,7 @@ public abstract class AbstractEtlPipeline implements EtlPipeline {
      * EXTRACT one MongoDB collection, then SANITIZE, VALIDATE and DE-DUPLICATE it.
      * Use {@code batch.valid()} for the next steps. Bad rows are saved for you at the end of the job.
      */
-    protected SourceBatch extractAndValidate(PipelineContext context, SourceDefinition source,
-                                             DataSanitizer sanitizer, DataQualityRules rules) {
+    protected SourceBatch extractAndValidate(PipelineContext context, SourceDefinition source,DataSanitizer sanitizer, DataQualityRules rules) {
         return toolkit.sourceProcessor().process(context, source, sanitizer, rules);
     }
 

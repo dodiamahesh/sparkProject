@@ -9,12 +9,10 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.function.Consumer;
 
-import static org.apache.spark.sql.functions.coalesce;
 import static org.apache.spark.sql.functions.col;
-import static org.apache.spark.sql.functions.concat;
 import static org.apache.spark.sql.functions.current_timestamp;
-import static org.apache.spark.sql.functions.lit;
 import static org.apache.spark.sql.functions.not;
 
 /**
@@ -25,24 +23,33 @@ import static org.apache.spark.sql.functions.not;
  *       .required("paymentId", "amount")               // VALIDATION check
  *       .mustBePositive("amount")
  *       .mustBeOneOf("currency", "INR", "USD")
- *       .mustExistIn("customerId", customers, "customer_id", "dim_customer");   // ORPHAN check
+ *       .mustExistIn("customerId", customers, "customer_id", "dim_customer")    // ORPHAN check
+ *       .warnings(w -> w                               // WARNING: record is LOADED, warning is reported
+ *               .required("phone")
+ *               .mustNotBeMoreThan("amount", 100_000));
  * </pre>
- * Every rule describes when a record is BAD. A record with zero failed rules is valid.
+ * Every rule describes when a record is BAD. A record with zero failed (error) rules is valid.
  * All failed rules of a record are collected, so the rejected table shows every problem at once.
  */
 public final class DataQualityRules {
 
+    /** ERROR rules reject the record, WARNING rules only report it. */
+    public enum Severity { ERROR, WARNING }
+
     private static final String EMAIL_REGEX = "^[a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,}$";
     private static final String INTEGER_REGEX = "^-?[0-9]+$";
 
+    private final Severity severity;
     private final List<ValidationRule> rules = new ArrayList<>();
+    private final List<ValidationRule> warningRules = new ArrayList<>();
     private final List<ReferenceRule> referenceRules = new ArrayList<>();
 
-    private DataQualityRules() {
+    private DataQualityRules(Severity severity) {
+        this.severity = severity;
     }
 
     public static DataQualityRules create() {
-        return new DataQualityRules();
+        return new DataQualityRules(Severity.ERROR);
     }
 
     // ------------------------------------------------------------------
@@ -96,6 +103,12 @@ public final class DataQualityRules {
                 column + " cannot be negative", column);
     }
 
+    /** Typical WARNING: "amount above 1,00,000 needs a review". */
+    public DataQualityRules mustNotBeMoreThan(String column, double max) {
+        return add(ErrorType.VALIDATION, col(column).cast(SparkTypes.MONEY).gt(max),
+                column + " is more than " + max, column);
+    }
+
     public DataQualityRules mustBeBetween(String column, double min, double max) {
         Column number = col(column).cast(SparkTypes.RATE);
         return add(ErrorType.VALIDATION, number.lt(min).or(number.gt(max)),
@@ -140,7 +153,29 @@ public final class DataQualityRules {
      * @param lookupName   friendly name for the error message, e.g. "dim_customer"
      */
     public DataQualityRules mustExistIn(String column, Dataset<Row> lookup, String lookupColumn, String lookupName) {
+        if (severity == Severity.WARNING) {
+            throw new IllegalArgumentException("An ORPHAN check cannot be a warning: the fact would get no surrogate key");
+        }
         referenceRules.add(new ReferenceRule(column, lookup, lookupColumn, lookupName));
+        return this;
+    }
+
+    // ------------------------------------------------------------------
+    // WARNINGS: the record is loaded, the problem is saved in etl_audit.etl_data_warning
+    // ------------------------------------------------------------------
+
+    /**
+     * Every rule added inside {@code warningRules} is a WARNING instead of an error:
+     * {@code .warnings(w -> w.required("phone").mustNotBeMoreThan("amount", 100_000))}.
+     * Warnings are only checked on rows that passed every error rule.
+     */
+    public DataQualityRules warnings(Consumer<DataQualityRules> warningRules) {
+        if (severity == Severity.WARNING) {
+            throw new IllegalStateException("warnings(...) cannot be nested");
+        }
+        DataQualityRules warningsOnly = new DataQualityRules(Severity.WARNING);
+        warningRules.accept(warningsOnly);
+        this.warningRules.addAll(warningsOnly.rules);
         return this;
     }
 
@@ -150,21 +185,16 @@ public final class DataQualityRules {
         return Collections.unmodifiableList(rules);
     }
 
+    public List<ValidationRule> warningRules() {
+        return Collections.unmodifiableList(warningRules);
+    }
+
     public List<ReferenceRule> referenceRules() {
         return Collections.unmodifiableList(referenceRules);
     }
 
-    /** Builds "[TYPE] text (value: x)" so the rejected table shows exactly what was wrong. */
-    static Column message(ErrorType errorType, String text, String valueColumn) {
-        String prefix = "[" + errorType.name() + "] " + text;
-        if (valueColumn == null) {
-            return lit(prefix);
-        }
-        return concat(lit(prefix + " (value: "), coalesce(col(valueColumn), lit("null")), lit(")"));
-    }
-
     private DataQualityRules add(ErrorType errorType, Column failWhen, String text, String valueColumn) {
-        rules.add(new ValidationRule(errorType, failWhen, message(errorType, text, valueColumn)));
+        rules.add(new ValidationRule(errorType, failWhen, text, valueColumn));
         return this;
     }
 }

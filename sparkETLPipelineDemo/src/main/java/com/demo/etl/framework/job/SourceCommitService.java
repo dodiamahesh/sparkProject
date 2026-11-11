@@ -1,5 +1,6 @@
 package com.demo.etl.framework.job;
 
+import com.demo.etl.framework.audit.DataWarningRepository;
 import com.demo.etl.framework.audit.RejectedRecordRepository;
 import com.demo.etl.framework.audit.StepTracker;
 import com.demo.etl.framework.pipeline.PipelineContext;
@@ -22,7 +23,8 @@ import static org.apache.spark.sql.functions.col;
  *
  *   1. save rejected rows        -> etl_audit.etl_rejected_record (insert new / update existing)
  *   2. remove fixed rows         -> rows that were rejected before and are valid now are deleted
- *   3. update MongoDB flags      -> valid = 'Y', rejected = 'E', duplicate = 'D'
+ *   3. save rule warnings        -> etl_audit.etl_data_warning (loaded rows that broke a warning rule)
+ *   4. update MongoDB flags      -> valid = 'Y', rejected = 'E', duplicate = 'D'
  *
  * Because the flags are updated last, a job that fails half-way leaves MongoDB untouched and the
  * next run simply processes the same documents again (the UPSERT makes that safe).
@@ -32,13 +34,16 @@ public class SourceCommitService {
 
     private final PostgresWriter postgresWriter;
     private final RejectedRecordRepository rejectedRecordRepository;
+    private final DataWarningRepository warningRepository;
     private final MongoFlagUpdater flagUpdater;
     private final StepTracker stepTracker;
 
     public SourceCommitService(PostgresWriter postgresWriter, RejectedRecordRepository rejectedRecordRepository,
-                               MongoFlagUpdater flagUpdater, StepTracker stepTracker) {
+                               DataWarningRepository warningRepository, MongoFlagUpdater flagUpdater,
+                               StepTracker stepTracker) {
         this.postgresWriter = postgresWriter;
         this.rejectedRecordRepository = rejectedRecordRepository;
+        this.warningRepository = warningRepository;
         this.flagUpdater = flagUpdater;
         this.stepTracker = stepTracker;
     }
@@ -54,6 +59,12 @@ public class SourceCommitService {
                     () -> deleteResolvedRecords(context, batch));
             context.metrics().addResolved(resolved);
 
+            if (batch.warningCount() > 0) {
+                long saved = stepTracker.track(context, "Save data warnings [" + collection + "]",
+                        () -> saveRuleWarnings(context, batch));
+                context.metrics().addWarnings(saved);
+            }
+
             stepTracker.track(context, "Update MongoDB flags [" + collection + "]",
                     () -> updateSourceFlags(context, batch));
         }
@@ -66,6 +77,16 @@ public class SourceCommitService {
         String staging = postgresWriter.writeToStaging(context, batch.rejected(), "rejected_" + batch.collection());
         try {
             return rejectedRecordRepository.upsertFromStaging(staging, context.pipelineName(),
+                    batch.collection(), context.jobRunId());
+        } finally {
+            postgresWriter.dropStagingTable(staging);
+        }
+    }
+
+    private long saveRuleWarnings(PipelineContext context, SourceBatch batch) {
+        String staging = postgresWriter.writeToStaging(context, batch.warnings(), "warnings_" + batch.collection());
+        try {
+            return warningRepository.insertRuleWarningsFromStaging(staging, context.pipelineName(),
                     batch.collection(), context.jobRunId());
         } finally {
             postgresWriter.dropStagingTable(staging);

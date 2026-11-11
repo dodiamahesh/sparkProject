@@ -64,6 +64,12 @@ etl:
     thread-pool-size: 2
     queue-capacity: 10
 
+  quality:
+    # Reject gate (SourceDefinition.maxRejectPercent) is skipped for batches smaller than this
+    reject-gate-min-records: 10
+    # Schema-drift check: how many MongoDB documents are inspected per collection and run
+    schema-sample-size: 1000
+
   sample-data:
     load-on-startup: false
     location: classpath:sample-data/*.json

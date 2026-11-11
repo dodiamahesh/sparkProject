@@ -6,6 +6,7 @@ public record PipelineInfo(
         String name,
         String description,
         List<String> sourceCollections,
+        List<SourceInfo> sources,
         List<String> targetTables,
         List<String> fullLoadTruncateTables,
         List<String> loadTypes,

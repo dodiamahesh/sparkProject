@@ -4,6 +4,7 @@ import com.demo.etl.framework.pipeline.AbstractEtlPipeline;
 import com.demo.etl.framework.pipeline.PipelineContext;
 import com.demo.etl.framework.pipeline.PipelineToolkit;
 import com.demo.etl.framework.source.SourceBatch;
+import com.demo.etl.framework.source.SourceDefinition;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 import org.springframework.stereotype.Component;
@@ -42,8 +43,8 @@ public class PaymentPipeline extends AbstractEtlPipeline {
     }
 
     @Override
-    public List<String> sourceCollections() {
-        return List.of("payments");
+    public List<SourceDefinition> sources() {
+        return List.of(PaymentSource.PAYMENTS);
     }
 
     @Override
@@ -60,8 +61,7 @@ public class PaymentPipeline extends AbstractEtlPipeline {
     @Override
     public void run(PipelineContext context) {
         // 1. EXTRACT + DATA QUALITY (bad rows are kept aside and saved automatically)
-        SourceBatch payments = extractAndValidate(context,
-                PaymentSource.PAYMENTS, PaymentSource.sanitizer(), PaymentSource.rules());
+        SourceBatch payments = extractAndValidate(context,PaymentSource.PAYMENTS, PaymentSource.sanitizer(), PaymentSource.rules());
 
         // 2. TRANSFORM: rename + cast to real types
         Dataset<Row> typedPayments = toTypedPayments(payments.valid());

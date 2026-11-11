@@ -15,7 +15,18 @@ public record EtlProperties(
         Postgres postgres,
         Source source,
         Job job,
+        Quality quality,
         SampleData sampleData) {
+
+    /**
+     * Data-quality checks done for every source.
+     *
+     * @param rejectGateMinRecords the reject-% gate is skipped for batches smaller than this
+     *                             (2 bad rows out of 3 is 66 %, but not a broken source)
+     * @param schemaSampleSize     how many MongoDB documents the schema-drift check looks at
+     */
+    public record Quality(int rejectGateMinRecords, int schemaSampleSize) {
+    }
 
     /** Spark session settings. {@code config} is passed to Spark as-is. */
     public record Spark(String appName, String master, Map<String, String> config) {

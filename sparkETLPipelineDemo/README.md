@@ -39,7 +39,7 @@ java -jar target/spark-etl-pipeline-1.0.0.jar          # dev profile is the defa
 
 On startup (dev profile) the app:
 1. creates all PostgreSQL tables with **Flyway** (`src/main/resources/db/migration`)
-2. loads the 10 sample JSON files into MongoDB (only into empty collections)
+2. loads the 18 sample JSON files into MongoDB (only into empty collections)
 3. starts one shared SparkSession (`local[*]`)
 
 Then trigger a pipeline:
@@ -51,6 +51,7 @@ curl -X POST "http://localhost:8080/api/etl/pipelines/transaction-pipeline/run?l
 
 All requests are in [api-requests.http](api-requests.http).
 Step-by-step flow of every end point (in Gujarati): [docs/API_FLOW_GUJARATI.md](docs/API_FLOW_GUJARATI.md).
+Low level design (components, flows, data model, failure handling, production gaps): [docs/LOW_LEVEL_DESIGN.md](docs/LOW_LEVEL_DESIGN.md).
 
 > **Running from the IDE:** Spark needs extra JVM flags on Java 17, otherwise startup fails with
 > `IllegalAccessError: ... cannot access class sun.nio.ch.DirectBuffer`. `java -jar` and
@@ -164,10 +165,19 @@ src/main/java/com/demo/etl
 │   │   ├── PaymentPipeline.java          the flow (what to do, in which order)
 │   │   ├── PaymentSource.java            source definition + cleaning + rules
 │   │   └── PaymentStarSchemaMapper.java  DataFrame -> dimension / fact rows
-│   └── transaction/                      EXAMPLE 2: 4 collections -> star schema
-│       ├── TransactionPipeline.java
-│       ├── TransactionSources.java
-│       └── TransactionStarSchemaMapper.java
+│   ├── transaction/                      EXAMPLE 2: 4 collections -> star schema
+│   │   ├── TransactionPipeline.java
+│   │   ├── TransactionSources.java
+│   │   └── TransactionStarSchemaMapper.java
+│   └── ecommerce/
+│       ├── order/                        EXAMPLE 3: 5 collections -> SNOWFLAKE schema
+│       │   ├── EcommerceOrderPipeline.java
+│       │   ├── EcommerceOrderSources.java
+│       │   └── EcommerceOrderSchemaMapper.java
+│       └── fulfillment/                  EXAMPLE 4: 3 collections -> star schema (depends on EXAMPLE 3)
+│           ├── FulfillmentPipeline.java
+│           ├── FulfillmentSources.java
+│           └── FulfillmentStarSchemaMapper.java
 │
 ├── api/                                  REST controllers + GlobalExceptionHandler
 ├── ingestion/                            data ingestion API: sample-data JSON files -> MongoDB
@@ -175,10 +185,11 @@ src/main/java/com/demo/etl
 
 src/main/resources
 ├── application.yml / application-dev.yml / application-prod.yml
-├── db/migration/V1..V4__*.sql            Flyway: audit tables + star schemas
-└── sample-data/*.json                    10 collections x 100 documents
+├── db/migration/V1..V7__*.sql            Flyway: audit + warning tables, star / snowflake schemas
+└── sample-data/*.json                    10 banking collections x 100 documents + 8 ecom_* collections
 
-scripts/SampleDataGenerator.java          regenerates the sample data + docs/SAMPLE_DATA_REPORT.md
+scripts/SampleDataGenerator.java          regenerates the banking sample data + docs/SAMPLE_DATA_REPORT.md
+scripts/generate-ecommerce-sample-data.js regenerates the 8 ecom_*.json files (node)
 docs/SAMPLE_DATA_REPORT.md                expected counts + list of every planted bad record
 ```
 
@@ -187,7 +198,7 @@ JDBC, MongoDB or the audit tables directly. That separation is what keeps it eas
 
 ---
 
-## 4. The two examples
+## 4. The four examples
 
 ### Example 1 – single collection: `payment-pipeline`
 
@@ -211,6 +222,39 @@ transactions ──► fact_transaction ORPHAN check: customer, account AND merc
 
 Dimensions are loaded first; the fact then looks up their surrogate keys. Lookups read the
 PostgreSQL dimension tables, so they include rows loaded in earlier runs too.
+
+### Example 3 – five collections → SNOWFLAKE schema: `ecommerce-order-pipeline`
+
+```
+ecom_categories  ──► dim_category
+ecom_products    ──► dim_product        ORPHAN: categoryId must exist in dim_category
+                                         dim_product stores category_key  ◄── SNOWFLAKE (dim → dim)
+ecom_customers   ──► dim_ecom_customer
+ecom_orders      ──► fact_order         grain = one order       ORPHAN: customer must exist  (+ dim_date)
+ecom_order_items ──► fact_order_item    grain = one order line  ORPHAN: order AND product must exist
+                                         customer_key + date_key are inherited from fact_order
+                                         measures: gross_amount = qty × unit_price, net_amount = gross − discount
+```
+
+Snowflake vs star: in a star schema `dim_product` would repeat `category_name` and `department`;
+here they live once in `dim_category`, so a sales-by-department query joins
+`fact_order_item → dim_product → dim_category`.
+
+### Example 4 – three collections → STAR schema, depends on Example 3: `ecommerce-fulfillment-pipeline`
+
+```
+ecom_warehouses ──► dim_warehouse
+ecom_carriers   ──► dim_carrier
+ecom_shipments  ──► fact_shipment   ORPHAN: order (silver.fact_order!), warehouse AND carrier must exist
+                                     customer_key taken from the order   ◄── conformed dim_ecom_customer
+                                     shipped_date_key + delivered_date_key ◄── role-playing dim_date
+                                     measures: delivery_days, is_on_time
+```
+
+**Dependency:** run `ecommerce-order-pipeline` first. Run the fulfillment pipeline first and every
+shipment fails the ORPHAN check ("orderId not found in fact_order"); 100 % rejected is above the
+30 % **reject gate**, so the job `FAILED` with that reason before anything of `ecom_shipments` is loaded
+and without changing MongoDB flags. Run the order pipeline, then the fulfillment pipeline again.
 
 ---
 
@@ -248,6 +292,31 @@ Sanitizing happens **before** validation, so messy but correct values (`" inr "`
 `"+91 98765 43210"`) are fixed instead of rejected. All source fields are read as strings, so a corrupt
 value is reported with its real content instead of silently becoming `NULL`.
 
+### Warnings (record is loaded, problem is reported)
+
+```java
+DataQualityRules.create()
+        .required("customerId", "email")              // error   -> rejected
+        .warnings(w -> w
+                .required("phone")                    // warning -> loaded + etl_audit.etl_data_warning
+                .mustNotBeMoreThan("amount", 60_000));
+```
+ORPHAN checks cannot be warnings (the fact would have no surrogate key).
+
+### Data contract per source (`SourceDefinition`)
+
+Every source of all 4 pipelines declares these (see `PaymentSource`, `TransactionSources`,
+`EcommerceOrderSources`, `FulfillmentSources`):
+
+| Option | What happens | When |
+|---|---|---|
+| `.maxRejectPercent(30)` | **Reject gate**: more bad rows (duplicates not counted) → step `Reject gate x` fails → job `FAILED` before the collection is loaded, flags unchanged; error names the reasons and the owner | INCREMENTAL + FULL, batches ≥ `etl.quality.reject-gate-min-records` (10) |
+| *(automatic)* schema check | Step `Schema check x`: fields in MongoDB vs. `fields(...)` (sample of `etl.quality.schema-sample-size` docs). New / missing field → `SCHEMA_DRIFT` warning; with `.failOnSchemaDrift()` the job fails. `.ignoreFields(...)` for fields not read on purpose | every run |
+| `.expectedRows(min, max)` | Fewer / more rows read → `VOLUME` warning | INCREMENTAL |
+| `.maskEmail(..)` / `.maskPhone(..)` | `r****@gmail.com` / `XXXXXX3210` in silver, in `raw_record` and in error / warning messages. Rules still validate the real value | every run |
+| `.excludeTestRecords()` / `.sourceFilter(json)` | Extra MongoDB `$match` (inside MongoDB): `{"isTest": true}` documents are never read | every run |
+| `.description(..)`, `.owner(..)`, `.sla(..)` | Shown in `GET /api/etl/pipelines` (`sources`), owner is added to gate / volume messages | - |
+
 ---
 
 ## 7. Monitoring and re-processing
@@ -258,6 +327,8 @@ value is reported with its real content instead of silently becoming `NULL`.
 | Each step (where it failed, how long, how many rows) | `GET /api/etl/jobs/{id}` | `etl_audit.etl_job_step` |
 | Bad records with all reasons + original JSON | `GET /api/etl/rejected-records` | `etl_audit.etl_rejected_record` |
 | Counts per pipeline / collection / error type | `GET /api/etl/rejected-records/summary` | |
+| Warnings of a run (`RULE`, `SCHEMA_DRIFT`, `VOLUME`) | `GET /api/etl/jobs/{id}/warnings` | `etl_audit.etl_data_warning` (+ `warning_count` in `etl_job_run`) |
+| Data contract of every source (owner, SLA, checks, PII) | `GET /api/etl/pipelines` → `sources` | |
 
 **Fix-and-retry flow:**
 
@@ -279,7 +350,7 @@ application crash is marked `FAILED` at the next startup.
 
 ## 8. Add a new pipeline (example: `loan-pipeline` from the `loans` collection)
 
-1. **SQL** – `src/main/resources/db/migration/V5__create_loan_star_schema.sql`
+1. **SQL** – `src/main/resources/db/migration/V8__create_loan_star_schema.sql` (V1–V7 already exist)
    (dimension tables with `BIGSERIAL` key + `UNIQUE` business key, a fact table, and the
    `job_run_id BIGINT, loaded_at TIMESTAMP` columns on every table).
 2. **Package** `com.demo.etl.pipelines.loan` with three classes, copied from `payment`:
@@ -294,7 +365,7 @@ public class LoanPipeline extends AbstractEtlPipeline {
 
     @Override public String name() { return "loan-pipeline"; }
     @Override public String description() { return "loans -> dim_loan_type, fact_loan"; }
-    @Override public List<String> sourceCollections() { return List.of("loans"); }
+    @Override public List<SourceDefinition> sources() { return List.of(LoanSource.LOANS); }
     @Override public List<String> targetTables() { return List.of("silver.dim_loan_type", "silver.fact_loan"); }
     @Override public List<String> fullLoadTruncateTables() { return List.of("silver.fact_loan"); }
 
@@ -327,8 +398,14 @@ First-run results (verified):
 |---|---:|---:|---:|---:|
 | payment-pipeline | 100 | 82 | 18 | 3 |
 | transaction-pipeline | 400 | 332 | 68 | 10 |
+| ecommerce-order-pipeline | 369 | 333 | 36 | 5 |
+| ecommerce-fulfillment-pipeline (after the order pipeline) | 75 | 66 | 9 | 1 |
 
-Regenerate the data: `java scripts/SampleDataGenerator.java` (fixed seed → same output).
+The e-commerce files (`ecom_*.json`) contain planted CORRUPT / VALIDATION / ORPHAN / DUPLICATE records
+too; each one is commented in `scripts/generate-ecommerce-sample-data.js`.
+
+Regenerate the data: `java scripts/SampleDataGenerator.java` (banking + payments) and
+`node scripts/generate-ecommerce-sample-data.js` (e-commerce). Both use a fixed seed → same output.
 Start a test from zero (dev only): `POST /api/dev/reset?cleanPostgres=true`.
 
 ---

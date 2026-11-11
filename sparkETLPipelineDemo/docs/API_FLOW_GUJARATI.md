@@ -504,8 +504,8 @@ POST {{host}}/api/ingestion/sample-data/payments.json?mode=REPLACE
 ## નવી pipeline કેવી રીતે ઉમેરવી (દા.ત. `loans` collection માંથી `loan-pipeline`)
 
 ### Step 1 – PostgreSQL tables (Flyway)
-નવી file: `src/main/resources/db/migration/V5__create_loan_star_schema.sql`
-* નામ `V5__...` જ હોવું જોઈએ (V1–V4 પહેલેથી છે). **જૂની V1–V4 files ક્યારેય બદલશો નહીં**, Flyway checksum error આપશે
+નવી file: `src/main/resources/db/migration/V8__create_loan_star_schema.sql`
+* નામ `V8__...` જ હોવું જોઈએ (V1–V7 પહેલેથી છે). **જૂની V1–V7 files ક્યારેય બદલશો નહીં**, Flyway checksum error આપશે
 * Dimension: `loan_type_key BIGSERIAL PRIMARY KEY`, business key ઉપર `UNIQUE` (upsert માટે જરૂરી)
 * Fact: business key (`loan_id`) ઉપર `UNIQUE`
 * દરેક table માં: `job_run_id BIGINT, loaded_at TIMESTAMP` (`PostgresWriter` આપમેળે ભરે છે)

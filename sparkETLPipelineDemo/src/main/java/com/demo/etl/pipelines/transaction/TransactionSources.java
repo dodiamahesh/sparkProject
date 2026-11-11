@@ -2,9 +2,12 @@ package com.demo.etl.pipelines.transaction;
 
 import com.demo.etl.framework.quality.DataQualityRules;
 import com.demo.etl.framework.quality.DataSanitizer;
+import com.demo.etl.framework.quality.ErrorType;
 import com.demo.etl.framework.source.SourceDefinition;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
+
+import static org.apache.spark.sql.functions.col;
 
 /**
  * WHAT we read from MongoDB and HOW we clean + validate it, for all 4 collections of this pipeline.
@@ -22,6 +25,14 @@ final class TransactionSources {
                     "city", "state", "country", "kycStatus", "createdAt", "updatedAt")
             .businessKey("customerId")
             .latestRecordColumn("updatedAt")
+            .excludeTestRecords()
+            .maxRejectPercent(30)
+            .expectedRows(0, 100_000)
+            .maskEmail("email")
+            .maskPhone("phone")
+            .description("Bank customers (KYC master data) from the core banking system")
+            .owner("core-banking-team@demo.com")
+            .sla("daily by 06:00")
             .build();
 
     static DataSanitizer customerSanitizer() {
@@ -42,7 +53,9 @@ final class TransactionSources {
                 .mustMatch("phone", "^[6-9][0-9]{9}$", "must be a 10 digit Indian mobile number")
                 .mustNotBeInFuture("dateOfBirth")
                 .mustBeOneOf("gender", "M", "F", "O")
-                .mustBeOneOf("kycStatus", "VERIFIED", "PENDING", "REJECTED");
+                .mustBeOneOf("kycStatus", "VERIFIED", "PENDING", "REJECTED")
+                .warnings(w -> w
+                        .mustBeOneOf("kycStatus", "VERIFIED"));
     }
 
     // =================================================================== accounts
@@ -51,6 +64,12 @@ final class TransactionSources {
                     "currency", "status", "openedDate", "updatedAt")
             .businessKey("accountId")
             .latestRecordColumn("updatedAt")
+            .excludeTestRecords()
+            .maxRejectPercent(30)
+            .expectedRows(0, 100_000)
+            .description("Bank accounts, one per account number")
+            .owner("core-banking-team@demo.com")
+            .sla("daily by 06:00")
             .build();
 
     static DataSanitizer accountSanitizer() {
@@ -73,7 +92,9 @@ final class TransactionSources {
                 .mustBeOneOf("currency", CURRENCIES)
                 .mustBeOneOf("status", "ACTIVE", "DORMANT", "CLOSED")
                 .mustMatch("ifscCode", "^[A-Z]{4}0[A-Z0-9]{6}$", "is not a valid IFSC code")
-                .mustExistIn("customerId", customerIds, "customer_id", "dim_customer");
+                .mustExistIn("customerId", customerIds, "customer_id", "dim_customer")
+                .warnings(w -> w
+                        .custom(ErrorType.VALIDATION, "account is DORMANT (no activity), please review", col("status").equalTo("DORMANT")));
     }
 
     // =================================================================== merchants
@@ -82,6 +103,12 @@ final class TransactionSources {
                     "onboardedDate", "updatedAt")
             .businessKey("merchantId")
             .latestRecordColumn("updatedAt")
+            .excludeTestRecords()
+            .maxRejectPercent(30)
+            .expectedRows(0, 50_000)
+            .description("Card-acquiring merchants (shops) that customers pay")
+            .owner("merchant-onboarding-team@demo.com")
+            .sla("daily by 06:00")
             .build();
 
     static DataSanitizer merchantSanitizer() {
@@ -99,7 +126,9 @@ final class TransactionSources {
                         "HEALTHCARE", "ENTERTAINMENT", "UTILITIES")
                 .mustMatch("mccCode", "^[0-9]{4}$", "must be a 4 digit MCC code")
                 .mustNotBeInFuture("onboardedDate")
-                .mustBeOneOf("status", "ACTIVE", "INACTIVE");
+                .mustBeOneOf("status", "ACTIVE", "INACTIVE")
+                .warnings(w -> w
+                        .required("mccCode", "city"));
     }
 
     // =================================================================== transactions
@@ -108,6 +137,12 @@ final class TransactionSources {
                     "amount", "currency", "transactionDate", "status", "description", "updatedAt")
             .businessKey("transactionId")
             .latestRecordColumn("updatedAt")
+            .excludeTestRecords()
+            .maxRejectPercent(30)
+            .expectedRows(1, 1_000_000)
+            .description("Card / UPI / ATM transactions of all accounts")
+            .owner("transactions-team@demo.com")
+            .sla("new transactions every 15 minutes")
             .build();
 
     static DataSanitizer transactionSanitizer() {
@@ -133,6 +168,8 @@ final class TransactionSources {
                 .mustBeOneOf("status", "SUCCESS", "FAILED", "PENDING", "REVERSED")
                 .mustExistIn("customerId", customerIds, "customer_id", "dim_customer")
                 .mustExistIn("accountId", accountIds, "account_id", "dim_account")
-                .mustExistIn("merchantId", merchantIds, "merchant_id", "dim_merchant");
+                .mustExistIn("merchantId", merchantIds, "merchant_id", "dim_merchant")
+                .warnings(w -> w
+                        .mustNotBeMoreThan("amount", 60_000));
     }
 }

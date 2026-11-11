@@ -32,6 +32,7 @@ public class JobRunRepository {
             rs.getLong("duplicate_count"),
             rs.getLong("loaded_count"),
             rs.getLong("resolved_count"),
+            rs.getLong("warning_count"),
             rs.getString("error_message"),
             rs.getString("error_detail"));
 
@@ -62,6 +63,7 @@ public class JobRunRepository {
                        duplicate_count = ?,
                        loaded_count    = ?,
                        resolved_count  = ?,
+                       warning_count   = ?,
                        error_message   = ?,
                        error_detail    = ?
                  WHERE job_run_id = ?
@@ -69,7 +71,7 @@ public class JobRunRepository {
                 status.name(),
                 metrics.sourceCount(), metrics.validCount(), metrics.rejectedCount(),
                 metrics.duplicateCount(), metrics.loadedCount(), metrics.resolvedCount(),
-                errorMessage, errorDetail, jobRunId);
+                metrics.warningCount(), errorMessage, errorDetail, jobRunId);
     }
 
     public Optional<JobRun> findById(long jobRunId) {

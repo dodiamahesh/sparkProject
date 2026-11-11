@@ -35,6 +35,10 @@ import java.util.List;
 @Component
 public class MongoFlagUpdater {
 
+    /** Extra fields written into every processed document (audit trail inside MongoDB). */
+    public static final String JOB_RUN_ID_FIELD = "etlJobRunId";
+    public static final String PROCESSED_AT_FIELD = "etlProcessedAt";
+
     private final SparkSession spark;
     private final EtlProperties.Mongo mongo;
     private final String flagField;
@@ -92,8 +96,8 @@ public class MongoFlagUpdater {
                 MongoCollection<Document> target = client.getDatabase(database).getCollection(collection);
                 Bson update = Updates.combine(
                         Updates.set(flagField, flagValue),
-                        Updates.set("etlJobRunId", jobRunId),
-                        Updates.set("etlProcessedAt", new Date()));
+                        Updates.set(JOB_RUN_ID_FIELD, jobRunId),
+                        Updates.set(PROCESSED_AT_FIELD, new Date()));
 
                 List<WriteModel<Document>> batch = new ArrayList<>(BATCH_SIZE);
                 while (rows.hasNext()) {

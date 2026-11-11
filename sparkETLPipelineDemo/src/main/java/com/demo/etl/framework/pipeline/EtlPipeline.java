@@ -1,5 +1,7 @@
 package com.demo.etl.framework.pipeline;
 
+import com.demo.etl.framework.source.SourceDefinition;
+
 import java.util.List;
 
 /**
@@ -8,7 +10,7 @@ import java.util.List;
  * To add a new pipeline:
  *   1. create a class that extends {@link AbstractEtlPipeline}
  *   2. annotate it with @Component
- *   3. implement run(...)
+ *   3. implement sources() and run(...)
  * It is picked up automatically by {@link PipelineRegistry} and can be triggered from the REST API.
  */
 public interface EtlPipeline {
@@ -18,8 +20,16 @@ public interface EtlPipeline {
 
     String description();
 
-    /** MongoDB collections this pipeline reads (shown in the API). */
-    List<String> sourceCollections();
+    /**
+     * The source definitions (data contracts) this pipeline reads: collection, checks, PII, owner, SLA ...
+     * Shown in GET /api/etl/pipelines.
+     */
+    List<SourceDefinition> sources();
+
+    /** MongoDB collections this pipeline reads (derived from {@link #sources()}). */
+    default List<String> sourceCollections() {
+        return sources().stream().map(SourceDefinition::collection).toList();
+    }
 
     /** PostgreSQL tables this pipeline writes (shown in the API). */
     List<String> targetTables();

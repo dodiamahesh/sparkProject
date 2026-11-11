@@ -4,6 +4,7 @@ import com.demo.etl.framework.pipeline.AbstractEtlPipeline;
 import com.demo.etl.framework.pipeline.PipelineContext;
 import com.demo.etl.framework.pipeline.PipelineToolkit;
 import com.demo.etl.framework.source.SourceBatch;
+import com.demo.etl.framework.source.SourceDefinition;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 import org.springframework.stereotype.Component;
@@ -47,8 +48,9 @@ public class TransactionPipeline extends AbstractEtlPipeline {
     }
 
     @Override
-    public List<String> sourceCollections() {
-        return List.of("customers", "accounts", "merchants", "transactions");
+    public List<SourceDefinition> sources() {
+        return List.of(TransactionSources.CUSTOMERS, TransactionSources.ACCOUNTS,
+                TransactionSources.MERCHANTS, TransactionSources.TRANSACTIONS);
     }
 
     @Override
@@ -65,28 +67,23 @@ public class TransactionPipeline extends AbstractEtlPipeline {
     @Override
     public void run(PipelineContext context) {
         // ---------------- 1. DIMENSIONS (one collection -> one dimension) ----------------
-        SourceBatch customers = extractAndValidate(context, TransactionSources.CUSTOMERS,
-                TransactionSources.customerSanitizer(), TransactionSources.customerRules());
+        SourceBatch customers = extractAndValidate(context, TransactionSources.CUSTOMERS,TransactionSources.customerSanitizer(), TransactionSources.customerRules());
         load(context, toDimCustomer(customers.valid()), "silver.dim_customer", "customer_id");
 
         // Lookups read the dimension tables, so they include rows loaded in THIS run and in EARLIER runs
         Dataset<Row> customerIds = readTable("silver.dim_customer", "customer_id");
 
-        SourceBatch accounts = extractAndValidate(context, TransactionSources.ACCOUNTS,
-                TransactionSources.accountSanitizer(), TransactionSources.accountRules(customerIds));
+        SourceBatch accounts = extractAndValidate(context, TransactionSources.ACCOUNTS,TransactionSources.accountSanitizer(), TransactionSources.accountRules(customerIds));
         load(context, toDimAccount(accounts.valid()), "silver.dim_account", "account_id");
 
-        SourceBatch merchants = extractAndValidate(context, TransactionSources.MERCHANTS,
-                TransactionSources.merchantSanitizer(), TransactionSources.merchantRules());
+        SourceBatch merchants = extractAndValidate(context, TransactionSources.MERCHANTS,TransactionSources.merchantSanitizer(), TransactionSources.merchantRules());
         load(context, toDimMerchant(merchants.valid()), "silver.dim_merchant", "merchant_id");
 
         // ---------------- 2. FACT (with ORPHAN checks against the dimensions) ----------------
         Dataset<Row> accountIds = readTable("silver.dim_account", "account_id");
         Dataset<Row> merchantIds = readTable("silver.dim_merchant", "merchant_id");
 
-        SourceBatch transactions = extractAndValidate(context, TransactionSources.TRANSACTIONS,
-                TransactionSources.transactionSanitizer(),
-                TransactionSources.transactionRules(customerIds, accountIds, merchantIds));
+        SourceBatch transactions = extractAndValidate(context, TransactionSources.TRANSACTIONS,TransactionSources.transactionSanitizer(),TransactionSources.transactionRules(customerIds, accountIds, merchantIds));
 
         Dataset<Row> typedTransactions = toTypedTransactions(transactions.valid());
         loadDateDimension(context, typedTransactions, "transaction_ts");

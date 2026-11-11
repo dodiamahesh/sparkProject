@@ -16,6 +16,10 @@ public final class QualityColumns {
     static final String ERROR_TYPE = "_dq_error_type";
     static final String ROW_NUMBER = "_dq_row_number";
     static final String REFERENCE_PREFIX = "_dq_ref_";
+    static final String WARNINGS = "_dq_warnings";
+
+    /** Columns of the standard "warnings" dataset: source_id, business_key, warning_message. */
+    public static final String WARNING_MESSAGE = "warning_message";
 
     /** Columns of the standard "rejected records" dataset. */
     public static final String REJECTED_SOURCE_ID = "source_id";

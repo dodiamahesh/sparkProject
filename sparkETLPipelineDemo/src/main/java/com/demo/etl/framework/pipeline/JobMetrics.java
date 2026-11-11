@@ -13,6 +13,7 @@ public class JobMetrics {
     private final AtomicLong duplicateCount = new AtomicLong();
     private final AtomicLong loadedCount = new AtomicLong();
     private final AtomicLong resolvedCount = new AtomicLong();
+    private final AtomicLong warningCount = new AtomicLong();
 
     public void addSource(long count) {
         sourceCount.addAndGet(count);
@@ -36,6 +37,15 @@ public class JobMetrics {
 
     public void addResolved(long count) {
         resolvedCount.addAndGet(count);
+    }
+
+    /** Rule warnings + schema-drift warnings + volume warnings. */
+    public void addWarnings(long count) {
+        warningCount.addAndGet(count);
+    }
+
+    public long warningCount() {
+        return warningCount.get();
     }
 
     public long sourceCount() {

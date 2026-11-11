@@ -124,10 +124,10 @@ public class EtlJobService {
 
             JobStatus status = context.metrics().rejectedCount() > 0 ? JobStatus.SUCCESS_WITH_REJECTS : JobStatus.SUCCESS;
             jobRunRepository.finishRun(jobRunId, status, context.metrics(), null, null);
-            log.info("========== Job {} {} in {} ms: read={}, valid={}, rejected={}, loaded={}, resolved={} ==========",
+            log.info("========== Job {} {} in {} ms: read={}, valid={}, rejected={}, loaded={}, resolved={}, warnings={} ==========",
                     jobRunId, status, System.currentTimeMillis() - startMillis,
                     context.metrics().sourceCount(), context.metrics().validCount(), context.metrics().rejectedCount(),
-                    context.metrics().loadedCount(), context.metrics().resolvedCount());
+                    context.metrics().loadedCount(), context.metrics().resolvedCount(), context.metrics().warningCount());
 
         } catch (Throwable error) {
             // Catch Throwable (not only Exception) so even an Error never leaves a job stuck in RUNNING

@@ -1,6 +1,7 @@
 package com.demo.etl.api;
 
 import com.demo.etl.api.dto.PipelineInfo;
+import com.demo.etl.api.dto.SourceInfo;
 import com.demo.etl.framework.job.EtlJobService;
 import com.demo.etl.framework.job.JobLockManager;
 import com.demo.etl.framework.job.JobRunDetails;
@@ -47,6 +48,7 @@ public class EtlPipelineController {
                         pipeline.name(),
                         pipeline.description(),
                         pipeline.sourceCollections(),
+                        pipeline.sources().stream().map(SourceInfo::from).toList(),
                         pipeline.targetTables(),
                         pipeline.fullLoadTruncateTables(),
                         loadTypes,

@@ -11,11 +11,23 @@ POST {{host}}/api/etl/pipelines/payment-pipeline/run?loadType=INCREMENTAL
 POST {{host}}/api/etl/pipelines/transaction-pipeline/run?loadType=INCREMENTAL&async=true
 X-Triggered-By: mahesh
 
+### 3a. Example 3 - e-commerce, 5 collections -> SNOWFLAKE schema (run this BEFORE 3b)
+POST {{host}}/api/etl/pipelines/ecommerce-order-pipeline/run?loadType=INCREMENTAL
+
+### 3b. Example 4 - e-commerce delivery, 3 collections -> STAR schema (needs silver.fact_order from 3a)
+POST {{host}}/api/etl/pipelines/ecommerce-fulfillment-pipeline/run?loadType=INCREMENTAL
+
+### 3c. Ran 3b before 3a? The job FAILED at "Reject gate ecom_shipments" (100% ORPHAN) -> run 3a, then 3b again
+POST {{host}}/api/etl/pipelines/ecommerce-fulfillment-pipeline/run?loadType=INCREMENTAL
+
 ### 4. FULL load (truncate fact table, read every document again)
 POST {{host}}/api/etl/pipelines/payment-pipeline/run?loadType=FULL
 
 ### 5. Job status + steps
 GET {{host}}/api/etl/jobs/1
+
+### 5a. Data-quality warnings of a job (RULE / SCHEMA_DRIFT / VOLUME)
+GET {{host}}/api/etl/jobs/1/warnings
 
 ### 6. Job history (filters are optional)
 GET {{host}}/api/etl/jobs?pipelineName=payment-pipeline&limit=20

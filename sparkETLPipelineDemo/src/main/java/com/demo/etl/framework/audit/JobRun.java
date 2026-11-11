@@ -18,6 +18,7 @@ public record JobRun(
         long duplicateCount,
         long loadedCount,
         long resolvedCount,
+        long warningCount,
         String errorMessage,
         String errorDetail) {
 }
