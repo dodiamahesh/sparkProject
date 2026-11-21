@@ -36,4 +36,14 @@ public interface EtlPipeline {
 
     /** The pipeline logic: extract -> validate -> transform -> load. */
     void run(PipelineContext context);
+
+    /**
+     * false (default) = tables are loaded through etl_staging tables, every table commits on its own.
+     * true = the pipeline writes DIRECTLY into its tables (AbstractEtlPipeline.loadDirect, no staging) and the whole
+     *        run is ONE database transaction: all tables + rejected records + watermarks commit together, or a
+     *        failure rolls everything back (all-or-nothing).
+     */
+    default boolean directLoad() {
+        return false;
+    }
 }

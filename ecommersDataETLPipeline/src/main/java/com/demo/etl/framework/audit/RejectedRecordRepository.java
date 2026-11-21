@@ -1,5 +1,7 @@
 package com.demo.etl.framework.audit;
 
+import com.demo.etl.framework.quality.QualityColumns;
+import org.apache.spark.sql.Row;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
@@ -7,7 +9,10 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * SQL for meta.meta_rejected_record and meta.meta_error_master.
@@ -45,6 +50,8 @@ public class RejectedRecordRepository {
               FROM meta.meta_rejected_record r
               JOIN meta.meta_error_master e ON e.error_id = r.error_id
             """;
+
+    private static final int BATCH = 1000;
 
     private final JdbcTemplate jdbc;
     private final TransactionTemplate transaction;
@@ -108,6 +115,96 @@ public class RejectedRecordRepository {
                            last_rejected_at = now()
                     """.formatted(stagingTable), pipelineName, collection, jobRunId, jobRunId);
         });
+    }
+
+    /**
+     * Same three steps as {@link #saveFromStaging}, WITHOUT a staging table (used by pipelines with directLoad()).
+     * The rows come straight from Spark, one row per record + error (QualityColumns.oneRowPerError):
+     * source_id, business_key, error_type, field_name, error_message, field_value, raw_record.
+     *
+     *   1. every error message not in meta_error_master yet is inserted there (a rule added later in the code)
+     *   2. errors a record does NOT have any more (it was partly fixed) are removed
+     *   3. new record + error -> INSERT; same record + error again -> UPDATE value / raw record, attempt_count + 1
+     *
+     * Runs in the CALLER's transaction (the job's all-or-nothing transaction); alone it gets its own.
+     * Rejected rows are few, so they are grouped per record in driver memory.
+     */
+    public void saveDirect(Iterator<Row> errorRows, String pipelineName, String collection, long jobRunId) {
+        // source_id -> its errors (type|message -> row)
+        Map<String, Map<String, Row>> errorsBySource = new LinkedHashMap<>();
+        Map<String, Row> distinctErrors = new LinkedHashMap<>();
+        errorRows.forEachRemaining(row -> {
+            String errorKey = errorKey(row.getAs(QualityColumns.ERROR_TYPE), row.getAs(QualityColumns.ERROR_MESSAGE));
+            errorsBySource.computeIfAbsent(row.getAs(QualityColumns.REJECTED_SOURCE_ID), id -> new LinkedHashMap<>())
+                    .putIfAbsent(errorKey, row);
+            distinctErrors.putIfAbsent(errorKey, row);
+        });
+        if (errorsBySource.isEmpty()) {
+            return;
+        }
+        List<Row> errorRowsToSave = errorsBySource.values().stream().flatMap(errors -> errors.values().stream()).toList();
+        List<Map.Entry<String, Map<String, Row>>> records = new ArrayList<>(errorsBySource.entrySet());
+
+        transaction.executeWithoutResult(status -> {
+            // 1. new error messages -> master (NOT EXISTS first, so no error_id is used up for known errors)
+            jdbc.batchUpdate("""
+                    INSERT INTO meta.meta_error_master (error_type, field_name, error_message)
+                    SELECT ?, ?, ?
+                     WHERE NOT EXISTS (SELECT 1 FROM meta.meta_error_master WHERE error_type = ? AND error_message = ?)
+                    ON CONFLICT (error_type, error_message) DO NOTHING
+                    """, new ArrayList<>(distinctErrors.values()), BATCH, (ps, row) -> {
+                ps.setString(1, row.getAs(QualityColumns.ERROR_TYPE));
+                ps.setString(2, row.getAs(QualityColumns.FIELD_NAME));
+                ps.setString(3, row.getAs(QualityColumns.ERROR_MESSAGE));
+                ps.setString(4, row.getAs(QualityColumns.ERROR_TYPE));
+                ps.setString(5, row.getAs(QualityColumns.ERROR_MESSAGE));
+            });
+
+            // 2. errors a record does not have any more
+            jdbc.batchUpdate("""
+                    DELETE FROM meta.meta_rejected_record r
+                     WHERE r.pipeline_name = ? AND r.source_collection = ? AND r.source_id = ?
+                       AND r.error_id NOT IN (SELECT e.error_id FROM meta.meta_error_master e
+                                               WHERE e.error_type || '|' || e.error_message = ANY (?))
+                    """, records, BATCH, (ps, record) -> {
+                ps.setString(1, pipelineName);
+                ps.setString(2, collection);
+                ps.setString(3, record.getKey());
+                ps.setArray(4, ps.getConnection().createArrayOf("text", record.getValue().keySet().toArray()));
+            });
+
+            // 3. upsert one row per record + error
+            jdbc.batchUpdate("""
+                    INSERT INTO meta.meta_rejected_record
+                           (pipeline_name, source_collection, source_id, business_key, error_id, field_value,
+                            raw_record, attempt_count, first_job_run_id, last_job_run_id, first_rejected_at, last_rejected_at)
+                    SELECT ?, ?, ?, ?, e.error_id, ?, CAST(? AS JSONB), 1, ?, ?, now(), now()
+                      FROM meta.meta_error_master e
+                     WHERE e.error_type = ? AND e.error_message = ?
+                    ON CONFLICT (pipeline_name, source_collection, source_id, error_id) DO UPDATE
+                       SET business_key     = EXCLUDED.business_key,
+                           field_value      = EXCLUDED.field_value,
+                           raw_record       = EXCLUDED.raw_record,
+                           attempt_count    = meta.meta_rejected_record.attempt_count + 1,
+                           last_job_run_id  = EXCLUDED.last_job_run_id,
+                           last_rejected_at = now()
+                    """, errorRowsToSave, BATCH, (ps, row) -> {
+                ps.setString(1, pipelineName);
+                ps.setString(2, collection);
+                ps.setString(3, row.getAs(QualityColumns.REJECTED_SOURCE_ID));
+                ps.setString(4, row.getAs(QualityColumns.REJECTED_BUSINESS_KEY));
+                ps.setString(5, row.getAs(QualityColumns.FIELD_VALUE));
+                ps.setString(6, row.getAs(QualityColumns.REJECTED_RAW_RECORD));
+                ps.setLong(7, jobRunId);
+                ps.setLong(8, jobRunId);
+                ps.setString(9, row.getAs(QualityColumns.ERROR_TYPE));
+                ps.setString(10, row.getAs(QualityColumns.ERROR_MESSAGE));
+            });
+        });
+    }
+
+    private static String errorKey(String errorType, String errorMessage) {
+        return errorType + "|" + errorMessage;
     }
 
     /** All filters are optional (null = no filter). */

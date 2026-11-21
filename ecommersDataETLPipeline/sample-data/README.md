@@ -54,6 +54,7 @@ SELECT r.pipeline_name, r.source_collection, r.business_key, e.error_type, e.err
 | `ecommerce-order-pipeline` | `shopdb` | ecom_categories, ecom_products, ecom_customers, ecom_orders, ecom_order_items | `silver` snowflake |
 | `ecommerce-fulfillment-pipeline` | `shopdb` | ecom_warehouses, ecom_carriers, ecom_shipments | `silver` star (needs `silver.fact_order`) |
 | `sales-pipeline` (Job-2) | `shopdb` | products, customers, orders, payments | `curated` star |
+| `vat-return-pipeline` | `shopdb` | vat_return_coll | `silver` star, loaded WITHOUT staging (design: `vat-return-pipeline/vat-return-pipeline.md`) |
 
 **Why two Mongo databases?** `payments` and `customers` exist in both the banking and the sales examples with a
 different shape. The app reads ONE database (`MONGO_DATABASE`, default `shopdb`). For the banking jobs start it with

@@ -33,6 +33,11 @@ public class JobMetrics {
         loadedCount.addAndGet(count);
     }
 
+    /** A rolled-back run (directLoad) wrote nothing: its loaded count goes back to 0. */
+    public void resetLoaded() {
+        loadedCount.set(0);
+    }
+
     public long sourceCount() {
         return sourceCount.get();
     }

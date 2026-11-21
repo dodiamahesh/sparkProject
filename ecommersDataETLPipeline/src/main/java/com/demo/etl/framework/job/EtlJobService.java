@@ -16,6 +16,7 @@ import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.jdbc.BadSqlGrammarException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -28,7 +29,8 @@ import java.time.temporal.ChronoUnit;
  *   2. window end = now; create run row in meta.meta_pipeline_run (status NULL = running)
  *   3. pipeline.run()          -> per source: read updatedAt > last watermark AND <= window end,
  *                                 validate, transform, load
- *   4. commit                  -> save rejects, remove fixed rejects, advance watermarks
+ *   4. commit                  -> save rejects, advance watermarks
+ *      (pipelines with directLoad(): steps 3 + 4 run in ONE transaction -> all-or-nothing)
  *   5. finish run row          -> SUCCESS / SUCCESS_WITH_FAILED / FAILED + counts + error
  *   6. always: free Spark cache, release lock
  */
@@ -43,16 +45,18 @@ public class EtlJobService {
     private final SourceCommitService commitService;
     private final JobLockManager lockManager;
     private final SparkSession spark;
+    private final TransactionTemplate transaction;
 
     public EtlJobService(PipelineRegistry pipelineRegistry, JobRunRepository jobRunRepository,
                          JobStepRepository jobStepRepository, SourceCommitService commitService,
-                         JobLockManager lockManager, SparkSession spark) {
+                         JobLockManager lockManager, SparkSession spark, TransactionTemplate transaction) {
         this.pipelineRegistry = pipelineRegistry;
         this.jobRunRepository = jobRunRepository;
         this.jobStepRepository = jobStepRepository;
         this.commitService = commitService;
         this.lockManager = lockManager;
         this.spark = spark;
+        this.transaction = transaction;
     }
 
     /** Runs the pipeline and returns the finished run with all its steps. */
@@ -79,15 +83,25 @@ public class EtlJobService {
     }
 
     private void execute(EtlPipeline pipeline, long jobRunId, Instant windowEnd) {
-        PipelineContext context = new PipelineContext(jobRunId, pipeline.name(), windowEnd);
+        PipelineContext context = new PipelineContext(jobRunId, pipeline.name(), windowEnd, pipeline.directLoad());
         long startMillis = System.currentTimeMillis();
         log.info("========== Job {} STARTED: pipeline={}, windowEnd={} ==========", jobRunId, pipeline.name(), windowEnd);
 
         // Groups all Spark jobs of this run under one name (visible in Spark logs / UI)
         spark.sparkContext().setJobGroup("etl-job-" + jobRunId, pipeline.name() + " until " + windowEnd, true);
         try {
-            pipeline.run(context);
-            commitService.commit(context);
+            if (context.directLoad()) {
+                // ALL-OR-NOTHING: every table + rejected records + watermarks in ONE transaction.
+                // Any exception -> ROLLBACK of everything (steps are kept: they commit on their own).
+                transaction.executeWithoutResult(status -> {
+                    pipeline.run(context);
+                    commitService.commit(context);
+                });
+                log.info("[job {}] transaction committed", jobRunId);
+            } else {
+                pipeline.run(context);
+                commitService.commit(context);
+            }
 
             JobMetrics metrics = context.metrics();
             JobStatus status = JobStatus.of(metrics.validCount(), metrics.rejectedCount());
@@ -103,6 +117,9 @@ public class EtlJobService {
         } catch (Throwable error) {
             // Catch Throwable (not only Exception) so even an Error never leaves a run without a status
             log.error("========== Job {} FAILED: {} ==========", jobRunId, error.getMessage(), error);
+            if (context.directLoad()) {
+                context.metrics().resetLoaded();   // rolled back: nothing of this run is in the tables
+            }
             saveFailure(jobRunId, context, error);
             if (error instanceof Error fatal) {
                 throw fatal;

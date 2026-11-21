@@ -20,16 +20,18 @@ public class PipelineContext {
     private final long jobRunId;
     private final String pipelineName;
     private final Instant windowEnd;
+    private final boolean directLoad;
     private final JobMetrics metrics = new JobMetrics();
     private final List<SourceBatch> sourceBatches = new ArrayList<>();
     private final List<Dataset<Row>> cachedDatasets = new ArrayList<>();
     private final AtomicInteger stepCounter = new AtomicInteger();
     private final AtomicInteger stagingTableCounter = new AtomicInteger();
 
-    public PipelineContext(long jobRunId, String pipelineName, Instant windowEnd) {
+    public PipelineContext(long jobRunId, String pipelineName, Instant windowEnd, boolean directLoad) {
         this.jobRunId = jobRunId;
         this.pipelineName = pipelineName;
         this.windowEnd = windowEnd;
+        this.directLoad = directLoad;
     }
 
     public long jobRunId() {
@@ -43,6 +45,14 @@ public class PipelineContext {
     /** Upper bound of the incremental window of EVERY source in this run (the run's start time). */
     public Instant windowEnd() {
         return windowEnd;
+    }
+
+    /**
+     * true = the pipeline writes straight into its tables (no staging) and the whole run is ONE transaction:
+     * every table, the rejected records and the watermarks are committed together, or nothing at all.
+     */
+    public boolean directLoad() {
+        return directLoad;
     }
 
     public JobMetrics metrics() {

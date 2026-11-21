@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
  *
  *   1. save rejected rows        -> meta.meta_rejected_record (one row per record + error, error_id ->
  *                                   meta.meta_error_master)
+ *                                   (directLoad pipelines: without staging table, in the job's transaction)
  *   2. advance the watermark     -> meta.meta_watermark = start time of this run
  *                                   (skipped for derived batches such as order lines: the parent collection has it)
  *
@@ -62,6 +63,12 @@ public class SourceCommitService {
     private long saveRejectedRecords(PipelineContext context, SourceBatch batch) {
         if (batch.rejectedCount() == 0) {
             return 0;
+        }
+        if (context.directLoad()) {
+            // no staging table: rows go straight from Spark into the meta tables, inside the job's transaction
+            rejectedRecordRepository.saveDirect(QualityColumns.oneRowPerError(batch.rejected()).toLocalIterator(),
+                    context.pipelineName(), batch.collection(), context.jobRunId());
+            return batch.rejectedCount();
         }
         String staging = postgresWriter.writeToStaging(context, QualityColumns.oneRowPerError(batch.rejected()),
                 "rejected_" + batch.collection());

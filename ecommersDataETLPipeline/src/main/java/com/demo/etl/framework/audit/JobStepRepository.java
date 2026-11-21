@@ -3,12 +3,19 @@ package com.demo.etl.framework.audit;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDateTime;
 import java.util.List;
 
 /**
  * SQL for meta.meta_pipeline_step.
+ *
+ * Every write runs in its OWN short transaction (REQUIRES_NEW): a pipeline with directLoad() runs inside one big
+ * all-or-nothing transaction, but its steps must be visible while it runs, and a FAILED step must stay saved
+ * when that big transaction is rolled back.
  */
 @Repository
 public class JobStepRepository {
@@ -25,22 +32,25 @@ public class JobStepRepository {
             rs.getString("error_message"));
 
     private final JdbcTemplate jdbc;
+    private final TransactionTemplate ownTransaction;
 
-    public JobStepRepository(JdbcTemplate jdbc) {
+    public JobStepRepository(JdbcTemplate jdbc, PlatformTransactionManager transactionManager) {
         this.jdbc = jdbc;
+        this.ownTransaction = new TransactionTemplate(transactionManager);
+        this.ownTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
 
     /** Inserts the row of a new step (status NULL = still running) and returns its id. */
     public long startStep(long jobRunId, int stepOrder, String stepName) {
-        return jdbc.queryForObject("""
+        return ownTransaction.execute(status -> jdbc.queryForObject("""
                 INSERT INTO meta.meta_pipeline_step (job_run_id, step_order, step_name, start_time)
                 VALUES (?, ?, ?, clock_timestamp())
                 RETURNING job_step_id
-                """, Long.class, jobRunId, stepOrder, stepName);
+                """, Long.class, jobRunId, stepOrder, stepName));
     }
 
-    public void finishStep(long jobStepId, StepStatus status, Long recordCount, String errorMessage) {
-        jdbc.update("""
+    public void finishStep(long jobStepId, StepStatus stepStatus, Long recordCount, String errorMessage) {
+        ownTransaction.executeWithoutResult(status -> jdbc.update("""
                 UPDATE meta.meta_pipeline_step
                    SET status        = ?,
                        record_count  = ?,
@@ -48,7 +58,7 @@ public class JobStepRepository {
                        duration_ms   = (EXTRACT(EPOCH FROM (clock_timestamp() - start_time)) * 1000)::BIGINT,
                        error_message = ?
                  WHERE job_step_id = ?
-                """, status.name(), recordCount, errorMessage, jobStepId);
+                """, stepStatus.name(), recordCount, errorMessage, jobStepId));
     }
 
     public List<JobStep> findByJobRunId(long jobRunId) {

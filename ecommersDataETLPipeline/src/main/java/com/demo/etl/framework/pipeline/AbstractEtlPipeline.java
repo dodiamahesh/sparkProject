@@ -5,9 +5,12 @@ import com.demo.etl.framework.quality.DataSanitizer;
 import com.demo.etl.framework.source.SourceBatch;
 import com.demo.etl.framework.source.SourceDefinition;
 import com.demo.etl.framework.target.DateDimension;
+import com.demo.etl.framework.target.DirectPostgresWriter;
 import com.demo.etl.framework.target.Scd2Writer;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
+
+import java.util.List;
 
 /**
  * Base class for pipelines. It gives you a few simple building blocks, so a pipeline reads like a recipe:
@@ -66,6 +69,33 @@ public abstract class AbstractEtlPipeline implements EtlPipeline {
     /** Adds every date found in {@code dateColumn} to the shared silver.dim_date table. */
     protected long loadDateDimension(PipelineContext context, Dataset<Row> rows, String dateColumn) {
         return load(context, DateDimension.fromColumn(rows, dateColumn), DateDimension.TABLE, DateDimension.KEY_COLUMN);
+    }
+
+    // ------------------------------------------------------------------ direct load (no staging)
+
+    /**
+     * UPSERT rows DIRECTLY into a PostgreSQL table, without a staging table, inside the job's transaction.
+     * Only for pipelines with {@link #directLoad()} = true: nothing is visible until the whole job commits.
+     *
+     * @param lookups surrogate keys looked up in SQL (a dimension written in this same transaction is
+     *                invisible to Spark), see {@link DirectPostgresWriter.KeyLookup}
+     */
+    protected long loadDirect(PipelineContext context, Dataset<Row> rows, String targetTable, List<String> keyColumns,
+                              DirectPostgresWriter.KeyLookup... lookups) {
+        long count = toolkit.stepTracker().track(context, "Load " + targetTable + " (direct)",
+                () -> toolkit.directWriter().upsert(context, rows, targetTable, keyColumns, List.of(lookups)));
+        context.metrics().addLoaded(count);
+        return count;
+    }
+
+    /** Adds every date of the given columns to silver.dim_date, directly (see {@link #loadDirect}). */
+    protected long loadDateDimensionDirect(PipelineContext context, Dataset<Row> rows, String... dateColumns) {
+        Dataset<Row> dates = null;
+        for (String dateColumn : dateColumns) {
+            Dataset<Row> datesOfColumn = DateDimension.fromColumn(rows, dateColumn);
+            dates = dates == null ? datesOfColumn : dates.union(datesOfColumn);
+        }
+        return loadDirect(context, dates.distinct(), DateDimension.TABLE, List.of(DateDimension.KEY_COLUMN));
     }
 
     /** Replaces a business key with the dimension's surrogate key (adds the key column). */
