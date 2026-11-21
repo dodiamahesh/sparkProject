@@ -9,7 +9,8 @@ import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
  *
  * Bronze (MongoDB)  --Spark-->  validate / clean / de-duplicate  --Spark-->  Silver (PostgreSQL star schema)
  *
- * Trigger a pipeline:  POST http://localhost:8080/api/etl/pipelines/{pipelineName}/run?loadType=INCREMENTAL
+ * Pipelines run ONLY through the REST API (no scheduler, no startup runner):
+ *   POST http://localhost:8080/api/etl/pipelines/{pipelineName}/run?loadType=INCREMENTAL
  */
 @SpringBootApplication
 @ConfigurationPropertiesScan

@@ -70,10 +70,6 @@ etl:
     # Schema-drift check: how many MongoDB documents are inspected per collection and run
     schema-sample-size: 1000
 
-  sample-data:
-    load-on-startup: false
-    location: classpath:sample-data/*.json
-
 logging:
   level:
     root: INFO

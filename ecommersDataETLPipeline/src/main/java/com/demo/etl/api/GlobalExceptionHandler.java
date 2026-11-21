@@ -13,6 +13,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.time.LocalDateTime;
 
@@ -28,6 +29,12 @@ public class GlobalExceptionHandler {
     @ExceptionHandler({PipelineNotFoundException.class, JobRunNotFoundException.class})
     public ResponseEntity<ApiError> handleNotFound(EtlException e, HttpServletRequest request) {
         return build(HttpStatus.NOT_FOUND, e.getMessage(), request);
+    }
+
+    /** Unknown URL (e.g. an endpoint that does not exist) -> 404, not 500. */
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ApiError> handleUnknownUrl(NoResourceFoundException e, HttpServletRequest request) {
+        return build(HttpStatus.NOT_FOUND, "No endpoint " + request.getMethod() + " " + request.getRequestURI(), request);
     }
 
     @ExceptionHandler(PipelineAlreadyRunningException.class)

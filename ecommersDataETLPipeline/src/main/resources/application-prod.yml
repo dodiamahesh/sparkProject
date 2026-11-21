@@ -28,8 +28,6 @@ etl:
     batch-size: 5000
   job:
     thread-pool-size: ${ETL_THREAD_POOL_SIZE:4}
-  sample-data:
-    load-on-startup: false
 
 logging:
   level:

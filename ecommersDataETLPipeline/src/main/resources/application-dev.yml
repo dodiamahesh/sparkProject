@@ -23,10 +23,6 @@ etl:
       # Avoid hostname / VPN issues on a laptop
       "[spark.driver.host]": "localhost"
       "[spark.driver.bindAddress]": "127.0.0.1"
-  sample-data:
-    # On startup, load src/main/resources/sample-data/*.json into MongoDB
-    # (only for collections that are empty, so your edits are never overwritten)
-    load-on-startup: true
 
 logging:
   level:

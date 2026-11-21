@@ -15,8 +15,7 @@ public record EtlProperties(
         Postgres postgres,
         Source source,
         Job job,
-        Quality quality,
-        SampleData sampleData) {
+        Quality quality) {
 
     /**
      * Data-quality checks done for every source.
@@ -46,9 +45,5 @@ public record EtlProperties(
 
     /** Thread pool used when a job is triggered with async=true. */
     public record Job(int threadPoolSize, int queueCapacity) {
-    }
-
-    /** Dev helper: load JSON files into MongoDB on startup. */
-    public record SampleData(boolean loadOnStartup, String location) {
     }
 }
