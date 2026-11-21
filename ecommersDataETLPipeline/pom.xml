@@ -58,7 +58,7 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
-        <!-- MongoTemplate: used only to seed sample data in the dev profile -->
+        <!-- MongoTemplate + MongoDB driver: schema-drift check (SchemaDriftDetector) and processedFlag write-back (MongoFlagUpdater) -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-mongodb</artifactId>
@@ -78,14 +78,7 @@
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
         </dependency>
-        <dependency>
-            <groupId>org.flywaydb</groupId>
-            <artifactId>flyway-core</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.flywaydb</groupId>
-            <artifactId>flyway-database-postgresql</artifactId>
-        </dependency>
+        <!-- Tables are created by sample-data/<job>/03_postgres_tables.sql (no Flyway, one DDL source) -->
 
         <!-- ===================== Apache Spark ===================== -->
         <dependency>
