@@ -5,8 +5,8 @@
 > બધું **Windows 11 પર native** (Docker વગર).
 >
 > ✅ **Status:** Infrastructure (Prompt 1) અને Application (Prompt 2) બંને implement અને test થઈ ગયા છે. Code ની સમજૂતી: **[MEDALLION_CODE_GUIDE_GU.md](MEDALLION_CODE_GUIDE_GU.md)**
-> Setup: **[MONGO_CDC_COMPLETE_SETUP_GU.md](MONGO_CDC_COMPLETE_SETUP_GU.md)** (Source → Kafka → Bronze) અને **[MEDALLION_SETUP_GUIDE_GU.md](MEDALLION_SETUP_GUIDE_GU.md)** (databases)
-> Tool ની પસંદગી કેમ કરી: [CDC_TOOL_COMPARISON_GU.md](CDC_TOOL_COMPARISON_GU.md)
+> Setup: **[MONGO_CDC_COMPLETE_SETUP_GU.md](../mongoKafkaConnectorDemo/docs/MONGO_CDC_COMPLETE_SETUP_GU.md)** (Source → Kafka → Bronze) અને **[MEDALLION_SETUP_GUIDE_GU.md](MEDALLION_SETUP_GUIDE_GU.md)** (databases)
+> Tool ની પસંદગી કેમ કરી: [CDC_TOOL_COMPARISON_GU.md](../mongoKafkaConnectorDemo/docs/CDC_TOOL_COMPARISON_GU.md)
 >
 > **ફેરફાર (2026-10-28):** Debezium અને MongoDB sink connector દૂર કર્યા. MongoDB CDC હવે *MongoDB Source Connector → એક generic topic `de_source_mongo` → પોતાનો Java subscriber (`mongo-cdc-subscriber`)* થી થાય છે. Bronze document = source document + `_op`, `_deleted`, `_source_ts`, `_ingested_at`. **MySQL CDC બંધ છે**: bronze ના જૂના `mysql_station` / `mysql_station_owner` collections જેમ છે તેમ વપરાય છે.
 
@@ -117,7 +117,7 @@
 | **Flyway** | Spring Boot managed | Silver/Gold tables programmatically (SQL migrations) |
 | **Spring Boot** | 2.7 (હાલનું) | Scheduler + config + profiles |
 
-**CDC tool:** MongoDB Kafka Connector (source) + પોતાનો subscriber. પહેલાં Debezium હતું; કેમ બદલ્યું તે [CDC_TOOL_COMPARISON_GU.md](CDC_TOOL_COMPARISON_GU.md) વિભાગ 0 માં છે.
+**CDC tool:** MongoDB Kafka Connector (source) + પોતાનો subscriber. પહેલાં Debezium હતું; કેમ બદલ્યું તે [CDC_TOOL_COMPARISON_GU.md](../mongoKafkaConnectorDemo/docs/CDC_TOOL_COMPARISON_GU.md) વિભાગ 0 માં છે.
 
 ---
 
@@ -158,7 +158,7 @@
  Mongo de_source_mongo.*  ──(MongoDB Source Connector + RegexRouter)──► topic de_source_mongo ──(mongo-cdc-subscriber)──► de_bronze.<એ જ collection નામ>
  MySQL de_source_mysql.*  ── (CDC બંધ) ──  bronze ના જૂના mysql_station / mysql_station_owner જેમ છે તેમ
 ```
-Setup: [MONGO_CDC_COMPLETE_SETUP_GU.md](MONGO_CDC_COMPLETE_SETUP_GU.md)
+Setup: [MONGO_CDC_COMPLETE_SETUP_GU.md](../mongoKafkaConnectorDemo/docs/MONGO_CDC_COMPLETE_SETUP_GU.md)
 
 ### 6.2 Bronze document = as-is + metadata (implementation પછી ચકાસેલું)
 
@@ -264,8 +264,8 @@ Join: `weather_observation.call_letters = dim_station.station_code`.
 | `pom.xml` | + `mongo-spark-connector_2.12` (10.x), + `flyway-core` (+ `flyway-mysql` જો જરૂર હોય); − `spring-boot-starter-data-jpa` (જરૂર ન હોય તો) |
 | `application*.properties` | Bronze Mongo URI, silver/gold JDBC URLs, `pipeline.interval-ms`, `pipeline.safety-lag-minutes`; dev profile માં executors માટે `spark.jars` |
 | `src/main/resources/db/silver`, `db/gold` | Flyway migrations |
-| `kafka-connect/*.json` | Source connector config `mongo-cdc-db-source.json` ([CDC setup](MONGO_CDC_COMPLETE_SETUP_GU.md)) |
-| `mongo-cdc-subscriber/` | Kafka → Bronze Java subscriber (અલગ Maven project) |
+| `mongoKafkaConnectorDemo/kafka-connect/*.json` | Source connector config `mongo-cdc-db-source.json` ([CDC setup](../mongoKafkaConnectorDemo/docs/MONGO_CDC_COMPLETE_SETUP_GU.md)) |
+| `mongoKafkaConnectorDemo/mongo-cdc-subscriber/` | Kafka → Bronze Java subscriber (અલગ Maven project) |
 | `docs/` | Code guide (ગુજરાતી) |
 
 **Bronze નો data file કરતાં અલગ દેખાશે.** હવે numbers સાચા types માં હશે, `{"$numberDouble": ...}` wrappers નહીં હોય. તેથી `WeatherSchema`/`JsonCols` ને **bronze ના actual documents જોઈને** બદલવા પડશે.
@@ -278,7 +278,7 @@ Join: `weather_observation.call_letters = dim_station.station_code`.
 
 | # | કામ | કેવી રીતે | પૂરું થયાની નિશાની |
 |---|---|---|---|
-| **1** | Installation + configuration: MongoDB, MySQL setup, Kafka, Connect, source connector, subscriber, CDC test | **[CDC setup](MONGO_CDC_COMPLETE_SETUP_GU.md)** + **[Setup guide](MEDALLION_SETUP_GUIDE_GU.md)** જાતે, અથવા **Prompt 1** થી | CDC setup વિભાગ 10 ✅ |
+| **1** | Installation + configuration: MongoDB, MySQL setup, Kafka, Connect, source connector, subscriber, CDC test | **[CDC setup](../mongoKafkaConnectorDemo/docs/MONGO_CDC_COMPLETE_SETUP_GU.md)** + **[Setup guide](MEDALLION_SETUP_GUIDE_GU.md)** જાતે, અથવા **Prompt 1** થી | CDC setup વિભાગ 10 ✅ |
 | **2** | Application: refactor, Flyway, Job #1, Job #2, scheduler, profiles, tests | **Prompt 2** | Source change → થોડી મિનિટમાં gold માં |
 
 ---
@@ -306,7 +306,7 @@ Join: `weather_observation.call_letters = dim_station.station_code`.
 
 ### Prompt 1 – Installation અને Configuration (બધું infrastructure)
 ```
-Read docs/MEDALLION_PIPELINE_PLAN_GU.md, docs/MONGO_CDC_COMPLETE_SETUP_GU.md and
+Read docs/MEDALLION_PIPELINE_PLAN_GU.md, mongoKafkaConnectorDemo/docs/MONGO_CDC_COMPLETE_SETUP_GU.md and
 docs/MEDALLION_SETUP_GUIDE_GU.md.
 Help me complete the whole infrastructure setup on my Windows 11 machine, natively (no Docker):
 - MEDALLION_SETUP_GUIDE_GU.md parts A and B: MongoDB Database Tools, importing data1.json into

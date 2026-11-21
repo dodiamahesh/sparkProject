@@ -7,7 +7,7 @@
 >
 > Versions **2026-10-25** ના રોજ developer machine પર ચકાસેલા છે.
 >
-> **ફેરફાર (2026-10-28):** Debezium MySQL (#19) અને Debezium MongoDB (#20) connectors **દૂર કર્યા છે**. MongoDB CDC હવે **MongoDB Kafka Connector, source mode** (#21) + એક generic topic + પોતાનો Java subscriber (`mongo-cdc-subscriber`) થી થાય છે. MySQL CDC બંધ છે. Setup: [MONGO_CDC_COMPLETE_SETUP_GU.md](MONGO_CDC_COMPLETE_SETUP_GU.md).
+> **ફેરફાર (2026-10-28):** Debezium MySQL (#19) અને Debezium MongoDB (#20) connectors **દૂર કર્યા છે**. MongoDB CDC હવે **MongoDB Kafka Connector, source mode** (#21) + એક generic topic + પોતાનો Java subscriber (`mongo-cdc-subscriber`) થી થાય છે. MySQL CDC બંધ છે. Setup: [MONGO_CDC_COMPLETE_SETUP_GU.md](../mongoKafkaConnectorDemo/docs/MONGO_CDC_COMPLETE_SETUP_GU.md).
 > Tools ના નંબર બદલ્યા નથી, જેથી બીજા documents ના references તૂટે નહીં.
 > License માહિતી સામાન્ય માર્ગદર્શન માટે છે. **અંતિમ નિર્ણય તમારી organization ની legal/compliance team નો રહેશે.**
 
@@ -477,7 +477,7 @@
 | Version | 4.3.1 (Kafka સાથે) |
 | પ્રકાર | Kafka distribution નો ભાગ. Config: `C:\kafka\config\connect-distributed-de.properties` |
 | Concept | **Data integration framework**: source/sink connectors, **SMT** (Single Message Transform), REST API, distributed mode |
-| કેમ જરૂરી | Code વગર, ફક્ત JSON config થી DB ↔ Kafka જોડવા (`kafka-connect/*.json`) |
+| કેમ જરૂરી | Code વગર, ફક્ત JSON config થી DB ↔ Kafka જોડવા (`mongoKafkaConnectorDemo/kafka-connect/*.json`) |
 | License | Apache 2.0 |
 | Dev / Prod | ✅ / ✅ |
 | RFC પ્રકાર | Kafka સાથે આવે છે + port 8083 |
@@ -508,7 +508,7 @@
 | License | Apache 2.0 |
 | Dev / Prod | ✅ / ✅ |
 | RFC પ્રકાર | Plugin download + MongoDB replica set (change streams) |
-| Setup | [MONGO_CDC_COMPLETE_SETUP_GU.md](MONGO_CDC_COMPLETE_SETUP_GU.md) |
+| Setup | [MONGO_CDC_COMPLETE_SETUP_GU.md](../mongoKafkaConnectorDemo/docs/MONGO_CDC_COMPLETE_SETUP_GU.md) |
 
 ---
 

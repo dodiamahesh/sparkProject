@@ -1,7 +1,7 @@
 # Medallion Pipeline – Code Guide (ગુજરાતી)
 
 > **Bronze (MongoDB) → Job #1 → Silver (MySQL) → Job #2 → Gold (MySQL)**: code કેવી રીતે કામ કરે છે, validation અને duplicates કેવી રીતે સંભાળાય છે, કેવી રીતે ચલાવવું અને ચકાસવું.
-> Infrastructure (Source → Kafka → Bronze): [MONGO_CDC_COMPLETE_SETUP_GU.md](MONGO_CDC_COMPLETE_SETUP_GU.md) · Databases: [MEDALLION_SETUP_GUIDE_GU.md](MEDALLION_SETUP_GUIDE_GU.md) · Plan: [MEDALLION_PIPELINE_PLAN_GU.md](MEDALLION_PIPELINE_PLAN_GU.md)
+> Infrastructure (Source → Kafka → Bronze): [MONGO_CDC_COMPLETE_SETUP_GU.md](../mongoKafkaConnectorDemo/docs/MONGO_CDC_COMPLETE_SETUP_GU.md) · Databases: [MEDALLION_SETUP_GUIDE_GU.md](MEDALLION_SETUP_GUIDE_GU.md) · Plan: [MEDALLION_PIPELINE_PLAN_GU.md](MEDALLION_PIPELINE_PLAN_GU.md)
 >
 > **ફેરફાર (2026-10-28):** Bronze observations હવે `weather_observations` collection માં છે (પહેલાં `mongo_weather_observations`). એ CDC subscriber લખે છે: **source document જેમ છે તેમ + `_op`, `_deleted`, `_source_ts`, `_ingested_at`**. Debezium નો `after` JSON string હવે નથી. `mysql_station` / `mysql_station_owner` જૂના pipeline ના છે અને **હવે update થતા નથી** (MySQL CDC બંધ).
 
@@ -80,8 +80,10 @@ src/main/resources/
     ├─ silver/V1__silver_init.sql    Flyway: silver tables + control + staging
     └─ gold/V1__gold_init.sql        Flyway: gold tables + staging
 
-kafka-connect/                       mongo-cdc-db-source.json, register-connectors.ps1
-mongo-cdc-subscriber/                Kafka → Bronze Java subscriber (અલગ Maven project, MONGO_CDC_COMPLETE_SETUP_GU.md)
+mongoKafkaConnectorDemo/             Source → Kafka → Bronze (CDC) નું બધું એક જગ્યાએ (README.md જુઓ)
+├─ kafka-connect/                    mongo-cdc-db-source.json, register-connectors.ps1
+├─ mongo-cdc-subscriber/             Kafka → Bronze Java subscriber (અલગ Maven project)
+└─ docs/                             MONGO_CDC_COMPLETE_SETUP_GU.md અને બીજા CDC docs
 ```
 
 **જૂનો pipeline દૂર થયો છે:** `WeatherEtlJob`, JPA entities, `ddl-auto`, `sql/schema.sql`, `etl.*` settings. Tables હવે **Flyway** બનાવે છે.
@@ -376,7 +378,7 @@ SELECT reason, COUNT(*) FROM de_silver.etl_rejected_record GROUP BY reason;
 | # | Layer | શું કરવું |
 |---|---|---|
 | 1 | Source | `db.sensor.insertOne({...})`. Collection આપોઆપ બને છે |
-| 2 | Kafka Connect + subscriber | **કંઈ નહીં.** Source connector આખો `de_source_mongo` database watch કરે છે, અને events એ જ topic `de_source_mongo` માં જાય છે. Subscriber `de_bronze.sensor` આપોઆપ બનાવે છે (metadata સાથે). Connector શરૂ થયો **તે પહેલાનો** data જોઈએ તો [CDC setup 12.5](MONGO_CDC_COMPLETE_SETUP_GU.md) |
+| 2 | Kafka Connect + subscriber | **કંઈ નહીં.** Source connector આખો `de_source_mongo` database watch કરે છે, અને events એ જ topic `de_source_mongo` માં જાય છે. Subscriber `de_bronze.sensor` આપોઆપ બનાવે છે (metadata સાથે). Connector શરૂ થયો **તે પહેલાનો** data જોઈએ તો [CDC setup 12.5](../mongoKafkaConnectorDemo/docs/MONGO_CDC_COMPLETE_SETUP_GU.md) |
 | 3 | `BronzeSchemas` | `SENSOR` schema ઉમેરો (bronze ના એક document ને જોઈને), અને છેલ્લે `_op STRING, _deleted BOOLEAN, _source_ts BIGINT, _ingested_at BIGINT` |
 | 4 | Flyway | `db/silver/V2__sensor.sql`: `dim_sensor` + `stg_dim_sensor`. **V1 ને ક્યારેય edit ન કરો**, નવી V2 file બનાવો |
 | 5 | Transformer | `SensorTransformer`: metadata અલગ કરવો, `_deleted` → `is_deleted`, validation + rejects (`ObservationTransformer` / `StationTransformer` જેવો) |
@@ -442,7 +444,7 @@ Machine પર `default` profile (`local[*]`) સાથે test કર્યુ�
 | Startup: `Migration V1__silver_init.sql failed` | SQL error જુઓ. MySQL DDL rollback નથી થતું, તેથી અધૂરી tables + Flyway history સાફ કરવી પડે (dev માં: `DROP DATABASE de_silver; CREATE DATABASE de_silver;`). **Applied migration ને edit ન કરો**, નવી V2 બનાવો |
 | `Validate failed: Migrations have failed validation` | V1 file બદલાઈ ગઈ છે → નવી V2 file વાપરો |
 | `NoSuchMethodError ... com.mongodb` | MongoDB driver version mismatch → `pom.xml` માં `mongodb.version` 5.1.x |
-| Job #1 `read=0` જ આવે છે | Source connector RUNNING? Subscriber ચાલુ છે? Bronze docs માં `_ingested_at` છે (જૂના subscriber એ લખેલા docs માં નથી, [CDC setup 12.1](MONGO_CDC_COMPLETE_SETUP_GU.md) replay)? `_ingested_at` < now − lag? (નવો change 2 મિનિટ પછી આવે છે) |
+| Job #1 `read=0` જ આવે છે | Source connector RUNNING? Subscriber ચાલુ છે? Bronze docs માં `_ingested_at` છે (જૂના subscriber એ લખેલા docs માં નથી, [CDC setup 12.1](../mongoKafkaConnectorDemo/docs/MONGO_CDC_COMPLETE_SETUP_GU.md) replay)? `_ingested_at` < now − lag? (નવો change 2 મિનિટ પછી આવે છે) |
 | ઘણા rejects | વિભાગ 5.4 ની SQL: `reason`, `details`, `raw_payload` જુઓ |
 | Job #2 `SKIPPED` | Job #1 નો `error_message` (`etl_job_run`) જુઓ |
 | `HADOOP_HOME and hadoop.home.dir are unset` | Warning છે, નુકસાન નથી. `HADOOP_HOME` સેટ કરીને નવી terminal ખોલો |

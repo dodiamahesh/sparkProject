@@ -3,7 +3,7 @@
 > આ guide માં Medallion pipeline ના **databases** નો setup છે: MongoDB (Source + Bronze) અને MySQL (Source + Silver + Gold).
 >
 > **Source → Kafka → Bronze (CDC) નો આખો setup હવે અલગ document માં છે:**
-> **[MONGO_CDC_COMPLETE_SETUP_GU.md](MONGO_CDC_COMPLETE_SETUP_GU.md)**: Java, Maven, MongoDB replica set, Kafka, Kafka Connect, MongoDB Source Connector, Java subscriber, test, troubleshooting.
+> **[MONGO_CDC_COMPLETE_SETUP_GU.md](../mongoKafkaConnectorDemo/docs/MONGO_CDC_COMPLETE_SETUP_GU.md)**: Java, Maven, MongoDB replica set, Kafka, Kafka Connect, MongoDB Source Connector, Java subscriber, test, troubleshooting.
 >
 > Stage 3 (Silver) અને Stage 4 (Gold) નો Spark code: [MEDALLION_PIPELINE_PLAN_GU.md](MEDALLION_PIPELINE_PLAN_GU.md) વિભાગ 12.
 
@@ -16,7 +16,7 @@
 | MongoDB Community Server | **8.x** (આ machine પર 8.3.13) |
 | MySQL | 8.0.30 ✅ |
 | JDK | 17 ✅ |
-| Kafka, Kafka Connect, MongoDB Kafka Connector, subscriber | [MONGO_CDC_COMPLETE_SETUP_GU.md](MONGO_CDC_COMPLETE_SETUP_GU.md) વિભાગ 0.3 |
+| Kafka, Kafka Connect, MongoDB Kafka Connector, subscriber | [MONGO_CDC_COMPLETE_SETUP_GU.md](../mongoKafkaConnectorDemo/docs/MONGO_CDC_COMPLETE_SETUP_GU.md) વિભાગ 0.3 |
 
 ---
 
@@ -53,7 +53,7 @@
           ▼
    Spark: Bronze → Silver → Gold (MySQL)
 ```
-આ flow નો પૂરો setup: [MONGO_CDC_COMPLETE_SETUP_GU.md](MONGO_CDC_COMPLETE_SETUP_GU.md).
+આ flow નો પૂરો setup: [MONGO_CDC_COMPLETE_SETUP_GU.md](../mongoKafkaConnectorDemo/docs/MONGO_CDC_COMPLETE_SETUP_GU.md).
 
 ### 0.2 Databases ના નામ (dataset-independent)
 
@@ -74,8 +74,10 @@ Database ના નામ સામાન્ય (generic) રાખ્યા છ
 C:\kafka\                                  ← Kafka installation (CDC document)
 C:\kafka\plugins\mongo-kafka-connect\      ← MongoDB Kafka Connector plugin
 C:\kafka-data\                             ← Kafka નો data (topics)
-D:\...\sparkProject\kafka-connect\         ← source connector JSON + register script
-D:\...\sparkProject\mongo-cdc-subscriber\  ← Java subscriber (અલગ Maven project)
+D:\...\sparkProject\mongoKafkaConnectorDemo\                       ← CDC નું બધું (README.md)
+D:\...\sparkProject\mongoKafkaConnectorDemo\kafka-connect\         ← source connector JSON + register script
+D:\...\sparkProject\mongoKafkaConnectorDemo\mongo-cdc-subscriber\  ← Java subscriber (અલગ Maven project)
+D:\...\sparkProject\mongoKafkaConnectorDemo\docs\                  ← CDC documents
 D:\...\sparkProject\docs\                  ← documents
 ```
 
@@ -103,7 +105,7 @@ D:\...\sparkProject\docs\                  ← documents
 
 ## A1. MongoDB install, replica set અને RAM મર્યાદા
 MongoDB Server, mongosh, Compass નું install, `mongod.cfg` (`cacheSizeGB: 0.5`, `replSetName: rs0`) અને `rs.initiate`:
-➡️ **[MONGO_CDC_COMPLETE_SETUP_GU.md](MONGO_CDC_COMPLETE_SETUP_GU.md) વિભાગ 2.1 થી 2.4**
+➡️ **[MONGO_CDC_COMPLETE_SETUP_GU.md](../mongoKafkaConnectorDemo/docs/MONGO_CDC_COMPLETE_SETUP_GU.md) વિભાગ 2.1 થી 2.4**
 
 હવેથી connection string હંમેશા આ વાપરો:
 ```
@@ -210,7 +212,7 @@ DROP USER IF EXISTS 'debezium'@'localhost';
 
 # ભાગ C – Kafka અને CDC (Source → Bronze)
 
-➡️ **આખો setup: [MONGO_CDC_COMPLETE_SETUP_GU.md](MONGO_CDC_COMPLETE_SETUP_GU.md)** (Kafka install થી લઈને test સુધી, એક જ document માં).
+➡️ **આખો setup: [MONGO_CDC_COMPLETE_SETUP_GU.md](../mongoKafkaConnectorDemo/docs/MONGO_CDC_COMPLETE_SETUP_GU.md)** (Kafka install થી લઈને test સુધી, એક જ document માં).
 
 ### C1. પહેલાં અને હવે
 
@@ -237,7 +239,7 @@ Code (2026-10-28 એ નવા format પ્રમાણે બદલ્યો):
 - `ObservationTransformer`: `SOURCE = "weather_observations"`. Metadata સિવાયના fields ને `d` struct માં મૂકે છે (પહેલાં `after` JSON parse થતો હતો), `_deleted` પરથી deletes, અને `_source_ts` પરથી `source_ts`.
 - `BronzeReader`, `StationTransformer`, `BronzeToSilverJob` નું logic એ જ છે (`_ingested_at` watermark).
 
-> ⚠️ જૂના subscriber (metadata વગરના) એ લખેલા documents માં `_ingested_at` નથી, એટલે Spark એમને **ક્યારેય નહીં વાંચે**. નવો subscriber ચલાવ્યા પછી એક વાર replay કરો: [MONGO_CDC_COMPLETE_SETUP_GU.md](MONGO_CDC_COMPLETE_SETUP_GU.md) વિભાગ 12.1.
+> ⚠️ જૂના subscriber (metadata વગરના) એ લખેલા documents માં `_ingested_at` નથી, એટલે Spark એમને **ક્યારેય નહીં વાંચે**. નવો subscriber ચલાવ્યા પછી એક વાર replay કરો: [MONGO_CDC_COMPLETE_SETUP_GU.md](../mongoKafkaConnectorDemo/docs/MONGO_CDC_COMPLETE_SETUP_GU.md) વિભાગ 12.1.
 
 ---
 
@@ -267,7 +269,7 @@ Code (2026-10-28 એ નવા format પ્રમાણે બદલ્યો):
 | `MongoServerError: not primary` / change streams error | `rs.initiate` કર્યું? `rs.status()` |
 | `mongoimport` પછી count ઓછો | File JSON Lines છે કે નહીં, અને `--file` નો path |
 | MySQL: `Access denied` | User/password અને `GRANT` ચકાસો |
-| Kafka, Kafka Connect, connector, subscriber, bronze માં data ન આવે | **[MONGO_CDC_COMPLETE_SETUP_GU.md](MONGO_CDC_COMPLETE_SETUP_GU.md) વિભાગ 13 (ન કરવાની ભૂલો) અને 14 (Troubleshooting)** |
+| Kafka, Kafka Connect, connector, subscriber, bronze માં data ન આવે | **[MONGO_CDC_COMPLETE_SETUP_GU.md](../mongoKafkaConnectorDemo/docs/MONGO_CDC_COMPLETE_SETUP_GU.md) વિભાગ 13 (ન કરવાની ભૂલો) અને 14 (Troubleshooting)** |
 | Kafka/Connect: `OutOfMemoryError` અથવા machine ધીમું | Docker Desktop, Spark cluster, OpenMetadata બંધ કરો. 0.4 જુઓ |
 
 ---
