@@ -14,7 +14,7 @@
 //  EXPECTED INCREMENTAL RUN:
 //      ecom_categories   read 1 (CAT-07 new)
 //      ecom_products     read 2 (PRD-0001 price change, PRD-0011 new in CAT-07)
-//      ecom_customers    read 3 (ECU-0002 moved, ECU-0008 fixed -> resolved, ECU-0009 new)
+//      ecom_customers    read 3 (ECU-0002 moved, ECU-0008 fixed -> loaded, ECU-0009 new)
 //      ecom_orders       read 2 (ORD-00002 SHIPPED -> DELIVERED, ORD-00011 new)
 //      ecom_order_items  read 3 (OIT-000016/17 new, OIT-000018 VALIDATION: discount > quantity * unitPrice)
 //      status: SUCCESS_WITH_FAILED (OIT-000018 rejected)
@@ -54,7 +54,7 @@ remove("ecom_products", { productId: "PRD-0009" });                        // it
 
 // ---------------- customers ----------------
 update("ecom_customers", { customerId: "ECU-0002" }, { city: "Pune", pincode: "411001" });
-update("ecom_customers", { customerId: "ECU-0008" }, { segment: "VIP" });     // fix -> resolved
+update("ecom_customers", { customerId: "ECU-0008" }, { segment: "VIP" });     // fix -> loaded
 insert("ecom_customers", { customerId: "ECU-0009" }, {
   customerId: "ECU-0009", firstName: "Nisha", lastName: "Kapoor", email: "nisha.kapoor@gmail.com", phone: "9811223344",
   city: "Chandigarh", state: "Punjab", pincode: "160017", segment: "PRIME", signupDate: "2026-11-19" });

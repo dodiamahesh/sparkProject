@@ -12,7 +12,6 @@ public class JobMetrics {
     private final AtomicLong rejectedCount = new AtomicLong();
     private final AtomicLong duplicateCount = new AtomicLong();
     private final AtomicLong loadedCount = new AtomicLong();
-    private final AtomicLong resolvedCount = new AtomicLong();
 
     public void addSource(long count) {
         sourceCount.addAndGet(count);
@@ -34,10 +33,6 @@ public class JobMetrics {
         loadedCount.addAndGet(count);
     }
 
-    public void addResolved(long count) {
-        resolvedCount.addAndGet(count);
-    }
-
     public long sourceCount() {
         return sourceCount.get();
     }
@@ -56,9 +51,5 @@ public class JobMetrics {
 
     public long loadedCount() {
         return loadedCount.get();
-    }
-
-    public long resolvedCount() {
-        return resolvedCount.get();
     }
 }

@@ -16,11 +16,11 @@
 //      so the source re-sends ACC-0009 (touches its updatedAt) and it loads in the same run.
 //
 //  EXPECTED INCREMENTAL RUN:
-//      customers    read 3 (CUST-0002 update, CUST-0009 fixed, CUST-0012 new)  -> all valid, 1 resolved
-//      accounts     read 3 (ACC-0003 update, ACC-0009 retry, ACC-0012 new)     -> all valid, 1 resolved
+//      customers    read 3 (CUST-0002 update, CUST-0009 fixed, CUST-0012 new)  -> all valid
+//      accounts     read 3 (ACC-0003 update, ACC-0009 retry, ACC-0012 new)     -> all valid
 //      merchants    read 1 (MER-0009 new)
 //      transactions read 4 (TXN-000003 update, TXN-000017/18 new, TXN-000019 bad) -> 3 valid, 1 CORRUPT
-//      -> dim_customer 10, dim_account 10, dim_merchant 8, fact_transaction 14; resolved 2 (CUST-0009, ACC-0009)
+//      -> dim_customer 10, dim_account 10, dim_merchant 8, fact_transaction 14 (CUST-0009, ACC-0009 fixed -> loaded)
 //      status: SUCCESS_WITH_FAILED (TXN-000019 rejected)
 // =============================================================================
 const DB_NAME = "bankdb";

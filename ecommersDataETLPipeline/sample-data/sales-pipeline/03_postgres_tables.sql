@@ -49,7 +49,6 @@ CREATE TABLE IF NOT EXISTS meta.meta_pipeline_run (
     rejected_count   BIGINT       NOT NULL DEFAULT 0,    -- records that failed (includes duplicates)
     duplicate_count  BIGINT       NOT NULL DEFAULT 0,    -- part of rejected_count
     loaded_count     BIGINT       NOT NULL DEFAULT 0,    -- rows inserted/updated in target tables
-    resolved_count   BIGINT       NOT NULL DEFAULT 0,    -- old rejected records that are valid now
     error_message    TEXT,                               -- short failure reason
     error_detail     TEXT                                -- stack trace (truncated)
 );

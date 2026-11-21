@@ -95,10 +95,10 @@ public class EtlJobService {
                     ? "All " + metrics.rejectedCount() + " records were rejected (see meta.meta_rejected_record)"
                     : null;
             jobRunRepository.finishRun(jobRunId, status, metrics, message, null);
-            log.info("========== Job {} {} in {} ms: read={}, valid={}, rejected={}, loaded={}, resolved={} ==========",
+            log.info("========== Job {} {} in {} ms: read={}, valid={}, rejected={}, loaded={} ==========",
                     jobRunId, status, System.currentTimeMillis() - startMillis,
                     metrics.sourceCount(), metrics.validCount(), metrics.rejectedCount(),
-                    metrics.loadedCount(), metrics.resolvedCount());
+                    metrics.loadedCount());
 
         } catch (Throwable error) {
             // Catch Throwable (not only Exception) so even an Error never leaves a run without a status

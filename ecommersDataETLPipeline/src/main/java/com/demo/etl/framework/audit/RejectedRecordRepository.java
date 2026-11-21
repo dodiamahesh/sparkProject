@@ -110,26 +110,6 @@ public class RejectedRecordRepository {
         });
     }
 
-    /**
-     * Records that were rejected before but are VALID in this run -> remove them (all their errors).
-     * The staging table has one column: source_id.
-     *
-     * @return number of records (not error rows) removed
-     */
-    public long deleteResolvedFromStaging(String stagingTable, String pipelineName, String collection) {
-        return jdbc.queryForObject("""
-                WITH removed AS (
-                    DELETE FROM meta.meta_rejected_record r
-                     USING %s s
-                     WHERE r.pipeline_name = ?
-                       AND r.source_collection = ?
-                       AND r.source_id = s.source_id
-                    RETURNING r.source_id
-                )
-                SELECT COUNT(DISTINCT source_id) FROM removed
-                """.formatted(stagingTable), Long.class, pipelineName, collection);
-    }
-
     /** All filters are optional (null = no filter). */
     public List<RejectedRecord> find(String pipelineName, String collection, String errorType, int limit) {
         StringBuilder sql = new StringBuilder(SELECT_WITH_ERROR).append(" WHERE 1 = 1");

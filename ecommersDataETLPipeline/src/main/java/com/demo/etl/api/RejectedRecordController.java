@@ -19,7 +19,7 @@ import java.util.List;
  *
  * How to fix: correct the document in MongoDB (the source sets a newer updatedAt) and run the pipeline:
  * the corrected document is inside the next incremental window.
- * Records that are valid now are loaded and disappear from this list.
+ * A corrected record is loaded; its rows here stay as history (first / last run, attempt_count).
  */
 @RestController
 @RequestMapping("/api/etl/rejected-records")

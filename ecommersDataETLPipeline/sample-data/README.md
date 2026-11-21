@@ -89,7 +89,8 @@ order 01 → order run → fulfillment 01 → fulfillment run → order 02 → o
   seen. The scripts delete only records that were never loaded (rejected / test ones); their row in
   `meta.meta_rejected_record` stays as history.
 - **Fixing a rejected record:** correct it in MongoDB (the source sets a new `updatedAt`, e.g. `PAY-0013` in the 02
-  script). The next run reads it; when it is valid now it is loaded and removed from the rejected table.
+  script). The next run reads it; when it is valid now it is loaded. Its rows in `meta.meta_rejected_record` stay as
+  history (the table keeps every record that was ever rejected).
 - **Reject gate:** every source allows at most 30% bad rows (duplicates not counted, batches under 10 rows skipped).
   Above that the job FAILS, nothing of that collection is loaded and the watermark does not move.
 - **Database from an older version** (schema `etl_audit`): the 03 files create the new `meta` schema next to it.

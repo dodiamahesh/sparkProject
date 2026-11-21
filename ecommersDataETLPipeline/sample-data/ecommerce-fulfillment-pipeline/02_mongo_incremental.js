@@ -15,7 +15,7 @@
 //  EXPECTED INCREMENTAL RUN:
 //      ecom_warehouses read 1 (WH-03 capacity change)
 //      ecom_carriers   read 1 (CRR-06 new)
-//      ecom_shipments  read 3 (SHP-00002 delivered late, SHP-00010 fixed -> resolved, SHP-00013 new) -> all valid
+//      ecom_shipments  read 3 (SHP-00002 delivered late, SHP-00010 fixed -> loaded, SHP-00013 new) -> all valid
 //      status: SUCCESS (nothing rejected)
 // =============================================================================
 const DB_NAME = "shopdb";
@@ -46,7 +46,7 @@ insert("ecom_carriers", { carrierId: "CRR-06" }, { carrierId: "CRR-06", carrierN
 // tracking update from the courier: parcel delivered (promised 11-07 -> 13 days late)
 update("ecom_shipments", { shipmentId: "SHP-00002" },
        { shipmentStatus: "DELIVERED", deliveredDate: "2026-11-20T09:00:00" });
-// fix: the missing delivered date was sent -> loaded now, removed from the rejected table
+// fix: the missing delivered date was sent -> loaded now (its old rejected row stays as history)
 update("ecom_shipments", { shipmentId: "SHP-00010" }, { deliveredDate: "2026-11-04T15:00:00" });
 // new shipment for the new order ORD-00011 (from the order pipeline's incremental run)
 insert("ecom_shipments", { shipmentId: "SHP-00013" }, {
