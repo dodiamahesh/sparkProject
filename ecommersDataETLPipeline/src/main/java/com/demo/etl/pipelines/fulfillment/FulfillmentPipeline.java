@@ -1,4 +1,4 @@
-package com.demo.etl.pipelines.ecommerce.fulfillment;
+package com.demo.etl.pipelines.fulfillment;
 
 import com.demo.etl.framework.pipeline.AbstractEtlPipeline;
 import com.demo.etl.framework.pipeline.PipelineContext;
@@ -11,13 +11,13 @@ import org.springframework.stereotype.Component;
 
 import java.util.List;
 
-import static com.demo.etl.pipelines.ecommerce.fulfillment.FulfillmentStarSchemaMapper.ANY_DATE_COLUMN;
-import static com.demo.etl.pipelines.ecommerce.fulfillment.FulfillmentStarSchemaMapper.allShipmentDates;
-import static com.demo.etl.pipelines.ecommerce.fulfillment.FulfillmentStarSchemaMapper.toDimCarrier;
-import static com.demo.etl.pipelines.ecommerce.fulfillment.FulfillmentStarSchemaMapper.toDimWarehouse;
-import static com.demo.etl.pipelines.ecommerce.fulfillment.FulfillmentStarSchemaMapper.toFactShipment;
-import static com.demo.etl.pipelines.ecommerce.fulfillment.FulfillmentStarSchemaMapper.toTypedShipments;
-import static com.demo.etl.pipelines.ecommerce.fulfillment.FulfillmentStarSchemaMapper.withOrderCustomerKey;
+import static com.demo.etl.pipelines.fulfillment.FulfillmentStarSchemaMapper.ANY_DATE_COLUMN;
+import static com.demo.etl.pipelines.fulfillment.FulfillmentStarSchemaMapper.allShipmentDates;
+import static com.demo.etl.pipelines.fulfillment.FulfillmentStarSchemaMapper.toDimCarrier;
+import static com.demo.etl.pipelines.fulfillment.FulfillmentStarSchemaMapper.toDimWarehouse;
+import static com.demo.etl.pipelines.fulfillment.FulfillmentStarSchemaMapper.toFactShipment;
+import static com.demo.etl.pipelines.fulfillment.FulfillmentStarSchemaMapper.toTypedShipments;
+import static com.demo.etl.pipelines.fulfillment.FulfillmentStarSchemaMapper.withOrderCustomerKey;
 
 /**
  * EXAMPLE 4 - THREE collections -> STAR schema (e-commerce delivery), DEPENDS ON ecommerce-order-pipeline.

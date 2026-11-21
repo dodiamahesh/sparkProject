@@ -1,4 +1,4 @@
-package com.demo.etl.pipelines.ecommerce.sales;
+package com.demo.etl.pipelines.sales;
 
 import com.demo.etl.framework.quality.DataQualityRules;
 import com.demo.etl.framework.quality.DataSanitizer;

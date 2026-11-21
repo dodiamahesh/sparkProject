@@ -1,4 +1,4 @@
-package com.demo.etl.pipelines.ecommerce.fulfillment;
+package com.demo.etl.pipelines.fulfillment;
 
 import com.demo.etl.framework.common.SparkTypes;
 import com.demo.etl.framework.target.DateDimension;

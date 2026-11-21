@@ -1,4 +1,4 @@
-package com.demo.etl.pipelines.ecommerce.order;
+package com.demo.etl.pipelines.order;
 
 import com.demo.etl.framework.pipeline.AbstractEtlPipeline;
 import com.demo.etl.framework.pipeline.PipelineContext;
@@ -11,15 +11,15 @@ import org.springframework.stereotype.Component;
 
 import java.util.List;
 
-import static com.demo.etl.pipelines.ecommerce.order.EcommerceOrderSchemaMapper.toDimCategory;
-import static com.demo.etl.pipelines.ecommerce.order.EcommerceOrderSchemaMapper.toDimCustomer;
-import static com.demo.etl.pipelines.ecommerce.order.EcommerceOrderSchemaMapper.toDimProduct;
-import static com.demo.etl.pipelines.ecommerce.order.EcommerceOrderSchemaMapper.toFactOrder;
-import static com.demo.etl.pipelines.ecommerce.order.EcommerceOrderSchemaMapper.toFactOrderItem;
-import static com.demo.etl.pipelines.ecommerce.order.EcommerceOrderSchemaMapper.toTypedOrderItems;
-import static com.demo.etl.pipelines.ecommerce.order.EcommerceOrderSchemaMapper.toTypedOrders;
-import static com.demo.etl.pipelines.ecommerce.order.EcommerceOrderSchemaMapper.toTypedProducts;
-import static com.demo.etl.pipelines.ecommerce.order.EcommerceOrderSchemaMapper.withOrderHeaderKeys;
+import static com.demo.etl.pipelines.order.EcommerceOrderSchemaMapper.toDimCategory;
+import static com.demo.etl.pipelines.order.EcommerceOrderSchemaMapper.toDimCustomer;
+import static com.demo.etl.pipelines.order.EcommerceOrderSchemaMapper.toDimProduct;
+import static com.demo.etl.pipelines.order.EcommerceOrderSchemaMapper.toFactOrder;
+import static com.demo.etl.pipelines.order.EcommerceOrderSchemaMapper.toFactOrderItem;
+import static com.demo.etl.pipelines.order.EcommerceOrderSchemaMapper.toTypedOrderItems;
+import static com.demo.etl.pipelines.order.EcommerceOrderSchemaMapper.toTypedOrders;
+import static com.demo.etl.pipelines.order.EcommerceOrderSchemaMapper.toTypedProducts;
+import static com.demo.etl.pipelines.order.EcommerceOrderSchemaMapper.withOrderHeaderKeys;
 
 /**
  * EXAMPLE 3 - FIVE collections -> SNOWFLAKE schema (e-commerce sales).

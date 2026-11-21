@@ -1,4 +1,4 @@
-package com.demo.etl.pipelines.ecommerce.order;
+package com.demo.etl.pipelines.order;
 
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;

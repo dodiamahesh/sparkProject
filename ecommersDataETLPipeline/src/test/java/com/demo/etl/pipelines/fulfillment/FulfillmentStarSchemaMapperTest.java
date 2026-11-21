@@ -1,4 +1,4 @@
-package com.demo.etl.pipelines.ecommerce.fulfillment;
+package com.demo.etl.pipelines.fulfillment;
 
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;

@@ -1,4 +1,4 @@
-package com.demo.etl.pipelines.ecommerce.sales;
+package com.demo.etl.pipelines.sales;
 
 import com.demo.etl.framework.pipeline.AbstractEtlPipeline;
 import com.demo.etl.framework.pipeline.PipelineContext;
@@ -12,15 +12,15 @@ import org.springframework.stereotype.Component;
 
 import java.util.List;
 
-import static com.demo.etl.pipelines.ecommerce.sales.SalesStarSchemaMapper.toDimCustomer;
-import static com.demo.etl.pipelines.ecommerce.sales.SalesStarSchemaMapper.toDimProduct;
-import static com.demo.etl.pipelines.ecommerce.sales.SalesStarSchemaMapper.toFactPayment;
-import static com.demo.etl.pipelines.ecommerce.sales.SalesStarSchemaMapper.toFactSales;
-import static com.demo.etl.pipelines.ecommerce.sales.SalesStarSchemaMapper.toOrderLines;
-import static com.demo.etl.pipelines.ecommerce.sales.SalesStarSchemaMapper.toTypedOrderLines;
-import static com.demo.etl.pipelines.ecommerce.sales.SalesStarSchemaMapper.toTypedPayments;
-import static com.demo.etl.pipelines.ecommerce.sales.SalesStarSchemaMapper.withCustomerKeyAt;
-import static com.demo.etl.pipelines.ecommerce.sales.SalesStarSchemaMapper.withOrderCustomerKey;
+import static com.demo.etl.pipelines.sales.SalesStarSchemaMapper.toDimCustomer;
+import static com.demo.etl.pipelines.sales.SalesStarSchemaMapper.toDimProduct;
+import static com.demo.etl.pipelines.sales.SalesStarSchemaMapper.toFactPayment;
+import static com.demo.etl.pipelines.sales.SalesStarSchemaMapper.toFactSales;
+import static com.demo.etl.pipelines.sales.SalesStarSchemaMapper.toOrderLines;
+import static com.demo.etl.pipelines.sales.SalesStarSchemaMapper.toTypedOrderLines;
+import static com.demo.etl.pipelines.sales.SalesStarSchemaMapper.toTypedPayments;
+import static com.demo.etl.pipelines.sales.SalesStarSchemaMapper.withCustomerKeyAt;
+import static com.demo.etl.pipelines.sales.SalesStarSchemaMapper.withOrderCustomerKey;
 
 /**
  * JOB-2 (J2_SALES) - multiple collections -> multiple dimensions + facts (STAR schema).
