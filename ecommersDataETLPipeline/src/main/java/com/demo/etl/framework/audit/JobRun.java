@@ -3,7 +3,11 @@ package com.demo.etl.framework.audit;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 
-/** One row of etl_audit.etl_job_run. windowEnd = the run read data up to this time (updatedAt &lt;= windowEnd). */
+/**
+ * One row of meta.meta_pipeline_run.
+ * windowEnd = the run read data up to this time (updatedAt &lt;= windowEnd).
+ * status    = SUCCESS / SUCCESS_WITH_FAILED / FAILED, null while the run is still busy.
+ */
 public record JobRun(
         long jobRunId,
         String pipelineName,
@@ -19,7 +23,6 @@ public record JobRun(
         long duplicateCount,
         long loadedCount,
         long resolvedCount,
-        long warningCount,
         String errorMessage,
         String errorDetail) {
 }

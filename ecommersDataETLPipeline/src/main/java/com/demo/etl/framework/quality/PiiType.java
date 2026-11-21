@@ -11,7 +11,7 @@ import static org.apache.spark.sql.functions.when;
  * still fit the existing PostgreSQL columns and are still useful to read ("which domain?", "last 4 digits").
  *
  * Masking runs AFTER validation (rules see the real value), and BEFORE anything is written:
- * silver tables, the rejected table (raw_record + error_reason) never contain the real value.
+ * silver tables, the rejected table (raw_record + field_value) never contain the real value.
  */
 public enum PiiType {
 

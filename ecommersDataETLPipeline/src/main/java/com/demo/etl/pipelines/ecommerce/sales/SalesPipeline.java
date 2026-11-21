@@ -37,7 +37,7 @@ import static com.demo.etl.pipelines.ecommerce.sales.SalesStarSchemaMapper.withO
  *
  * Order matters: products + customers first (orders need their keys), then orders, then payments
  * (a payment needs its order loaded). Rejects (document AND line level) end up in
- * etl_audit.etl_rejected_record; the watermarks move only after everything was loaded.
+ * meta.meta_rejected_record; the watermarks move only after everything was loaded.
  *
  * Trigger: POST /api/etl/pipelines/sales-pipeline/run   (incremental: updated_at after the last watermark)
  */

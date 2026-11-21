@@ -17,7 +17,7 @@
 //      ecom_customers    read 8  | valid 6 | rejected 2 (VALIDATION ECU-0007 email, ECU-0008 segment)
 //      ecom_orders       read 11 | valid 8 | rejected 3 (DUPLICATE ORD-00003, ORPHAN ORD-00009, CORRUPT ORD-00010)
 //      ecom_order_items  read 15 | valid 12| rejected 3 (ORPHAN OIT-000013 product, ORPHAN OIT-000014 order, CORRUPT OIT-000015 qty)
-//      warnings: PRD-0008 no brand, ECU-0006 no pincode, ORD-00008 unknown coupon, OIT-000012 discount > 30%
+//      status: SUCCESS_WITH_FAILED (valid rows loaded, the rejected ones are in meta.meta_rejected_record)
 // =============================================================================
 const DB_NAME = "shopdb";
 db = db.getSiblingDB(DB_NAME);
@@ -53,7 +53,7 @@ db.ecom_products.insertMany([
   prd("PRD-0005", "PRS-0005", "Pressure Cooker 5L",  "CAT-04", "Prestige",1899,        950,      "OUT_OF_STOCK", "2022-08-15"),
   prd("PRD-0006", "PEN-0006", "The Alchemist",       "CAT-05", "Penguin", 299,         120,      "ACTIVE",       "2020-01-01"),
   prd("PRD-0007", "HP-0007",  "Pavilion 15",         "CAT-02", "HP",      64990,       50000,    "DISCONTINUED", "2022-02-02"),
-  prd("PRD-0008", null,       "Cotton Kurta",        "CAT-03", null,      1499,        600,      "ACTIVE",       "2024-06-06"),   // WARNING brand + sku missing
+  prd("PRD-0008", null,       "Cotton Kurta",        "CAT-03", null,      1499,        600,      "ACTIVE",       "2024-06-06"),
   prd("PRD-0002", "APP-0002", "iPhone 15",           "CAT-01", "Apple",   82900,       58737.68, "ACTIVE",       "2023-09-22", "2026-09-01T09:00:00"),   // DUPLICATE (older)
   prd("PRD-0009", "TOY-0009", "Teddy Bear",          "CAT-06", "Archies", 799,         300,      "ACTIVE",       "2024-01-01"),   // ORPHAN: CAT-06 was rejected
   prd("PRD-0010", "MIX-0010", "Mixer Grinder",       "CAT-04", "Bajaj",   2499,        3100,     "ACTIVE",       "2023-03-03")    // VALIDATION cost > list
@@ -70,7 +70,7 @@ db.ecom_customers.insertMany([
   ecu("ECU-0003", "Aditi",  "Sharma", "aditi.sharma@gmail.com",   "9812345670",     "Delhi",     "Delhi",       "110001", "VIP",     "2022-01-11"),
   ecu("ECU-0004", "Rohan",  "Das",    "rohan.das@gmail.com",      "9733001122",     "Kolkata",   "West Bengal", "700001", "REGULAR", "2024-02-20"),
   ecu("ECU-0005", "Sana",   "Ali",    "sana.ali@gmail.com",       "9900112233",     "Bengaluru", "Karnataka",   "560001", "PRIME",   "2023-11-30"),
-  ecu("ECU-0006", "Varun",  "Reddy",  "varun.reddy@gmail.com",    "9848022338",     "Hyderabad", "Telangana",   null,     "REGULAR", "2024-05-05"),   // WARNING no pincode
+  ecu("ECU-0006", "Varun",  "Reddy",  "varun.reddy@gmail.com",    "9848022338",     "Hyderabad", "Telangana",   null,     "REGULAR", "2024-05-05"),
   ecu("ECU-0007", "Bad",    "Email",  "bad.email",                "9876500007",     "Pune",      "Maharashtra", "411001", "REGULAR", "2024-06-01"),   // VALIDATION email
   ecu("ECU-0008", "Gold",   "Member", "gold.member@gmail.com",    "9876500008",     "Jaipur",    "Rajasthan",   "302001", "GOLD",    "2024-06-02")    // VALIDATION segment
 ]);
@@ -88,7 +88,7 @@ db.ecom_orders.insertMany([
   ord("ORD-00005", "ECU-0005", "2026-11-05T19:45:00", "CONFIRMED", "WALLET",     "ANDROID", "FREESHIP", 0,    "Bengaluru", "Karnataka"),
   ord("ORD-00006", "ECU-0006", "2026-11-06T14:20:00", "CANCELLED", "UPI",        "WEB",     null,       49,   "Hyderabad", "Telangana"),
   ord("ORD-00007", "ECU-0001", "2026-11-07T16:00:00", "DELIVERED", "CARD",       "IOS",     null,       0,    "Surat",     "Gujarat"),
-  ord("ORD-00008", "ECU-0003", "2026-11-08T20:10:00", "RETURNED",  "UPI",        "WEB",     "BOGUS99",  49,   "Delhi",     "Delhi"),   // WARNING unknown coupon
+  ord("ORD-00008", "ECU-0003", "2026-11-08T20:10:00", "RETURNED",  "UPI",        "WEB",     "BOGUS99",  49,   "Delhi",     "Delhi"),
   ord("ORD-00003", "ECU-0003", "2026-11-03T12:00:00", "PLACED",    "NETBANKING", "IOS",     "FIRST50",  "99", "Delhi",     "Delhi", "2026-11-03T12:01:00"),   // DUPLICATE (older)
   ord("ORD-00009", "ECU-0007", "2026-11-09T10:00:00", "PLACED",    "UPI",        "WEB",     null,       49,   "Pune",      "Maharashtra"),   // ORPHAN: ECU-0007 was rejected
   ord("ORD-00010", "ECU-0004", "2026-13-01T10:00:00", "PLACED",    "UPI",        "WEB",     null,       49,   "Kolkata",   "West Bengal", "2026-11-10T10:00:00")   // CORRUPT orderDate (deleted in incremental)
@@ -109,7 +109,7 @@ db.ecom_order_items.insertMany([
   oit("OIT-000009", "ORD-00007", "PRD-0004", 1, 2999,       0),
   oit("OIT-000010", "ORD-00007", "PRD-0006", 5, 299,        100),
   oit("OIT-000011", "ORD-00008", "PRD-0001", 1, 74999,      0),
-  oit("OIT-000012", "ORD-00008", "PRD-0005", 1, 1899,       800),       // WARNING discount > 30%
+  oit("OIT-000012", "ORD-00008", "PRD-0005", 1, 1899,       800),
   oit("OIT-000013", "ORD-00002", "PRD-0009", 1, 799,        0),         // ORPHAN: PRD-0009 rejected
   oit("OIT-000014", "ORD-00010", "PRD-0004", 1, 2999,       0),         // ORPHAN: ORD-00010 rejected (deleted in incremental)
   oit("OIT-000015", "ORD-00005", "PRD-0006", "2.5", 299,    0)          // CORRUPT quantity

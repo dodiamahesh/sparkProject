@@ -16,7 +16,7 @@
 //      accounts      read 11 | valid 8  | rejected 3 (ORPHAN ACC-0009, CORRUPT ACC-0010, VALIDATION ACC-0011)
 //      merchants     read 8  | valid 7  | rejected 1 (VALIDATION MER-0007)
 //      transactions  read 17 | valid 12 | rejected 5 (DUPLICATE, ORPHAN x2, VALIDATION, CORRUPT)
-//      warnings: CUST-0006 kycStatus PENDING, ACC-0007 DORMANT, MER-0008 no mccCode, TXN-000012 amount > 60,000
+//      status: SUCCESS_WITH_FAILED (valid rows loaded, the rejected ones are in meta.meta_rejected_record)
 // =============================================================================
 const DB_NAME = "bankdb";
 db = db.getSiblingDB(DB_NAME);
@@ -39,7 +39,7 @@ db.customers.insertMany([
   cust("CUST-0003", "Anjali",  "Rao",     "anjali.rao@yahoo.in",        "9123456780",      "1992-03-14", "F", "Hyderabad", "Telangana",   "VERIFIED", "2026-10-02T10:00:00"),
   cust("CUST-0004", "Suresh",  "Kumar",   "suresh.kumar@gmail.com",     "9988776655",      "1980-11-30", "M", "Chennai",   "Tamil Nadu",  "VERIFIED", "2026-10-05T10:00:00"),   // latest version
   cust("CUST-0005", "Fatima",  "Shaikh",  "fatima.shaikh@outlook.com",  "7894561230",      "1995-06-21", "F", "Mumbai",    "Maharashtra", "VERIFIED", "2026-10-03T10:00:00"),
-  cust("CUST-0006", "Rohit",   "Verma",   "rohit.verma@gmail.com",      "8877665544",      "1988-09-09", "M", "Lucknow",   "Uttar Pradesh","PENDING", "2026-10-03T10:00:00"),   // WARNING kyc not VERIFIED
+  cust("CUST-0006", "Rohit",   "Verma",   "rohit.verma@gmail.com",      "8877665544",      "1988-09-09", "M", "Lucknow",   "Uttar Pradesh","PENDING", "2026-10-03T10:00:00"),
   cust("CUST-0007", "Kavita",  "Joshi",   "kavita.joshi@gmail.com",     "9001122334",      "1990-12-01", "F", "Indore",    "Madhya Pradesh","VERIFIED","2026-10-04T10:00:00"),
   cust("CUST-0008", "Imran",   "Khan",    "imran.khan@gmail.com",       "9334455667",      "1983-04-17", "O", "Bhopal",    "Madhya Pradesh","VERIFIED","2026-10-04T10:00:00"),
   cust("CUST-0004", "Suresh",  "Kumar",   "suresh.k@gmail.com",         "9988776655",      "1980-11-30", "M", "Chennai",   "Tamil Nadu",  "PENDING",  "2026-09-01T10:00:00"),   // DUPLICATE (older)
@@ -60,7 +60,7 @@ db.accounts.insertMany([
   acc("ACC-0004", "CUST-0004", "SALARY",  56000,        "ACTIVE",  "2021-08-01", "2026-10-02T11:00:00"),
   acc("ACC-0005", "CUST-0005", "SAVINGS", 12000,        "ACTIVE",  "2022-01-15", "2026-10-03T11:00:00"),
   acc("ACC-0006", "CUST-0006", "NRI",     780000,       "ACTIVE",  "2017-03-03", "2026-10-03T11:00:00"),
-  acc("ACC-0007", "CUST-0007", "SAVINGS", 150,          "DORMANT", "2015-07-07", "2026-10-04T11:00:00"),   // WARNING dormant
+  acc("ACC-0007", "CUST-0007", "SAVINGS", 150,          "DORMANT", "2015-07-07", "2026-10-04T11:00:00"),
   acc("ACC-0008", "CUST-0008", "CURRENT", 990000,       "ACTIVE",  "2023-05-20", "2026-10-04T11:00:00"),
   acc("ACC-0009", "CUST-0009", "SAVINGS", 5000,         "ACTIVE",  "2024-01-01", "2026-10-06T11:00:00"),   // ORPHAN: CUST-0009 rejected (retried in incremental)
   acc("ACC-0010", "CUST-0001", "SAVINGS", "abc",        "ACTIVE",  "2024-02-02", "2026-10-06T11:00:00"),   // CORRUPT balance
@@ -80,7 +80,7 @@ db.merchants.insertMany([
   mer("MER-0005", "IRCTC",                   "TRAVEL",      "4112", "Delhi",     "2017-01-01", "2026-10-03T12:00:00"),
   mer("MER-0006", "Barbeque Nation Chennai", "DINING",      "5812", "Chennai",   "2022-11-11", "2026-10-03T12:00:00"),
   mer("MER-0007", "Lucky Star Casino",       "CASINO",      "7995", "Goa",       "2023-02-02", "2026-10-04T12:00:00"),   // VALIDATION category (deleted in incremental)
-  mer("MER-0008", "PVR Cinemas Surat",       "ENTERTAINMENT", null,  "Surat",    "2024-06-06", "2026-10-04T12:00:00")    // WARNING no mccCode
+  mer("MER-0008", "PVR Cinemas Surat",       "ENTERTAINMENT", null,  "Surat",    "2024-06-06", "2026-10-04T12:00:00")
 ]);
 
 // ---------------------------------------------------------------- transactions (17)
@@ -100,7 +100,7 @@ db.transactions.insertMany([
   txn("TXN-000009", "ACC-0008", "CUST-0008", "MER-0004", "DEBIT",  "ONLINE",     18999,      "2026-11-08T16:45:00", "PENDING", "2026-11-08T16:46:00"),
   txn("TXN-000010", "ACC-0002", "CUST-0002", "MER-0006", "DEBIT",  "POS",        1640,       "2026-11-09T20:00:00", "SUCCESS", "2026-11-09T20:01:00"),
   txn("TXN-000011", "ACC-0003", "CUST-0003", "MER-0008", "DEBIT",  "ONLINE",     900,        "2026-11-10T19:00:00", "SUCCESS", "2026-11-10T19:01:00"),
-  txn("TXN-000012", "ACC-0008", "CUST-0008", "MER-0004", "DEBIT",  "ONLINE",     75000,      "2026-11-11T12:00:00", "SUCCESS", "2026-11-11T12:01:00"),   // WARNING amount > 60,000
+  txn("TXN-000012", "ACC-0008", "CUST-0008", "MER-0004", "DEBIT",  "ONLINE",     75000,      "2026-11-11T12:00:00", "SUCCESS", "2026-11-11T12:01:00"),
   txn("TXN-000005", "ACC-0005", "CUST-0005", "MER-0005", "DEBIT",  "NETBANKING", 3200,       "2026-11-04T11:00:00", "PENDING", "2026-11-04T11:01:00"),   // DUPLICATE (older)
   txn("TXN-000013", "ACC-0001", "CUST-0001", "MER-0007", "DEBIT",  "ONLINE",     5000,       "2026-11-12T22:00:00", "SUCCESS", "2026-11-12T22:01:00"),   // ORPHAN merchant (MER-0007 rejected; deleted in incremental)
   txn("TXN-000014", "ACC-0004", "CUST-0004", "MER-0003", "DEBIT",  "UPI",        0,          "2026-11-12T10:00:00", "SUCCESS", "2026-11-12T10:01:00"),   // VALIDATION amount 0

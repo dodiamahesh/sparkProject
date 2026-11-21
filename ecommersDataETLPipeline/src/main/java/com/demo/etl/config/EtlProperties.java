@@ -13,7 +13,6 @@ public record EtlProperties(
         Spark spark,
         Mongo mongo,
         Postgres postgres,
-        Job job,
         Quality quality) {
 
     /**
@@ -21,9 +20,8 @@ public record EtlProperties(
      *
      * @param rejectGateMinRecords the reject-% gate is skipped for batches smaller than this
      *                             (2 bad rows out of 3 is 66 %, but not a broken source)
-     * @param schemaSampleSize     how many MongoDB documents the schema-drift check looks at
      */
-    public record Quality(int rejectGateMinRecords, int schemaSampleSize) {
+    public record Quality(int rejectGateMinRecords) {
     }
 
     /** Spark session settings. {@code config} is passed to Spark as-is. */
@@ -36,9 +34,5 @@ public record EtlProperties(
 
     /** Silver layer (target). */
     public record Postgres(String url, String username, String password, String stagingSchema, int batchSize) {
-    }
-
-    /** Thread pool used when a job is triggered with async=true. */
-    public record Job(int threadPoolSize, int queueCapacity) {
     }
 }

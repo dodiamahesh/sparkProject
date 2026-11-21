@@ -11,7 +11,8 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 /**
- * Bad records that are waiting to be fixed.
+ * Bad records that are waiting to be fixed: one row per record + failed rule, with the error from
+ * meta.meta_error_master (error_id, error_type, error_message) and the bad field_value.
  *
  *   GET /api/etl/rejected-records?pipelineName=payment-pipeline&collection=payments&errorType=CORRUPT
  *   GET /api/etl/rejected-records/summary

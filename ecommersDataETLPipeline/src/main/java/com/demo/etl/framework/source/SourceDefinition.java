@@ -8,17 +8,15 @@ import org.apache.spark.sql.types.StructType;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 /**
  * Describes ONE MongoDB collection that a pipeline reads: the "data contract" of that source.
  *
  * All fields are read as STRING on purpose (standard "bronze" practice):
  * a corrupt value like "12abc" in a number field is still read, and our CORRUPT rules can report it,
- * instead of Spark failing or silently turning it into NULL.
+ * instead of Spark failing or silently turning it into NULL. Fields that are not listed are not read.
  *
  * <pre>
  *   SourceDefinition.builder("payments")
@@ -28,7 +26,6 @@ import java.util.Set;
  *       // ---- optional ----
  *       .excludeTestRecords()                     // source filter: skip {"isTest": true}
  *       .maxRejectPercent(30)                     // quality gate: more bad rows -> job FAILS
- *       .expectedRows(1, 50_000)                  // volume check (not on the first run): outside -> warning
  *       .maskEmail("payerEmail")                  // PII: masked in silver + rejected table
  *       .owner("payments-team@demo.com")          // metadata: who to ask when it breaks
  *       .sla("new data every hour")
@@ -36,32 +33,22 @@ import java.util.Set;
  *       .build();
  * </pre>
  *
- * @param pii           field -> how to mask it (empty = no PII)
- * @param sourceFilter  extra MongoDB $match (JSON), applied on every run next to the timestamp window; null = none
- * @param ignoredFields fields that exist in MongoDB but are not read on purpose (no schema-drift warning)
+ * @param maxRejectPercent null = no reject gate. Duplicates do NOT count as bad rows.
+ * @param pii              field -> how to mask it (empty = no PII)
+ * @param sourceFilter     extra MongoDB $match (JSON), applied on every run next to the timestamp window; null = none
  */
 public record SourceDefinition(
         String collection,
         List<String> fields,
         String businessKey,
         String latestRecordColumn,
-        QualityChecks checks,
+        Double maxRejectPercent,
         Map<String, PiiType> pii,
         String sourceFilter,
-        Set<String> ignoredFields,
         SourceMetadata metadata) {
 
     /** Field set on test documents in MongoDB; {@link Builder#excludeTestRecords()} skips them. */
     public static final String TEST_RECORD_FIELD = "isTest";
-
-    /**
-     * @param maxRejectPercent  null = no gate. Duplicates do NOT count as bad rows.
-     * @param minRows           null = no minimum (volume check, skipped on the first run)
-     * @param maxRows           null = no maximum (volume check, skipped on the first run)
-     * @param failOnSchemaDrift false = new / missing fields give a warning, true = the job fails
-     */
-    public record QualityChecks(Double maxRejectPercent, Long minRows, Long maxRows, boolean failOnSchemaDrift) {
-    }
 
     /** Documentation of the source; shown in GET /api/etl/pipelines and in quality-gate errors. */
     public record SourceMetadata(String description, String owner, String sla) {
@@ -79,12 +66,11 @@ public record SourceDefinition(
                 throw new IllegalArgumentException("PII field '" + piiField + "' must be one of the fields of " + collection);
             }
         }
-        if (checks.maxRejectPercent() != null && (checks.maxRejectPercent() < 0 || checks.maxRejectPercent() > 100)) {
+        if (maxRejectPercent != null && (maxRejectPercent < 0 || maxRejectPercent > 100)) {
             throw new IllegalArgumentException("maxRejectPercent of " + collection + " must be between 0 and 100");
         }
         fields = List.copyOf(fields);
         pii = Map.copyOf(pii);
-        ignoredFields = Set.copyOf(ignoredFields);
     }
 
     /** Spark schema: _id + every field, all as String. */
@@ -112,12 +98,8 @@ public record SourceDefinition(
         private String businessKey;
         private String latestRecordColumn;
         private Double maxRejectPercent;
-        private Long minRows;
-        private Long maxRows;
-        private boolean failOnSchemaDrift;
         private final Map<String, PiiType> pii = new LinkedHashMap<>();
         private String sourceFilter;
-        private final Set<String> ignoredFields = new LinkedHashSet<>();
         private String description;
         private String owner;
         private String sla;
@@ -148,7 +130,7 @@ public record SourceDefinition(
             return this;
         }
 
-        // ------------------------------------------------------------ quality gate + checks
+        // ------------------------------------------------------------ quality gate
 
         /**
          * QUALITY GATE: if more than {@code percent} % of the rows read are rejected (duplicates not counted),
@@ -161,28 +143,9 @@ public record SourceDefinition(
             return this;
         }
 
-        /** VOLUME CHECK (skipped on the first run): fewer than min or more than max rows read -> warning. */
-        public Builder expectedRows(long min, long max) {
-            this.minRows = min;
-            this.maxRows = max;
-            return this;
-        }
-
-        /** SCHEMA DRIFT: by default new / missing fields give a warning; with this the job fails instead. */
-        public Builder failOnSchemaDrift() {
-            this.failOnSchemaDrift = true;
-            return this;
-        }
-
-        /** Fields that exist in MongoDB but are not read on purpose (no schema-drift warning for them). */
-        public Builder ignoreFields(String... fieldNames) {
-            ignoredFields.addAll(List.of(fieldNames));
-            return this;
-        }
-
         // ------------------------------------------------------------ PII
 
-        /** "rahul.shah@gmail.com" -> "r****@gmail.com" in silver, in the rejected table and in error messages. */
+        /** "rahul.shah@gmail.com" -> "r****@gmail.com" in silver and in the rejected table. */
         public Builder maskEmail(String... fieldNames) {
             for (String field : fieldNames) {
                 pii.put(field, PiiType.EMAIL);
@@ -190,7 +153,7 @@ public record SourceDefinition(
             return this;
         }
 
-        /** "9876543210" -> "XXXXXX3210" in silver, in the rejected table and in error messages. */
+        /** "9876543210" -> "XXXXXX3210" in silver and in the rejected table. */
         public Builder maskPhone(String... fieldNames) {
             for (String field : fieldNames) {
                 pii.put(field, PiiType.PHONE);
@@ -208,7 +171,6 @@ public record SourceDefinition(
 
         /** Skips test documents ({"isTest": true}). Documents without the field are read normally. */
         public Builder excludeTestRecords() {
-            ignoredFields.add(TEST_RECORD_FIELD);
             return sourceFilter("{\"" + TEST_RECORD_FIELD + "\": {\"$ne\": true}}");
         }
 
@@ -232,9 +194,8 @@ public record SourceDefinition(
         }
 
         public SourceDefinition build() {
-            return new SourceDefinition(collection, fields, businessKey, latestRecordColumn,
-                    new QualityChecks(maxRejectPercent, minRows, maxRows, failOnSchemaDrift),
-                    pii, sourceFilter, ignoredFields, new SourceMetadata(description, owner, sla));
+            return new SourceDefinition(collection, fields, businessKey, latestRecordColumn, maxRejectPercent,
+                    pii, sourceFilter, new SourceMetadata(description, owner, sla));
         }
     }
 }

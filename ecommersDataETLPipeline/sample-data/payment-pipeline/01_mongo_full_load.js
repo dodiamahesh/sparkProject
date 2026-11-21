@@ -12,8 +12,9 @@
 //  Dates are strings "yyyy-MM-ddTHH:mm:ss" (IST); every field is read by Spark as String.
 //
 //  EXPECTED FIRST RUN (test document is never read):
-//      read 20 | valid 13 | rejected 7 (1 DUPLICATE, 2 CORRUPT, 4 VALIDATION) | warnings 1
+//      read 20 | valid 13 | rejected 7 (1 DUPLICATE, 2 CORRUPT, 4 VALIDATION)
 //      fact_payment 13, dim_payer 9, dim_payment_method 7, dim_biller 9
+//      status: SUCCESS_WITH_FAILED (valid rows loaded, the rejected ones are in meta.meta_rejected_record)
 // =============================================================================
 const DB_NAME = "bankdb";
 db = db.getSiblingDB(DB_NAME);
@@ -48,7 +49,7 @@ db.payments.insertMany([
   pay("PAY-0010", "PYR-009", "Arjun Nair",   "arjun.nair@gmail.com",      "9876500009",       "Kochi",     "CARD",       "VISA",    "KSEB",           "ELECTRICITY", 1780,        "INR", "2026-11-08T09:00:00", "SUCCESS", "REF1000010", "2026-11-08T09:01:00"),
   pay("PAY-0011", "PYR-002", "Priya Shah",   "priya.shah@gmail.com",      "9876500002",       "Surat",     "UPI",        "PHONEPE", "Gujarat Gas",    "GAS",         640,         "INR", "2026-11-09T18:30:00", "SUCCESS", "REF1000011", "2026-11-09T18:31:00"),
   pay("PAY-0012", "PYR-003", "Amit Mehta",   "amit.mehta@yahoo.in",       null,               "Mumbai",    "UPI",        "GPAY",    "Tata Play",      "DTH",         350,         "USD", "2026-11-10T08:15:00", "SUCCESS", null,         "2026-11-10T08:16:00"),   // optional fields missing: still valid
-  pay("PAY-0019", "PYR-008", "Pooja Trivedi","pooja.trivedi@gmail.com",   "9876500008",       "Rajkot",    "NETBANKING", "SBI",     "LIC Premium",    "INSURANCE",   15000,       "INR", "2026-11-11T10:00:00", "SUCCESS", "REF1000019", "2026-11-11T10:01:00"),   // WARNING: amount > 12,000 (loaded)
+  pay("PAY-0019", "PYR-008", "Pooja Trivedi","pooja.trivedi@gmail.com",   "9876500008",       "Rajkot",    "NETBANKING", "SBI",     "LIC Premium",    "INSURANCE",   15000,       "INR", "2026-11-11T10:00:00", "SUCCESS", "REF1000019", "2026-11-11T10:01:00"),
 
   // ---------------- DUPLICATE: same paymentId, older updatedAt -> rejected, latest kept ----------------
   pay("PAY-0003", "PYR-003", "Amit Mehta",   "amit.mehta@yahoo.in",       "9876500003",       "Mumbai",    "CARD",       "VISA",    "Airtel Postpaid","MOBILE",      1250,        "INR", "2026-11-02T08:05:00", "PENDING", "REF1000003", "2026-11-02T08:06:00"),

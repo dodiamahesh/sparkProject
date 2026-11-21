@@ -21,6 +21,7 @@
 //      merchants    read 1 (MER-0009 new)
 //      transactions read 4 (TXN-000003 update, TXN-000017/18 new, TXN-000019 bad) -> 3 valid, 1 CORRUPT
 //      -> dim_customer 10, dim_account 10, dim_merchant 8, fact_transaction 14; resolved 2 (CUST-0009, ACC-0009)
+//      status: SUCCESS_WITH_FAILED (TXN-000019 rejected)
 // =============================================================================
 const DB_NAME = "bankdb";
 db = db.getSiblingDB(DB_NAME);

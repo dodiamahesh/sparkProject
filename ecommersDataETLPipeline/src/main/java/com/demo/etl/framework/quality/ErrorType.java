@@ -1,8 +1,8 @@
 package com.demo.etl.framework.quality;
 
 /**
- * Why a record was rejected. The order matters: when a record breaks several rules,
- * the FIRST type in this list is stored as its main error_type.
+ * Why a record was rejected (error_type in meta.meta_error_master). The order matters: the errors of a
+ * rejected record are sorted in this order, so the first one is its most serious problem.
  */
 public enum ErrorType {
 

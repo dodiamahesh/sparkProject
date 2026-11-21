@@ -3,8 +3,9 @@
 --  MongoDB ecom_warehouses/carriers/shipments -> star schema (silver); needs the order tables
 --
 --  Contents:
---    PART 1  META tables (etl_audit.* incl. etl_watermark + etl_staging + silver.dim_date), shared by every job
+--    PART 1  META tables (meta.* + etl_staging + silver.dim_date), shared by every job
 --    PART 2  the target tables of this job
+--    PART 3  meta.meta_error_master seed: every data-quality error of this job
 --
 --  Run (database must exist:  CREATE DATABASE shop_dw;):
 --      psql -h localhost -p 5433 -U postgres -d shop_dw -f sample-data/ecommerce-fulfillment-pipeline/03_postgres_tables.sql
@@ -18,23 +19,27 @@
 
 -- =====================================================================
 -- PART 1: META tables (shared by EVERY job; safe to run again: IF NOT EXISTS)
---   etl_audit.etl_job_run          one row per job run (status, counters, error)
---   etl_audit.etl_job_step         one row per step of a run (where did it fail, how long)
---   etl_audit.etl_rejected_record  bad records (CORRUPT / VALIDATION / ORPHAN / DUPLICATE), one per document
---   etl_audit.etl_data_warning     loaded records that broke a warning rule + schema drift + volume warnings
---   etl_audit.etl_watermark        incremental watermark per pipeline + collection (timestamp based)
---   etl_staging                    temporary tables used by the UPSERT (created and dropped by the job)
---   silver.dim_date                shared (conformed) date dimension, filled by the jobs
+--   meta.meta_pipeline_run     one row per pipeline run (status, counters, error)
+--   meta.meta_pipeline_step    one row per step of a run (where did it fail, how long)
+--   meta.meta_error_master     every possible data-quality error, once (error_type + message)
+--   meta.meta_rejected_record  bad records: one row per record + failed rule, error_id -> meta_error_master
+--   meta.meta_watermark        incremental watermark per pipeline + collection (timestamp based)
+--   etl_staging                temporary tables used by the UPSERT (created and dropped by the job)
+--   silver.dim_date            shared (conformed) date dimension, filled by the jobs
 -- =====================================================================
-CREATE SCHEMA IF NOT EXISTS etl_audit;
+CREATE SCHEMA IF NOT EXISTS meta;
 CREATE SCHEMA IF NOT EXISTS etl_staging;
 CREATE SCHEMA IF NOT EXISTS silver;
 
-CREATE TABLE IF NOT EXISTS etl_audit.etl_job_run (
+-- status: SUCCESS             = every record read was loaded (nothing rejected)
+--         SUCCESS_WITH_FAILED = some records loaded, some rejected
+--         FAILED              = all records rejected, OR exception / reject gate, OR application stopped (interrupted)
+--         NULL                = the run is still busy
+CREATE TABLE IF NOT EXISTS meta.meta_pipeline_run (
     job_run_id       BIGSERIAL    PRIMARY KEY,
     pipeline_name    VARCHAR(100) NOT NULL,
     window_end       TIMESTAMPTZ  NOT NULL,              -- this run read data with updatedAt <= window_end
-    status           VARCHAR(30)  NOT NULL,              -- RUNNING, SUCCESS, SUCCESS_WITH_REJECTS, FAILED
+    status           VARCHAR(30)  CHECK (status IN ('SUCCESS', 'SUCCESS_WITH_FAILED', 'FAILED')),
     triggered_by     VARCHAR(100),
     start_time       TIMESTAMP    NOT NULL DEFAULT now(),
     end_time         TIMESTAMP,
@@ -45,61 +50,58 @@ CREATE TABLE IF NOT EXISTS etl_audit.etl_job_run (
     duplicate_count  BIGINT       NOT NULL DEFAULT 0,    -- part of rejected_count
     loaded_count     BIGINT       NOT NULL DEFAULT 0,    -- rows inserted/updated in target tables
     resolved_count   BIGINT       NOT NULL DEFAULT 0,    -- old rejected records that are valid now
-    warning_count    BIGINT       NOT NULL DEFAULT 0,    -- rule + schema-drift + volume warnings
     error_message    TEXT,                               -- short failure reason
     error_detail     TEXT                                -- stack trace (truncated)
 );
-CREATE INDEX IF NOT EXISTS idx_job_run_pipeline ON etl_audit.etl_job_run (pipeline_name, start_time DESC);
-CREATE INDEX IF NOT EXISTS idx_job_run_status   ON etl_audit.etl_job_run (status);
+CREATE INDEX IF NOT EXISTS idx_pipeline_run_pipeline ON meta.meta_pipeline_run (pipeline_name, start_time DESC);
+CREATE INDEX IF NOT EXISTS idx_pipeline_run_status   ON meta.meta_pipeline_run (status);
 
-CREATE TABLE IF NOT EXISTS etl_audit.etl_job_step (
+CREATE TABLE IF NOT EXISTS meta.meta_pipeline_step (
     job_step_id    BIGSERIAL    PRIMARY KEY,
-    job_run_id     BIGINT       NOT NULL REFERENCES etl_audit.etl_job_run (job_run_id),
+    job_run_id     BIGINT       NOT NULL REFERENCES meta.meta_pipeline_run (job_run_id),
     step_order     INT          NOT NULL,
     step_name      VARCHAR(200) NOT NULL,
-    status         VARCHAR(30)  NOT NULL,                -- RUNNING, SUCCESS, FAILED
+    status         VARCHAR(30)  CHECK (status IN ('SUCCESS', 'FAILED')),   -- NULL = step still busy
     record_count   BIGINT,
     start_time     TIMESTAMP    NOT NULL DEFAULT now(),
     end_time       TIMESTAMP,
     duration_ms    BIGINT,
     error_message  TEXT
 );
-CREATE INDEX IF NOT EXISTS idx_job_step_run ON etl_audit.etl_job_step (job_run_id, step_order);
+CREATE INDEX IF NOT EXISTS idx_pipeline_step_run ON meta.meta_pipeline_step (job_run_id, step_order);
 
-CREATE TABLE IF NOT EXISTS etl_audit.etl_rejected_record (
+-- One row per possible error. Seeded at the end of this file with every error of this job; a rule that is
+-- added to the code later gets its row automatically on the first run that rejects a record with it.
+CREATE TABLE IF NOT EXISTS meta.meta_error_master (
+    error_id       SERIAL       PRIMARY KEY,
+    error_type     VARCHAR(30)  NOT NULL CHECK (error_type IN ('CORRUPT', 'VALIDATION', 'ORPHAN', 'DUPLICATE')),
+    field_name     VARCHAR(100),                         -- checked field (NULL = rule on several fields)
+    error_message  VARCHAR(500) NOT NULL,                -- e.g. 'amount must be greater than 0'
+    created_at     TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    CONSTRAINT uq_error_master UNIQUE (error_type, error_message)
+);
+
+-- A record that broke 2 rules has 2 rows (same source_id, different error_id).
+CREATE TABLE IF NOT EXISTS meta.meta_rejected_record (
     rejected_record_id  BIGSERIAL    PRIMARY KEY,
     pipeline_name       VARCHAR(100) NOT NULL,
     source_collection   VARCHAR(100) NOT NULL,
     source_id           VARCHAR(100) NOT NULL,           -- MongoDB _id (order lines: <_id>#<line_no>)
     business_key        VARCHAR(200),                    -- e.g. PAY-0007, O1008/line-2
-    error_type          VARCHAR(30)  NOT NULL,           -- CORRUPT, VALIDATION, ORPHAN, DUPLICATE
-    error_reason        TEXT         NOT NULL,           -- all failed rules, separated by " | "
+    error_id            INT          NOT NULL REFERENCES meta.meta_error_master (error_id),
+    field_value         TEXT,                            -- the bad value of error_master.field_name (PII masked)
     raw_record          JSONB,                           -- original document (before cleaning)
-    attempt_count       INT          NOT NULL DEFAULT 1, -- how many runs rejected this record
+    attempt_count       INT          NOT NULL DEFAULT 1, -- how many runs rejected this record with this error
     first_job_run_id    BIGINT       NOT NULL,
     last_job_run_id     BIGINT       NOT NULL,
     first_rejected_at   TIMESTAMP    NOT NULL DEFAULT now(),
     last_rejected_at    TIMESTAMP    NOT NULL DEFAULT now(),
-    CONSTRAINT uq_rejected_record UNIQUE (pipeline_name, source_collection, source_id)
+    CONSTRAINT uq_rejected_record UNIQUE (pipeline_name, source_collection, source_id, error_id)
 );
-CREATE INDEX IF NOT EXISTS idx_rejected_pipeline ON etl_audit.etl_rejected_record (pipeline_name, source_collection, error_type);
-
-CREATE TABLE IF NOT EXISTS etl_audit.etl_data_warning (
-    data_warning_id    BIGSERIAL    PRIMARY KEY,
-    job_run_id         BIGINT       NOT NULL REFERENCES etl_audit.etl_job_run (job_run_id),
-    pipeline_name      VARCHAR(100) NOT NULL,
-    source_collection  VARCHAR(100) NOT NULL,
-    warning_type       VARCHAR(30)  NOT NULL,            -- RULE, SCHEMA_DRIFT, VOLUME
-    source_id          VARCHAR(100),                     -- MongoDB _id (RULE only)
-    business_key       VARCHAR(200),                     -- (RULE only)
-    warning_message    TEXT         NOT NULL,
-    created_at         TIMESTAMP    NOT NULL DEFAULT now()
-);
-CREATE INDEX IF NOT EXISTS idx_data_warning_run    ON etl_audit.etl_data_warning (job_run_id);
-CREATE INDEX IF NOT EXISTS idx_data_warning_source ON etl_audit.etl_data_warning (pipeline_name, source_collection, warning_type);
+CREATE INDEX IF NOT EXISTS idx_rejected_record_error ON meta.meta_rejected_record (error_id);
 
 -- incremental watermark: up to which timestamp did pipeline X read collection Y (moved only after a successful run)
-CREATE TABLE IF NOT EXISTS etl_audit.etl_watermark (
+CREATE TABLE IF NOT EXISTS meta.meta_watermark (
     pipeline_name      VARCHAR(100) NOT NULL,
     source_collection  VARCHAR(100) NOT NULL,
     watermark_field    VARCHAR(100) NOT NULL,            -- e.g. updatedAt (BSON Date in MongoDB)
@@ -264,9 +266,67 @@ CREATE INDEX IF NOT EXISTS idx_fact_shipment_warehouse ON silver.fact_shipment (
 
 
 -- =====================================================================
+-- PART 3: meta.meta_error_master seed = every data-quality error the ecommerce-fulfillment-pipeline can produce
+--   (generated from the rules in the code; shared errors such as "amount must be greater than 0" exist once).
+--   The job looks an error up by error_type + error_message. Re-run safe: existing errors are skipped.
+--   field_name = the checked field; its bad value is stored per record in meta_rejected_record.field_value.
+-- =====================================================================
+INSERT INTO meta.meta_error_master (error_type, field_name, error_message)
+SELECT v.error_type, v.field_name, v.error_message
+  FROM (VALUES
+-- ecom_warehouses
+    ('CORRUPT',    'capacityUnits',  'capacityUnits is not a whole number'),
+    ('VALIDATION', 'warehouseId',    'warehouseId is required'),
+    ('VALIDATION', 'warehouseName',  'warehouseName is required'),
+    ('VALIDATION', 'city',           'city is required'),
+    ('VALIDATION', 'status',         'status is required'),
+    ('VALIDATION', 'warehouseId',    'warehouseId must look like WH-01'),
+    ('VALIDATION', 'pincode',        'pincode must be a 6 digit Indian pincode'),
+    ('VALIDATION', 'capacityUnits',  'capacityUnits must be greater than 0'),
+    ('VALIDATION', 'status',         'status must be one of [ACTIVE, INACTIVE]'),
+    ('DUPLICATE',  'warehouseId',    'another record with the same warehouseId was kept (latest updatedAt wins)'),
+-- ecom_carriers
+    ('VALIDATION', 'carrierId',      'carrierId is required'),
+    ('VALIDATION', 'carrierName',    'carrierName is required'),
+    ('VALIDATION', 'serviceType',    'serviceType is required'),
+    ('VALIDATION', 'carrierId',      'carrierId must look like CRR-01'),
+    ('VALIDATION', 'serviceType',    'serviceType must be one of [STANDARD, EXPRESS, SAME_DAY]'),
+    ('VALIDATION', 'contactEmail',   'contactEmail is not a valid email address'),
+    ('DUPLICATE',  'carrierId',      'another record with the same carrierId was kept (latest updatedAt wins)'),
+-- ecom_shipments
+    ('CORRUPT',    'shippedDate',    'shippedDate is not a valid timestamp (expected yyyy-MM-ddTHH:mm:ss)'),
+    ('CORRUPT',    'deliveredDate',  'deliveredDate is not a valid timestamp (expected yyyy-MM-ddTHH:mm:ss)'),
+    ('CORRUPT',    'promisedDate',   'promisedDate is not a valid date (expected yyyy-MM-dd)'),
+    ('CORRUPT',    'shippingCost',   'shippingCost is not a valid number'),
+    ('CORRUPT',    'weightKg',       'weightKg is not a valid number'),
+    ('VALIDATION', 'shipmentId',     'shipmentId is required'),
+    ('VALIDATION', 'orderId',        'orderId is required'),
+    ('VALIDATION', 'shippedDate',    'shippedDate is required'),
+    ('VALIDATION', 'promisedDate',   'promisedDate is required'),
+    ('VALIDATION', 'shipmentStatus', 'shipmentStatus is required'),
+    ('VALIDATION', 'shippingCost',   'shippingCost is required'),
+    ('VALIDATION', 'shipmentId',     'shipmentId must look like SHP-00001'),
+    ('VALIDATION', 'shippedDate',    'shippedDate cannot be in the future'),
+    ('VALIDATION', 'deliveredDate',  'deliveredDate cannot be in the future'),
+    ('VALIDATION', 'shippingCost',   'shippingCost cannot be negative'),
+    ('VALIDATION', 'weightKg',       'weightKg must be greater than 0'),
+    ('VALIDATION', 'shipmentStatus', 'shipmentStatus must be one of [IN_TRANSIT, DELIVERED, RETURNED_TO_ORIGIN, LOST]'),
+    ('VALIDATION', NULL,             'deliveredDate is required when shipmentStatus is DELIVERED'),
+    ('VALIDATION', NULL,             'deliveredDate cannot be before shippedDate'),
+    ('ORPHAN',     'orderId',        'orderId not found in fact_order'),
+    ('ORPHAN',     'warehouseId',    'warehouseId not found in dim_warehouse'),
+    ('ORPHAN',     'carrierId',      'carrierId not found in dim_carrier'),
+    ('DUPLICATE',  'shipmentId',     'another record with the same shipmentId was kept (latest updatedAt wins)')
+       ) AS v (error_type, field_name, error_message)
+ WHERE NOT EXISTS (SELECT 1 FROM meta.meta_error_master e                  -- already there: skip (keeps error_id gap-free)
+                    WHERE e.error_type = v.error_type AND e.error_message = v.error_message)
+ON CONFLICT (error_type, error_message) DO NOTHING;
+
+
+-- =====================================================================
 -- Verify: list the tables of this job + the meta tables
 -- =====================================================================
 SELECT table_schema, table_name
   FROM information_schema.tables
- WHERE table_schema IN ('etl_audit', 'silver')
+ WHERE table_schema IN ('meta', 'silver')
  ORDER BY table_schema, table_name;

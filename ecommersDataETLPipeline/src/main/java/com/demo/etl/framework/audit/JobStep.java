@@ -2,7 +2,7 @@ package com.demo.etl.framework.audit;
 
 import java.time.LocalDateTime;
 
-/** One row of etl_audit.etl_job_step. */
+/** One row of meta.meta_pipeline_step. status = SUCCESS / FAILED, null while the step is still running. */
 public record JobStep(
         long jobStepId,
         int stepOrder,

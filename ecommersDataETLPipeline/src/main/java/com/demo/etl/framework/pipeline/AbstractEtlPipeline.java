@@ -18,7 +18,7 @@ import org.apache.spark.sql.Row;
  *   load(ctx, mapper.toDimPayer(typed), "silver.dim_payer", "payer_id");         // L
  * </pre>
  *
- * Every building block is recorded as a step in etl_audit.etl_job_step.
+ * Every building block is recorded as a step in meta.meta_pipeline_step.
  * Saving rejected records and advancing the watermarks happens automatically after run() succeeds.
  */
 public abstract class AbstractEtlPipeline implements EtlPipeline {

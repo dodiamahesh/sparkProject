@@ -17,7 +17,7 @@
 //      ecom_shipments  read 15 | valid 10 | rejected 5 (DUPLICATE SHP-00004, ORPHAN SHP-00009 order,
 //                                                       VALIDATION SHP-00010 / SHP-00011, ORPHAN SHP-00012 carrier)
 //      (4 bad of 15 = 26.7%: the reject gate of this source allows at most 30%)
-//      warnings: WH-05 INACTIVE, CRR-04 no contactEmail, SHP-00006 weight > 10 kg
+//      status: SUCCESS_WITH_FAILED (valid rows loaded, the rejected ones are in meta.meta_rejected_record)
 // =============================================================================
 const DB_NAME = "shopdb";
 db = db.getSiblingDB(DB_NAME);
@@ -37,7 +37,7 @@ db.ecom_warehouses.insertMany([
   wh("WH-02", "Bhiwandi Mega Warehouse",     "Bhiwandi",  "Maharashtra", "421302", "1,20,000","active"),   // sanitize: separators, case
   wh("WH-03", "Bengaluru Hub",               "Bengaluru", "Karnataka",   "562123", 40000,     "ACTIVE"),
   wh("WH-04", "Gurugram Hub",                "Gurugram",  "Haryana",     "122001", 60000,     "ACTIVE"),
-  wh("WH-05", "Kolkata Old Depot",           "Kolkata",   "West Bengal", "700088", 8000,      "INACTIVE"), // WARNING not ACTIVE
+  wh("WH-05", "Kolkata Old Depot",           "Kolkata",   "West Bengal", "700088", 8000,      "INACTIVE"),
   wh("WH-06", "Test Depot",                  "Nowhere",   "Unknown",     "12345",  1000,      "ACTIVE")    // VALIDATION pincode
 ]);
 
@@ -48,7 +48,7 @@ db.ecom_carriers.insertMany([
   crr("CRR-01", "Delhivery",       "STANDARD", "support@delhivery.example", "ACTIVE"),
   crr("CRR-02", "Blue Dart",       "express",  "CARE@BLUEDART.EXAMPLE",     "ACTIVE"),   // sanitize
   crr("CRR-03", "Ekart Logistics", "STANDARD", "help@ekart.example",        "ACTIVE"),
-  crr("CRR-04", "Dunzo",           "SAME_DAY", null,                        "ACTIVE"),   // WARNING no contactEmail
+  crr("CRR-04", "Dunzo",           "SAME_DAY", null,                        "ACTIVE"),
   crr("CRR-05", "SkyDrop",         "DRONE",    "hello@skydrop.example",     "ACTIVE")    // VALIDATION serviceType
 ]);
 
@@ -65,7 +65,7 @@ db.ecom_shipments.insertMany([
   shp("SHP-00003", "ORD-00003", "WH-04", "CRR-03", "2026-11-03T19:00:00", "2026-11-05", "2026-11-08T12:00:00", "DELIVERED",  45,    0.30),   // late (3 days)
   shp("SHP-00004", "ORD-00004", "WH-03", "CRR-01", "2026-11-04T21:00:00", "2026-11-09", null,                  "IN_TRANSIT", 60,    2.10, "2026-11-05T08:00:00"),   // latest
   shp("SHP-00005", "ORD-00005", "WH-03", "CRR-04", "2026-11-05T20:30:00", "2026-11-06", "2026-11-06T11:00:00", "DELIVERED",  120,   3.50),
-  shp("SHP-00006", "ORD-00007", "WH-01", "CRR-02", "2026-11-07T18:30:00", "2026-11-10", "2026-11-09T16:00:00", "DELIVERED",  "1,150.00", 12.0),  // WARNING weight > 10
+  shp("SHP-00006", "ORD-00007", "WH-01", "CRR-02", "2026-11-07T18:30:00", "2026-11-10", "2026-11-09T16:00:00", "DELIVERED",  "1,150.00", 12.0),
   shp("SHP-00007", "ORD-00008", "WH-04", "CRR-03", "2026-11-08T22:00:00", "2026-11-12", null,                  "RETURNED_TO_ORIGIN", 45, 0.80, "2026-11-13T09:00:00"),
   shp("SHP-00008", "ORD-00006", "WH-04", "CRR-01", "2026-11-06T17:00:00", "2026-11-10", null,                  "LOST",       49,    1.00, "2026-11-14T09:00:00"),
   shp("SHP-00014", "ORD-00007", "WH-01", "CRR-03", "2026-11-07T19:00:00", "2026-11-11", "2026-11-10T13:00:00", "DELIVERED",  45,    0.70),   // 2nd parcel of the same order

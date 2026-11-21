@@ -16,6 +16,7 @@
 //  EXPECTED INCREMENTAL RUN:
 //      read 5 | valid 4 | rejected 1 (VALIDATION) | resolved 1 (PAY-0013 was rejected, now fixed)
 //      fact_payment 13 -> 16 (PAY-0013 fixed, PAY-0021 + PAY-0022 new; PAY-0007 updated in place)
+//      status: SUCCESS_WITH_FAILED (1 rejected)
 // =============================================================================
 const DB_NAME = "bankdb";
 db = db.getSiblingDB(DB_NAME);

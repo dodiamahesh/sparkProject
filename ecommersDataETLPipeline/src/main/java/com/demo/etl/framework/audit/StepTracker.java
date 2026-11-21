@@ -13,7 +13,7 @@ import java.util.function.ToLongFunction;
 
 /**
  * Wraps a piece of work as a "step": saves start time, end time, record count and status in
- * etl_audit.etl_job_step. When the work throws, the step is marked FAILED and the error is
+ * meta.meta_pipeline_step. When the work throws, the step is marked FAILED and the error is
  * re-thrown as {@link EtlStepException} (which names the step).
  */
 @Component

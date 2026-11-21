@@ -20,6 +20,7 @@
 //      payments   read 2 (PAY10 PENDING -> SUCCESS, PAY23 new)
 //      -> dim_customer 22 rows (C003 has 2 versions), fact_sales 32, fact_payment 21. Nothing rejected.
 //      Old order O1003 keeps the Mumbai version of C003 (point-in-time lookup).
+//      status: SUCCESS (nothing rejected)
 // =============================================================================
 const DB_NAME = "shopdb";
 db = db.getSiblingDB(DB_NAME);

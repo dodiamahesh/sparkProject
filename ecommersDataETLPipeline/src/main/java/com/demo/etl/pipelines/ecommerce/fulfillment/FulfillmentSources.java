@@ -25,7 +25,6 @@ final class FulfillmentSources {
             .latestRecordColumn("updatedAt")
             .excludeTestRecords()
             .maxRejectPercent(30)
-            .expectedRows(0, 1_000)
             .description("Fulfilment centres and hubs that ship orders")
             .owner("logistics-team@demo.com")
             .sla("on change")
@@ -46,9 +45,7 @@ final class FulfillmentSources {
                 .mustMatch("warehouseId", "^WH-[0-9]{2}$", "must look like WH-01")
                 .mustMatch("pincode", "^[1-9][0-9]{5}$", "must be a 6 digit Indian pincode")
                 .mustBePositive("capacityUnits")
-                .mustBeOneOf("status", "ACTIVE", "INACTIVE")
-                .warnings(w -> w
-                        .mustBeOneOf("status", "ACTIVE"));
+                .mustBeOneOf("status", "ACTIVE", "INACTIVE");
     }
 
     // =================================================================== ecom_carriers
@@ -58,7 +55,6 @@ final class FulfillmentSources {
             .latestRecordColumn("updatedAt")
             .excludeTestRecords()
             .maxRejectPercent(30)
-            .expectedRows(0, 1_000)
             .description("Courier companies that deliver the parcels")
             .owner("logistics-team@demo.com")
             .sla("on change")
@@ -77,9 +73,7 @@ final class FulfillmentSources {
                 .mustMatch("carrierId", "^CRR-[0-9]{2}$", "must look like CRR-01")
                 .mustBeOneOf("serviceType", "STANDARD", "EXPRESS", "SAME_DAY")
                 .mustBeValidEmail("contactEmail")
-                .mustBeOneOf("status", "ACTIVE", "INACTIVE")
-                .warnings(w -> w
-                        .required("contactEmail"));
+                .mustBeOneOf("status", "ACTIVE", "INACTIVE");
     }
 
     // =================================================================== ecom_shipments
@@ -90,7 +84,6 @@ final class FulfillmentSources {
             .latestRecordColumn("updatedAt")
             .excludeTestRecords()
             .maxRejectPercent(30)
-            .expectedRows(1, 500_000)
             .description("Parcel shipments with tracking status, one per shipped order")
             .owner("logistics-team@demo.com")
             .sla("every 30 minutes (status updates from the carriers)")
@@ -129,8 +122,6 @@ final class FulfillmentSources {
                         col("deliveredDate").cast(SparkTypes.TIMESTAMP).lt(col("shippedDate").cast(SparkTypes.TIMESTAMP)))
                 .mustExistIn("orderId", orderIds, "order_id", "fact_order")
                 .mustExistIn("warehouseId", warehouseIds, "warehouse_id", "dim_warehouse")
-                .mustExistIn("carrierId", carrierIds, "carrier_id", "dim_carrier")
-                .warnings(w -> w
-                        .mustNotBeMoreThan("weightKg", 10));
+                .mustExistIn("carrierId", carrierIds, "carrier_id", "dim_carrier");
     }
 }

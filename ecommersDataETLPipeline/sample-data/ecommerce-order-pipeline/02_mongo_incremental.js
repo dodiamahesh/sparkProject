@@ -17,6 +17,7 @@
 //      ecom_customers    read 3 (ECU-0002 moved, ECU-0008 fixed -> resolved, ECU-0009 new)
 //      ecom_orders       read 2 (ORD-00002 SHIPPED -> DELIVERED, ORD-00011 new)
 //      ecom_order_items  read 3 (OIT-000016/17 new, OIT-000018 VALIDATION: discount > quantity * unitPrice)
+//      status: SUCCESS_WITH_FAILED (OIT-000018 rejected)
 // =============================================================================
 const DB_NAME = "shopdb";
 db = db.getSiblingDB(DB_NAME);

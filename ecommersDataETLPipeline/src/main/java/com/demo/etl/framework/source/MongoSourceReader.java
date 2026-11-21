@@ -55,13 +55,12 @@ public class MongoSourceReader {
     }
 
     /**
-     * The $match stages for this source and window. Also used by {@link SchemaDriftDetector}, so it
-     * inspects exactly the documents that will be read.
+     * The $match stages for this source and window:
      * <pre>
      *   {"$match": {"updatedAt": {"$gt": {"$date": start}, "$lte": {"$date": end}}}}   ($gt left out on the first run)
      * </pre>
      */
-    public List<Document> matchStages(SourceDefinition source, LoadWindow window) {
+    private List<Document> matchStages(SourceDefinition source, LoadWindow window) {
         Document range = new Document();
         if (!window.isFirstRun()) {
             range.append("$gt", Date.from(window.start()));
@@ -74,10 +73,5 @@ public class MongoSourceReader {
             stages.add(new Document("$match", Document.parse(source.sourceFilter())));
         }
         return stages;
-    }
-
-    /** Fields present in every document that are not business data (never reported as schema drift). */
-    public List<String> technicalFields() {
-        return List.of("_id");
     }
 }

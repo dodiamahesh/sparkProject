@@ -16,10 +16,9 @@ final class PaymentSource {
                     "amount", "currency", "paymentDate", "status", "referenceNumber", "updatedAt")
             .businessKey("paymentId")
             .latestRecordColumn("updatedAt")
-            // ---- data contract: filter, quality gate, volume, PII, metadata ----
+            // ---- data contract: filter, quality gate, PII, metadata ----
             .excludeTestRecords()
             .maxRejectPercent(30)
-            .expectedRows(1, 50_000)
             .maskEmail("payerEmail")
             .maskPhone("payerPhone")
             .description("Bill payments made in the payment app, one document per payment")
@@ -55,9 +54,6 @@ final class PaymentSource {
                 .mustBeOneOf("currency", "INR", "USD")
                 .mustBeOneOf("status", "SUCCESS", "FAILED", "PENDING")
                 .mustBeValidEmail("payerEmail")
-                .mustMatch("payerPhone", "^[6-9][0-9]{9}$", "must be a 10 digit Indian mobile number")
-                // WARNING: loaded, but reported for a review
-                .warnings(w -> w
-                        .mustNotBeMoreThan("amount", 12_000));
+                .mustMatch("payerPhone", "^[6-9][0-9]{9}$", "must be a 10 digit Indian mobile number");
     }
 }

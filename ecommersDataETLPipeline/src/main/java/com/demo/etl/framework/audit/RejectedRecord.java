@@ -2,15 +2,23 @@ package com.demo.etl.framework.audit;
 
 import java.time.LocalDateTime;
 
-/** One row of etl_audit.etl_rejected_record. */
+/**
+ * One row of meta.meta_rejected_record (= one failed rule of one record), with its error from
+ * meta.meta_error_master. A record that broke 2 rules has 2 rows (same sourceId, different errorId).
+ *
+ * @param fieldValue the bad value of {@code fieldName} in this record (PII masked)
+ */
 public record RejectedRecord(
         long rejectedRecordId,
         String pipelineName,
         String sourceCollection,
         String sourceId,
         String businessKey,
+        int errorId,
         String errorType,
-        String errorReason,
+        String fieldName,
+        String errorMessage,
+        String fieldValue,
         String rawRecord,
         int attemptCount,
         long firstJobRunId,

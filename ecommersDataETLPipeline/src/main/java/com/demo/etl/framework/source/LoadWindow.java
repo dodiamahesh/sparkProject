@@ -8,7 +8,7 @@ import java.time.Instant;
  *   watermarkField &gt; start  AND  watermarkField &lt;= end
  * </pre>
  *
- * - start = last watermark of a SUCCESSFUL run (etl_audit.etl_watermark). null on the very first run:
+ * - start = last watermark of a SUCCESSFUL run (meta.meta_watermark). null on the very first run:
  *           then there is no lower bound and everything up to {@code end} is read.
  * - end   = start time of THIS run (fixed for all sources of the run). A document changed while the job
  *           is running has a later timestamp, so it is read by the NEXT run: nothing is read twice or missed.

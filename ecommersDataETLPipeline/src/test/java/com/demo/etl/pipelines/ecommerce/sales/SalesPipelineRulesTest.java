@@ -76,7 +76,7 @@ class SalesPipelineRulesTest {
         assertEquals(6, valid.size());
 
         Map<String, String> rejected = result.rejected().collectAsList().stream().collect(Collectors.toMap(
-                r -> r.getAs(QualityColumns.REJECTED_SOURCE_ID), r -> r.getAs(QualityColumns.REJECTED_ERROR_TYPE)));
+                r -> r.getAs(QualityColumns.REJECTED_SOURCE_ID), SalesPipelineRulesTest::mainErrorType));
         assertEquals(Map.of("7", "DUPLICATE", "8", "VALIDATION", "9", "VALIDATION"), rejected);
     }
 
@@ -99,7 +99,7 @@ class SalesPipelineRulesTest {
 
         assertEquals(List.of("O1008/line-1", "O1012/line-1"), keys(lines.valid(), "line_id"));
         Map<String, String> rejected = lines.rejected().collectAsList().stream().collect(Collectors.toMap(
-                r -> r.getAs(QualityColumns.REJECTED_BUSINESS_KEY), r -> r.getAs(QualityColumns.REJECTED_ERROR_TYPE)));
+                r -> r.getAs(QualityColumns.REJECTED_BUSINESS_KEY), SalesPipelineRulesTest::mainErrorType));
         assertEquals(Map.of("O1008/line-2", "VALIDATION", "O1012/line-2", "ORPHAN"), rejected);   // J2-V06, J2-F02
     }
 
@@ -120,7 +120,7 @@ class SalesPipelineRulesTest {
         assertEquals("SUCCESS", pay01.getAs("status"));                            // J2-S09
         Row pay22 = result.rejected().first();
         assertEquals("PAY22", pay22.getAs(QualityColumns.REJECTED_BUSINESS_KEY));
-        assertEquals("CORRUPT", pay22.getAs(QualityColumns.REJECTED_ERROR_TYPE)); // J2-C02
+        assertEquals("CORRUPT", mainErrorType(pay22)); // J2-C02
     }
 
     @Test
@@ -173,5 +173,11 @@ class SalesPipelineRulesTest {
         List<String> keys = rows.collectAsList().stream().map(r -> r.<String>getAs(key)).sorted().toList();
         assertTrue(!keys.isEmpty());
         return keys;
+    }
+
+    /** errors[0].error_type of a rejected row: the most serious problem of the record. */
+    private static String mainErrorType(Row rejected) {
+        List<Row> errors = rejected.getList(rejected.fieldIndex(QualityColumns.REJECTED_ERRORS));
+        return errors.get(0).getAs(QualityColumns.ERROR_TYPE);
     }
 }

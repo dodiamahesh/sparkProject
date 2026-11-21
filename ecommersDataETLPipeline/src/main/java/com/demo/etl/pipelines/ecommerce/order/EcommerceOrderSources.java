@@ -27,7 +27,6 @@ final class EcommerceOrderSources {
             .latestRecordColumn("updatedAt")
             .excludeTestRecords()
             .maxRejectPercent(30)
-            .expectedRows(0, 1_000)
             .description("Product categories of the web shop catalogue")
             .owner("catalog-team@demo.com")
             .sla("on change (a few times a month)")
@@ -55,7 +54,6 @@ final class EcommerceOrderSources {
             .latestRecordColumn("updatedAt")
             .excludeTestRecords()
             .maxRejectPercent(30)
-            .expectedRows(0, 100_000)
             .description("Products (SKU master data) of the web shop catalogue")
             .owner("catalog-team@demo.com")
             .sla("daily by 05:00")
@@ -82,9 +80,7 @@ final class EcommerceOrderSources {
                         col("costPrice").cast(SparkTypes.MONEY).gt(col("listPrice").cast(SparkTypes.MONEY)))
                 .mustBeOneOf("status", "ACTIVE", "OUT_OF_STOCK", "DISCONTINUED")
                 .mustNotBeInFuture("launchDate")
-                .mustExistIn("categoryId", categoryIds, "category_id", "dim_category")
-                .warnings(w -> w
-                        .required("brand", "sku"));
+                .mustExistIn("categoryId", categoryIds, "category_id", "dim_category");
     }
 
     // =================================================================== ecom_customers
@@ -95,7 +91,6 @@ final class EcommerceOrderSources {
             .latestRecordColumn("updatedAt")
             .excludeTestRecords()
             .maxRejectPercent(30)
-            .expectedRows(0, 1_000_000)
             .maskEmail("email")
             .maskPhone("phone")
             .description("Registered shop customers (sign-ups and profile changes)")
@@ -121,9 +116,7 @@ final class EcommerceOrderSources {
                 .mustMatch("phone", "^[6-9][0-9]{9}$", "must be a 10 digit Indian mobile number")
                 .mustMatch("pincode", "^[1-9][0-9]{5}$", "must be a 6 digit Indian pincode")
                 .mustBeOneOf("segment", "REGULAR", "PRIME", "VIP")
-                .mustNotBeInFuture("signupDate")
-                .warnings(w -> w
-                        .required("phone", "pincode"));
+                .mustNotBeInFuture("signupDate");
     }
 
     // =================================================================== ecom_orders (order HEADER)
@@ -134,7 +127,6 @@ final class EcommerceOrderSources {
             .latestRecordColumn("updatedAt")
             .excludeTestRecords()
             .maxRejectPercent(30)
-            .expectedRows(1, 500_000)
             .description("Order headers from web, Android and iOS checkout")
             .owner("checkout-team@demo.com")
             .sla("every 15 minutes")
@@ -160,9 +152,7 @@ final class EcommerceOrderSources {
                 .mustBeOneOf("orderStatus", "PLACED", "CONFIRMED", "SHIPPED", "DELIVERED", "CANCELLED", "RETURNED")
                 .mustBeOneOf("paymentMode", "UPI", "CARD", "COD", "NETBANKING", "WALLET")
                 .mustBeOneOf("channel", "WEB", "ANDROID", "IOS")
-                .mustExistIn("customerId", customerIds, "customer_id", "dim_ecom_customer")
-                .warnings(w -> w
-                        .mustBeOneOf("couponCode", "DIWALI10", "FIRST50", "FREESHIP"));
+                .mustExistIn("customerId", customerIds, "customer_id", "dim_ecom_customer");
     }
 
     // =================================================================== ecom_order_items (order LINES)
@@ -172,7 +162,6 @@ final class EcommerceOrderSources {
             .latestRecordColumn("updatedAt")
             .excludeTestRecords()
             .maxRejectPercent(30)
-            .expectedRows(1, 2_000_000)
             .description("Order lines: one product (with quantity, price, discount) inside an order")
             .owner("checkout-team@demo.com")
             .sla("every 15 minutes")
@@ -205,10 +194,6 @@ final class EcommerceOrderSources {
                         col("discountAmount").cast(SparkTypes.MONEY)
                                 .gt(col("quantity").cast(SparkTypes.MONEY).multiply(col("unitPrice").cast(SparkTypes.MONEY))))
                 .mustExistIn("orderId", orderIds, "order_id", "fact_order")
-                .mustExistIn("productId", productIds, "product_id", "dim_product")
-                .warnings(w -> w
-                        .custom(ErrorType.VALIDATION, "discountAmount is more than 30% of quantity * unitPrice, please review",
-                                col("discountAmount").cast(SparkTypes.MONEY).gt(col("quantity").cast(SparkTypes.MONEY)
-                                        .multiply(col("unitPrice").cast(SparkTypes.MONEY)).multiply(0.3))));
+                .mustExistIn("productId", productIds, "product_id", "dim_product");
     }
 }

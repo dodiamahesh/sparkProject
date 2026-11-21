@@ -16,6 +16,7 @@
 //      ecom_warehouses read 1 (WH-03 capacity change)
 //      ecom_carriers   read 1 (CRR-06 new)
 //      ecom_shipments  read 3 (SHP-00002 delivered late, SHP-00010 fixed -> resolved, SHP-00013 new) -> all valid
+//      status: SUCCESS (nothing rejected)
 // =============================================================================
 const DB_NAME = "shopdb";
 db = db.getSiblingDB(DB_NAME);

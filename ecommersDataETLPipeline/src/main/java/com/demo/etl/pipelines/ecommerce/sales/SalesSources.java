@@ -60,7 +60,6 @@ final class SalesSources {
             .fields("product_code", "name", "brand", "category", "price", "is_active", "updated_at")
             .businessKey("product_code")
             .latestRecordColumn("updated_at")
-            .ignoreFields("supplier", "stock")          // inventory data, not needed for sales
             .maxRejectPercent(30)
             .description("Product catalogue (product master) of the shop")
             .owner("catalog-team@demo.com")
@@ -120,8 +119,7 @@ final class SalesSources {
                 .mustMatch("customer_code", "^C[0-9]{3}$", "must look like C001")
                 .mustBeValidEmail("email")                                       // J2-V02 (C021 test@@mail)
                 .mustMatch("phone", "^[0-9]{10}$", "must have 10 digits")        // J2-V03
-                .mustBeOneOf("tier", TIERS)                                      // J2-V04
-                .warnings(w -> w.required("phone", "city"));
+                .mustBeOneOf("tier", TIERS);                                     // J2-V04
     }
 
     // =================================================================== orders  (document level)
@@ -129,7 +127,6 @@ final class SalesSources {
             .fields("order_no", "customer_code", "order_ts", "status", "payment_method", "items", "updated_at")
             .businessKey("order_no")
             .latestRecordColumn("updated_at")                                    // J2-D02 latest version kept
-            .ignoreFields("shipping", "order_total")                             // not part of the sales star
             .maxRejectPercent(30)
             .description("Orders with their product lines (items[] array)")
             .owner("checkout-team@demo.com")

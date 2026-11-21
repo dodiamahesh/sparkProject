@@ -8,7 +8,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * SQL for etl_audit.etl_job_step.
+ * SQL for meta.meta_pipeline_step.
  */
 @Repository
 public class JobStepRepository {
@@ -30,17 +30,18 @@ public class JobStepRepository {
         this.jdbc = jdbc;
     }
 
+    /** Inserts the row of a new step (status NULL = still running) and returns its id. */
     public long startStep(long jobRunId, int stepOrder, String stepName) {
         return jdbc.queryForObject("""
-                INSERT INTO etl_audit.etl_job_step (job_run_id, step_order, step_name, status, start_time)
-                VALUES (?, ?, ?, ?, clock_timestamp())
+                INSERT INTO meta.meta_pipeline_step (job_run_id, step_order, step_name, start_time)
+                VALUES (?, ?, ?, clock_timestamp())
                 RETURNING job_step_id
-                """, Long.class, jobRunId, stepOrder, stepName, StepStatus.RUNNING.name());
+                """, Long.class, jobRunId, stepOrder, stepName);
     }
 
     public void finishStep(long jobStepId, StepStatus status, Long recordCount, String errorMessage) {
         jdbc.update("""
-                UPDATE etl_audit.etl_job_step
+                UPDATE meta.meta_pipeline_step
                    SET status        = ?,
                        record_count  = ?,
                        end_time      = clock_timestamp(),
@@ -51,7 +52,7 @@ public class JobStepRepository {
     }
 
     public List<JobStep> findByJobRunId(long jobRunId) {
-        return jdbc.query("SELECT * FROM etl_audit.etl_job_step WHERE job_run_id = ? ORDER BY step_order",
+        return jdbc.query("SELECT * FROM meta.meta_pipeline_step WHERE job_run_id = ? ORDER BY step_order",
                 ROW_MAPPER, jobRunId);
     }
 }

@@ -15,9 +15,6 @@ public record SourceInfo(
         String businessKey,
         List<String> fields,
         Double maxRejectPercent,
-        Long expectedMinRows,
-        Long expectedMaxRows,
-        boolean failOnSchemaDrift,
         Map<String, String> piiFields,
         String sourceFilter) {
 
@@ -31,10 +28,7 @@ public record SourceInfo(
                 source.metadata().sla(),
                 source.businessKey(),
                 source.fields(),
-                source.checks().maxRejectPercent(),
-                source.checks().minRows(),
-                source.checks().maxRows(),
-                source.checks().failOnSchemaDrift(),
+                source.maxRejectPercent(),
                 pii,
                 source.sourceFilter());
     }

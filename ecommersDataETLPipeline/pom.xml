@@ -58,13 +58,8 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
-        <!-- MongoTemplate + MongoDB driver: schema-drift check (SchemaDriftDetector) and processedFlag write-back (MongoFlagUpdater) -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-data-mongodb</artifactId>
-        </dependency>
         <!--
-            JdbcTemplate for the audit tables (job runs, steps, rejected records).
+            JdbcTemplate for the meta tables (pipeline runs, steps, rejected records, error master, watermarks).
             We intentionally do NOT use JPA/Hibernate: Hibernate 6 needs ANTLR 4.13,
             Spark 3.5 needs ANTLR 4.9 and the two cannot live on the same classpath.
         -->
@@ -108,6 +103,11 @@
             <groupId>org.mongodb.spark</groupId>
             <artifactId>mongo-spark-connector_${scala.binary.version}</artifactId>
             <version>${mongo-spark-connector.version}</version>
+        </dependency>
+        <!-- BSON Document: builds the $match stages of the incremental read (the connector brings the driver only at runtime) -->
+        <dependency>
+            <groupId>org.mongodb</groupId>
+            <artifactId>bson</artifactId>
         </dependency>
         <!--
             Spark 3.5 still uses the old javax.servlet API internally (metrics servlet).

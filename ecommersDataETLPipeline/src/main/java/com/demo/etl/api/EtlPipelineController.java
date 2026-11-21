@@ -7,14 +7,11 @@ import com.demo.etl.framework.job.EtlJobService;
 import com.demo.etl.framework.job.JobLockManager;
 import com.demo.etl.framework.job.JobRunDetails;
 import com.demo.etl.framework.pipeline.PipelineRegistry;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -24,7 +21,7 @@ import java.util.List;
  * timestamp (e.g. updatedAt) is after the last watermark, up to the moment the run starts.
  *
  *   GET  /api/etl/pipelines                          -> pipelines, their sources and current watermarks
- *   POST /api/etl/pipelines/{pipelineName}/run?async=false
+ *   POST /api/etl/pipelines/{pipelineName}/run       -> runs the pipeline and answers when it has finished
  */
 @RestController
 @RequestMapping("/api/etl/pipelines")
@@ -58,16 +55,13 @@ public class EtlPipelineController {
     }
 
     /**
-     * @param async false (default) = wait for the result; true = return at once with HTTP 202
+     * Synchronous: the response is the finished run (status SUCCESS / SUCCESS_WITH_FAILED / FAILED) with its steps.
+     * A FAILED job is still HTTP 200: the run row tells why it failed.
      */
     @PostMapping("/{pipelineName}/run")
-    public ResponseEntity<JobRunDetails> runPipeline(
+    public JobRunDetails runPipeline(
             @PathVariable String pipelineName,
-            @RequestParam(defaultValue = "false") boolean async,
             @RequestHeader(value = "X-Triggered-By", defaultValue = "api") String triggeredBy) {
-
-        JobRunDetails result = jobService.runPipeline(pipelineName, async, triggeredBy);
-        HttpStatus status = async ? HttpStatus.ACCEPTED : HttpStatus.OK;
-        return ResponseEntity.status(status).body(result);
+        return jobService.runPipeline(pipelineName, triggeredBy);
     }
 }

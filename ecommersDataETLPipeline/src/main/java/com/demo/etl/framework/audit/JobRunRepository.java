@@ -14,7 +14,7 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * SQL for etl_audit.etl_job_run (plain JdbcTemplate: easy to read, no magic).
+ * SQL for meta.meta_pipeline_run (plain JdbcTemplate: easy to read, no magic).
  */
 @Repository
 public class JobRunRepository {
@@ -34,7 +34,6 @@ public class JobRunRepository {
             rs.getLong("duplicate_count"),
             rs.getLong("loaded_count"),
             rs.getLong("resolved_count"),
-            rs.getLong("warning_count"),
             rs.getString("error_message"),
             rs.getString("error_detail"));
 
@@ -44,19 +43,18 @@ public class JobRunRepository {
         this.jdbc = jdbc;
     }
 
-    /** Inserts a RUNNING row and returns the new job_run_id. */
+    /** Inserts the row of a new run (status NULL = still running) and returns the new job_run_id. */
     public long createRun(String pipelineName, Instant windowEnd, String triggeredBy) {
         return jdbc.queryForObject("""
-                INSERT INTO etl_audit.etl_job_run (pipeline_name, window_end, status, triggered_by, start_time)
-                VALUES (?, ?, ?, ?, now())
+                INSERT INTO meta.meta_pipeline_run (pipeline_name, window_end, triggered_by, start_time)
+                VALUES (?, ?, ?, now())
                 RETURNING job_run_id
-                """, Long.class, pipelineName, OffsetDateTime.ofInstant(windowEnd, ZoneOffset.UTC),
-                JobStatus.RUNNING.name(), triggeredBy);
+                """, Long.class, pipelineName, OffsetDateTime.ofInstant(windowEnd, ZoneOffset.UTC), triggeredBy);
     }
 
     public void finishRun(long jobRunId, JobStatus status, JobMetrics metrics, String errorMessage, String errorDetail) {
         jdbc.update("""
-                UPDATE etl_audit.etl_job_run
+                UPDATE meta.meta_pipeline_run
                    SET status          = ?,
                        end_time        = clock_timestamp(),
                        duration_ms     = (EXTRACT(EPOCH FROM (clock_timestamp() - start_time)) * 1000)::BIGINT,
@@ -66,7 +64,6 @@ public class JobRunRepository {
                        duplicate_count = ?,
                        loaded_count    = ?,
                        resolved_count  = ?,
-                       warning_count   = ?,
                        error_message   = ?,
                        error_detail    = ?
                  WHERE job_run_id = ?
@@ -74,17 +71,17 @@ public class JobRunRepository {
                 status.name(),
                 metrics.sourceCount(), metrics.validCount(), metrics.rejectedCount(),
                 metrics.duplicateCount(), metrics.loadedCount(), metrics.resolvedCount(),
-                metrics.warningCount(), errorMessage, errorDetail, jobRunId);
+                errorMessage, errorDetail, jobRunId);
     }
 
     public Optional<JobRun> findById(long jobRunId) {
-        return jdbc.query("SELECT * FROM etl_audit.etl_job_run WHERE job_run_id = ?", ROW_MAPPER, jobRunId)
+        return jdbc.query("SELECT * FROM meta.meta_pipeline_run WHERE job_run_id = ?", ROW_MAPPER, jobRunId)
                 .stream().findFirst();
     }
 
     /** Latest runs first. Both filters are optional (null = no filter). */
     public List<JobRun> findRecent(String pipelineName, String status, int limit) {
-        StringBuilder sql = new StringBuilder("SELECT * FROM etl_audit.etl_job_run WHERE 1 = 1");
+        StringBuilder sql = new StringBuilder("SELECT * FROM meta.meta_pipeline_run WHERE 1 = 1");
         List<Object> params = new ArrayList<>();
         if (pipelineName != null) {
             sql.append(" AND pipeline_name = ?");
@@ -100,15 +97,22 @@ public class JobRunRepository {
     }
 
     /**
-     * If the application was killed while a job was running, that job stays RUNNING forever.
-     * Called at startup to close such jobs.
+     * If the application was killed while a job was running, its row keeps status NULL forever.
+     * Called at startup: such runs (and their unfinished steps) become FAILED.
+     *
+     * @return number of runs closed
      */
     public int failInterruptedRuns() {
+        String message = "Interrupted: the application stopped while the job was running";
+        jdbc.update("""
+                UPDATE meta.meta_pipeline_step
+                   SET status = ?, end_time = now(), error_message = ?
+                 WHERE status IS NULL
+                """, StepStatus.FAILED.name(), message);
         return jdbc.update("""
-                UPDATE etl_audit.etl_job_run
-                   SET status = ?, end_time = now(),
-                       error_message = 'Application stopped while the job was running'
-                 WHERE status = ?
-                """, JobStatus.FAILED.name(), JobStatus.RUNNING.name());
+                UPDATE meta.meta_pipeline_run
+                   SET status = ?, end_time = now(), error_message = ?
+                 WHERE status IS NULL
+                """, JobStatus.FAILED.name(), message);
     }
 }

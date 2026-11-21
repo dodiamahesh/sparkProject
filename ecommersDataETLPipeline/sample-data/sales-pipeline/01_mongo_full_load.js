@@ -17,6 +17,7 @@
 //      order lines 32     | valid 30 | rejected 2 (O1008/line-2 qty 0, O1012/line-2 product P022)
 //      payments   read 23 | valid 20 | rejected 3 (DUPLICATE PAY05, ORPHAN PAY21, CORRUPT PAY22)
 //      dim_customer 20, fact_sales 30 (total 249,500), fact_payment 20
+//      status: SUCCESS_WITH_FAILED (valid rows loaded, the rejected ones are in meta.meta_rejected_record)
 // =============================================================================
 const DB_NAME = "shopdb";
 db = db.getSiblingDB(DB_NAME);

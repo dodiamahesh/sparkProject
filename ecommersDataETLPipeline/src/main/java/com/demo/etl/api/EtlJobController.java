@@ -1,7 +1,5 @@
 package com.demo.etl.api;
 
-import com.demo.etl.framework.audit.DataWarning;
-import com.demo.etl.framework.audit.DataWarningRepository;
 import com.demo.etl.framework.audit.JobRun;
 import com.demo.etl.framework.audit.JobRunRepository;
 import com.demo.etl.framework.job.EtlJobService;
@@ -15,11 +13,12 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 /**
- * Job history and status.
+ * Run history (meta.meta_pipeline_run + meta.meta_pipeline_step).
  *
  *   GET /api/etl/jobs?pipelineName=payment-pipeline&status=FAILED&limit=20
- *   GET /api/etl/jobs/{jobRunId}          -> job + every step (where did it fail, how long, how many rows)
- *   GET /api/etl/jobs/{jobRunId}/warnings -> data-quality warnings of that run (RULE / SCHEMA_DRIFT / VOLUME)
+ *   GET /api/etl/jobs/{jobRunId}          -> run + every step (where did it fail, how long, how many rows)
+ *
+ * status: SUCCESS, SUCCESS_WITH_FAILED or FAILED (null while the run is still busy).
  */
 @RestController
 @RequestMapping("/api/etl/jobs")
@@ -29,13 +28,10 @@ public class EtlJobController {
 
     private final JobRunRepository jobRunRepository;
     private final EtlJobService jobService;
-    private final DataWarningRepository warningRepository;
 
-    public EtlJobController(JobRunRepository jobRunRepository, EtlJobService jobService,
-                            DataWarningRepository warningRepository) {
+    public EtlJobController(JobRunRepository jobRunRepository, EtlJobService jobService) {
         this.jobRunRepository = jobRunRepository;
         this.jobService = jobService;
-        this.warningRepository = warningRepository;
     }
 
     @GetMapping
@@ -49,11 +45,5 @@ public class EtlJobController {
     @GetMapping("/{jobRunId}")
     public JobRunDetails getJobRun(@PathVariable long jobRunId) {
         return jobService.getJobRun(jobRunId);
-    }
-
-    @GetMapping("/{jobRunId}/warnings")
-    public List<DataWarning> getWarnings(@PathVariable long jobRunId) {
-        jobService.getJobRun(jobRunId);   // 404 when the job does not exist
-        return warningRepository.findByJobRunId(jobRunId);
     }
 }

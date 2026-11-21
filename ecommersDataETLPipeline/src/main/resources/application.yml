@@ -52,19 +52,12 @@ etl:
     batch-size: 1000
 
   # Incremental load: every source reads only documents whose timestamp field (SourceDefinition
-  # latestRecordColumn, e.g. updatedAt) is after its last watermark (etl_audit.etl_watermark).
+  # latestRecordColumn, e.g. updatedAt) is after its last watermark (meta.meta_watermark).
   # MongoDB is only READ, the ETL never writes to it.
-
-  job:
-    # How many pipelines can run at the same time (async mode)
-    thread-pool-size: 2
-    queue-capacity: 10
 
   quality:
     # Reject gate (SourceDefinition.maxRejectPercent) is skipped for batches smaller than this
     reject-gate-min-records: 10
-    # Schema-drift check: how many MongoDB documents are inspected per collection and run
-    schema-sample-size: 1000
 
 logging:
   level:

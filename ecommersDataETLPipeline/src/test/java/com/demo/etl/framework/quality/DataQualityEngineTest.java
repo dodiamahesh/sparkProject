@@ -17,7 +17,6 @@ import java.util.stream.Collectors;
 
 import static org.apache.spark.sql.functions.col;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Plain unit test (no Spring, no databases): sanitizer + rules + engine on a small in-memory dataset.
@@ -85,12 +84,20 @@ class DataQualityEngineTest {
         assertEquals(List.of("1", "6"), validIds.stream().sorted().toList());
         assertEquals("1250.50", result.valid().filter(col("_id").equalTo("1")).first().getAs("amount"));
 
-        Map<String, String> errorTypeById = result.rejected().collectAsList().stream()
-                .collect(Collectors.toMap(row -> row.getAs("source_id"), row -> row.getAs("error_type")));
+        Map<String, String> errorTypeById = result.rejected().withColumn("main_error", QualityColumns.mainErrorType())
+                .collectAsList().stream()
+                .collect(Collectors.toMap(row -> row.getAs("source_id"), row -> row.getAs("main_error")));
         assertEquals(Map.of("2", "CORRUPT", "3", "VALIDATION", "4", "ORPHAN", "5", "DUPLICATE"), errorTypeById);
 
-        String reasonsOfRow3 = result.rejected().filter(col("source_id").equalTo("3")).first().getAs("error_reason");
-        assertTrue(reasonsOfRow3.contains("amount must be greater than 0"));
-        assertTrue(reasonsOfRow3.contains("currency must be one of"));
+        // row 3 broke TWO rules -> two errors, each with its own message (key of meta_error_master) and value
+        List<String> errorsOfRow3 = QualityColumns.oneRowPerError(result.rejected().filter(col("source_id").equalTo("3")))
+                .collectAsList().stream()
+                .map(row -> row.getAs("error_message") + " = " + row.getAs("field_value"))
+                .sorted().toList();
+        assertEquals(List.of("amount must be greater than 0 = -5", "currency must be one of [INR, USD] = XYZ"), errorsOfRow3);
+
+        Row duplicate = QualityColumns.oneRowPerError(result.rejected().filter(col("source_id").equalTo("5"))).first();
+        assertEquals("another record with the same orderId was kept (latest updatedAt wins)", duplicate.getAs("error_message"));
+        assertEquals("ORD-5", duplicate.getAs("field_value"));
     }
 }

@@ -3,7 +3,7 @@ package com.demo.etl.framework.pipeline;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * Counters for one job run. They are saved in etl_audit.etl_job_run when the job ends.
+ * Counters for one job run. They are saved in meta.meta_pipeline_run when the job ends.
  */
 public class JobMetrics {
 
@@ -13,7 +13,6 @@ public class JobMetrics {
     private final AtomicLong duplicateCount = new AtomicLong();
     private final AtomicLong loadedCount = new AtomicLong();
     private final AtomicLong resolvedCount = new AtomicLong();
-    private final AtomicLong warningCount = new AtomicLong();
 
     public void addSource(long count) {
         sourceCount.addAndGet(count);
@@ -37,15 +36,6 @@ public class JobMetrics {
 
     public void addResolved(long count) {
         resolvedCount.addAndGet(count);
-    }
-
-    /** Rule warnings + schema-drift warnings + volume warnings. */
-    public void addWarnings(long count) {
-        warningCount.addAndGet(count);
-    }
-
-    public long warningCount() {
-        return warningCount.get();
     }
 
     public long sourceCount() {
