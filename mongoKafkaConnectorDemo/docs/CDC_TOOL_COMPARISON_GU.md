@@ -1,7 +1,7 @@
 # CDC Tool Comparison – Debezium કે બીજું? (ગુજરાતી)
 
 > Medallion pipeline ના **Stage 1 (Source: MongoDB + MySQL) → Stage 2 (Bronze: MongoDB)** માટે Kafka Connect સાથે કયું tool વાપરવું, તેની સરખામણી.
-> સંબંધિત: [MEDALLION_PIPELINE_PLAN_GU.md](MEDALLION_PIPELINE_PLAN_GU.md), [MONGO_CDC_COMPLETE_SETUP_GU.md](MONGO_CDC_COMPLETE_SETUP_GU.md)
+> સંબંધિત: [MEDALLION_PIPELINE_PLAN_GU.md](../../docs/MEDALLION_PIPELINE_PLAN_GU.md), [MONGO_CDC_COMPLETE_SETUP_GU.md](MONGO_CDC_COMPLETE_SETUP_GU.md)
 >
 > 📝 **નોંધ:** શરૂઆતમાં SQL source તરીકે EDB Postgres Advanced Server (EPAS) હતું. હવે તેની જગ્યાએ **MySQL** છે. આ document MySQL પ્રમાણે update કરેલું છે.
 >

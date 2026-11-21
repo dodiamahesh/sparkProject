@@ -614,7 +614,7 @@ Connector નો Kafka producer કેવી રીતે લખે, એ બદ�
 1. `kafka-connect\mongo-cdc-db-source.json` બદલો.
 2. Apply કરો (`PUT` = update, connector restart થાય):
    ```powershell
-   cd D:\ClaudeProjects\dataEngineeringProjects\sparkProject\kafka-connect
+   cd D:\ClaudeProjects\dataEngineeringProjects\sparkProject\mongoKafkaConnectorDemo\kafka-connect
    .\register-connectors.ps1
    ```
 3. Status ચકાસો: `.\register-connectors.ps1 status` (`RUNNING`, અને `FAILED` હોય તો `ERROR:` line વાંચો).

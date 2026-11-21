@@ -123,7 +123,8 @@ C:\kafka-data\
 
 C:\Program Files\MongoDB\Server\<version>\bin\mongod.cfg   ← MongoDB config (Step 2.3)
 
-D:\ClaudeProjects\dataEngineeringProjects\sparkProject\    ← project (તમારી machine પર path અલગ હોઈ શકે)
+D:\ClaudeProjects\dataEngineeringProjects\sparkProject\mongoKafkaConnectorDemo\    ← project (તમારી machine પર path અલગ હોઈ શકે)
+├── README.md                                 ← Quick start + change log
 ├── docs\
 │   └── MONGO_CDC_COMPLETE_SETUP_GU.md        ← આ document
 ├── kafka-connect\
@@ -494,7 +495,7 @@ cd C:\kafka
 ### 6.1 `kafka-connect\mongo-cdc-db-source.json`
 
 ```powershell
-New-Item -ItemType Directory -Force D:\ClaudeProjects\dataEngineeringProjects\sparkProject\kafka-connect
+New-Item -ItemType Directory -Force D:\ClaudeProjects\dataEngineeringProjects\sparkProject\mongoKafkaConnectorDemo\kafka-connect
 ```
 
 ```json
@@ -581,7 +582,7 @@ switch ($Action) {
 
 ### 6.3 Register કરો (Terminal #4)
 ```powershell
-cd D:\ClaudeProjects\dataEngineeringProjects\sparkProject\kafka-connect
+cd D:\ClaudeProjects\dataEngineeringProjects\sparkProject\mongoKafkaConnectorDemo\kafka-connect
 .\register-connectors.ps1
 ```
 ➡️
@@ -615,7 +616,7 @@ Subscriber એક **અલગ Maven project** છે, જેથી બીજા 
 
 ### 7.1 Folders બનાવો
 ```powershell
-cd D:\ClaudeProjects\dataEngineeringProjects\sparkProject
+cd D:\ClaudeProjects\dataEngineeringProjects\sparkProject\mongoKafkaConnectorDemo
 New-Item -ItemType Directory -Force mongo-cdc-subscriber\src\main\java\com\de\cdc
 New-Item -ItemType Directory -Force mongo-cdc-subscriber\src\main\resources
 ```
@@ -1282,7 +1283,7 @@ Subscriber દરેક bronze document માં **original fields પછી** 
 
 ### 8.1 Build
 ```powershell
-cd D:\ClaudeProjects\dataEngineeringProjects\sparkProject\mongo-cdc-subscriber
+cd D:\ClaudeProjects\dataEngineeringProjects\sparkProject\mongoKafkaConnectorDemo\mongo-cdc-subscriber
 mvn -q clean package
 Get-ChildItem target\*.jar
 ```
@@ -1292,7 +1293,7 @@ Get-ChildItem target\*.jar
 
 ### 8.2 Run (Terminal #3, ખુલ્લું રાખો)
 ```powershell
-cd D:\ClaudeProjects\dataEngineeringProjects\sparkProject\mongo-cdc-subscriber
+cd D:\ClaudeProjects\dataEngineeringProjects\sparkProject\mongoKafkaConnectorDemo\mongo-cdc-subscriber
 java -jar target\mongo-cdc-subscriber-1.0.0-jar-with-dependencies.jar
 ```
 Settings બદલ્યા પછી ફરી build કરવો ન હોય તો properties file નો path આપો:

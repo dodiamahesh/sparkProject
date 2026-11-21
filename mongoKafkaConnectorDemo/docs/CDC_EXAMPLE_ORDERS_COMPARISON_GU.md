@@ -405,7 +405,7 @@ Silver layer માં `amount` ને એક જ type (જેમ કે `DECIMA
 1. **Subscriber બંધ કરો:** subscriber વાળા terminal માં `Ctrl + C`.
 2. **નવો code build કરો:**
    ```powershell
-   cd D:\ClaudeProjects\dataEngineeringProjects\sparkProject\mongo-cdc-subscriber
+   cd D:\ClaudeProjects\dataEngineeringProjects\sparkProject\mongoKafkaConnectorDemo\mongo-cdc-subscriber
    mvn -q clean package
    ```
 3. **જૂના (metadata વગરના) bronze collections drop કરો** (`mongosh`). `mysql_*` ને અડવું નહીં:
@@ -420,7 +420,7 @@ Silver layer માં `amount` ને એક જ type (જેમ કે `DECIMA
    ```
 5. **Subscriber ફરી start કરો:**
    ```powershell
-   cd D:\ClaudeProjects\dataEngineeringProjects\sparkProject\mongo-cdc-subscriber
+   cd D:\ClaudeProjects\dataEngineeringProjects\sparkProject\mongoKafkaConnectorDemo\mongo-cdc-subscriber
    java -jar target\mongo-cdc-subscriber-1.0.0-jar-with-dependencies.jar
    ```
 6. **ચકાસો:** Topic ના ચારેય `orders` messages ફરી લાગુ થશે, અને છેલ્લે document soft-deleted સ્થિતિમાં હશે (વિભાગ 8 નું JSON):
