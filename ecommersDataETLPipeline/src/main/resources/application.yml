@@ -9,10 +9,8 @@ spring:
     # Default profile when nothing is passed. Override with:
     #   java -jar app.jar --spring.profiles.active=prod
     active: dev
-  flyway:
-    # Flyway creates/updates all PostgreSQL tables from src/main/resources/db/migration
-    enabled: true
-    locations: classpath:db/migration
+  # PostgreSQL tables are NOT created by the application.
+  # Run sample-data/<job>/03_postgres_tables.sql once per job before the first run (re-run safe).
   jackson:
     serialization:
       write-dates-as-timestamps: false
@@ -38,6 +36,8 @@ etl:
       # Invalid casts return NULL (instead of throwing). Our data-quality rules rely on this.
       "[spark.sql.ansi.enabled]": "false"
       "[spark.sql.legacy.timeParserPolicy]": "CORRECTED"
+      # Business timezone: MongoDB stores dates in UTC, but date keys (20261001) must be the IST day.
+      "[spark.sql.session.timeZone]": "Asia/Kolkata"
 
   mongo:
     uri: ${spring.data.mongodb.uri}

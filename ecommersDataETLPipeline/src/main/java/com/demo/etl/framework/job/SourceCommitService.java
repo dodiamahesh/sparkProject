@@ -25,6 +25,7 @@ import static org.apache.spark.sql.functions.col;
  *   2. remove fixed rows         -> rows that were rejected before and are valid now are deleted
  *   3. save rule warnings        -> etl_audit.etl_data_warning (loaded rows that broke a warning rule)
  *   4. update MongoDB flags      -> valid = 'Y', rejected = 'E', duplicate = 'D'
+ *                                   (skipped for derived batches such as order lines)
  *
  * Because the flags are updated last, a job that fails half-way leaves MongoDB untouched and the
  * next run simply processes the same documents again (the UPSERT makes that safe).
@@ -65,8 +66,11 @@ public class SourceCommitService {
                 context.metrics().addWarnings(saved);
             }
 
-            stepTracker.track(context, "Update MongoDB flags [" + collection + "]",
-                    () -> updateSourceFlags(context, batch));
+            // Derived rows (e.g. order lines) are not MongoDB documents: the parent document has its own flag
+            if (!batch.derived()) {
+                stepTracker.track(context, "Update MongoDB flags [" + collection + "]",
+                        () -> updateSourceFlags(context, batch));
+            }
         }
     }
 

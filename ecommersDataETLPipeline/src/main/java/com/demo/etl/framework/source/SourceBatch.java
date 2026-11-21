@@ -10,6 +10,10 @@ import org.apache.spark.sql.Row;
  * @param rejected bad rows in the standard rejected format (saved at the end of the job)
  * @param warnings valid rows that broke a warning rule: source_id, business_key, warning_message
  *                 (saved at the end of the job)
+ * @param derived  true = the rows do not come straight from a MongoDB collection but were built from
+ *                 another batch (e.g. the items[] array of an order, one row per line). Rejected rows and
+ *                 warnings are saved as usual, but NO MongoDB flag is written for them: the parent
+ *                 document already gets its own flag.
  */
 public record SourceBatch(
         SourceDefinition source,
@@ -20,7 +24,14 @@ public record SourceBatch(
         long validCount,
         long rejectedCount,
         long duplicateCount,
-        long warningCount) {
+        long warningCount,
+        boolean derived) {
+
+    /** A normal batch, read directly from a MongoDB collection. */
+    public SourceBatch(SourceDefinition source, Dataset<Row> valid, Dataset<Row> rejected, Dataset<Row> warnings,
+                       long sourceCount, long validCount, long rejectedCount, long duplicateCount, long warningCount) {
+        this(source, valid, rejected, warnings, sourceCount, validCount, rejectedCount, duplicateCount, warningCount, false);
+    }
 
     public String collection() {
         return source.collection();

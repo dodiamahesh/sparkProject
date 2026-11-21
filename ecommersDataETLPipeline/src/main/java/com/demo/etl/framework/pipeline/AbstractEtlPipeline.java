@@ -5,6 +5,7 @@ import com.demo.etl.framework.quality.DataSanitizer;
 import com.demo.etl.framework.source.SourceBatch;
 import com.demo.etl.framework.source.SourceDefinition;
 import com.demo.etl.framework.target.DateDimension;
+import com.demo.etl.framework.target.Scd2Writer;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 
@@ -34,6 +35,24 @@ public abstract class AbstractEtlPipeline implements EtlPipeline {
      */
     protected SourceBatch extractAndValidate(PipelineContext context, SourceDefinition source,DataSanitizer sanitizer, DataQualityRules rules) {
         return toolkit.sourceProcessor().process(context, source, sanitizer, rules);
+    }
+
+    /**
+     * VALIDATE rows built from another batch (e.g. one row per line of an order's items[] array).
+     * A bad line is rejected on its own; its parent document is still loaded. See
+     * {@link com.demo.etl.framework.source.SourceProcessor#processDerived}.
+     */
+    protected SourceBatch validateDerived(PipelineContext context, SourceDefinition definition,
+                                          Dataset<Row> rows, DataQualityRules rules) {
+        return toolkit.sourceProcessor().processDerived(context, definition, rows, rules);
+    }
+
+    /** Loads a slowly changing dimension TYPE 2 (history kept). See {@link Scd2Writer}. */
+    protected long loadScd2(PipelineContext context, Dataset<Row> rows, Scd2Writer.Scd2Spec spec) {
+        long count = toolkit.stepTracker().track(context, "Load " + spec.table() + " (SCD2)",
+                () -> toolkit.scd2Writer().load(context, rows, spec));
+        context.metrics().addLoaded(count);
+        return count;
     }
 
     /** UPSERT rows into a PostgreSQL table, matching on the business key column(s). */

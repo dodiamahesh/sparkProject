@@ -6,10 +6,13 @@ import org.apache.spark.sql.Row;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Function;
 import java.util.function.UnaryOperator;
 
+import static org.apache.spark.sql.functions.coalesce;
 import static org.apache.spark.sql.functions.col;
+import static org.apache.spark.sql.functions.get_json_object;
 import static org.apache.spark.sql.functions.initcap;
 import static org.apache.spark.sql.functions.length;
 import static org.apache.spark.sql.functions.lit;
@@ -84,6 +87,37 @@ public final class DataSanitizer {
                     .when(length(digits).equalTo(11).and(digits.startsWith("0")), substring(digits, 2, 10))
                     .otherwise(digits);
         });
+    }
+
+    /**
+     * Copies one value out of a NESTED field into its own column. Every field is read from MongoDB as
+     * String, so a sub-document arrives as JSON text: address = {"city": "Pune", "state": "MH"}.
+     * {@code fromJson("city", "address", "$.city")} -> city = "Pune". Missing path / null JSON -> NULL.
+     * Put it BEFORE {@link #trimAllAndBlankToNull()} so the new column is cleaned too.
+     */
+    public DataSanitizer fromJson(String targetColumn, String jsonColumn, String jsonPath) {
+        steps.add(rows -> rows.withColumn(targetColumn, get_json_object(col(jsonColumn), jsonPath)));
+        return this;
+    }
+
+    /**
+     * Replaces known values with their standard value; anything else is kept as it is (a validation
+     * rule can still reject it). {@code mapValues("state", Map.of("RJ", "Rajasthan", "GJ", "Gujarat"))}.
+     * Matching is exact, so apply upper/lower case first when the source mixes cases.
+     */
+    public DataSanitizer mapValues(String column, Map<String, String> mapping) {
+        return addStep(new String[]{column}, name -> {
+            Column result = col(name);
+            for (Map.Entry<String, String> entry : mapping.entrySet()) {
+                result = when(col(name).equalTo(entry.getKey()), lit(entry.getValue())).otherwise(result);
+            }
+            return result;
+        });
+    }
+
+    /** NULL -> {@code defaultValue}, e.g. a customer without tier is "Bronze". */
+    public DataSanitizer defaultIfNull(String column, String defaultValue) {
+        return addStep(new String[]{column}, name -> coalesce(col(name), lit(defaultValue)));
     }
 
     /** Any other cleaning you need: {@code custom("pincode", c -> regexp_replace(c, " ", ""))}. */

@@ -20,6 +20,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.core.task.TaskRejectedException;
+import org.springframework.jdbc.BadSqlGrammarException;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Service;
 
@@ -152,9 +153,20 @@ public class EtlJobService {
         }
     }
 
+    /**
+     * On startup: runs left in RUNNING by a crash are marked FAILED. This is also the first query on the
+     * audit tables, so a database without tables stops the application here with a clear message
+     * (the application does not create tables itself).
+     */
     @EventListener(ApplicationReadyEvent.class)
     public void closeInterruptedJobs() {
-        int closed = jobRunRepository.failInterruptedRuns();
+        int closed;
+        try {
+            closed = jobRunRepository.failInterruptedRuns();
+        } catch (BadSqlGrammarException e) {
+            throw new IllegalStateException("ETL tables not found in PostgreSQL (" + e.getMostSpecificCause().getMessage()
+                    + "). Run sample-data/<job>/03_postgres_tables.sql for every job once, then start the application again.", e);
+        }
         if (closed > 0) {
             log.warn("Marked {} job run(s) as FAILED because the application stopped while they were running", closed);
         }

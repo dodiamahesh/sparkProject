@@ -112,6 +112,45 @@ public class SourceProcessor {
         return batch;
     }
 
+    /**
+     * Validates rows that were BUILT from another batch instead of read from MongoDB, typically the
+     * lines of an array field: one order document with items[] -> one row per line.
+     *
+     * A bad line is rejected on its own (with its own source_id / business_key in the rejected table),
+     * while the rest of the document is still loaded. No MongoDB flag is written for these rows.
+     *
+     * @param definition describes the line rows: collection (e.g. "orders.items"), fields, business key
+     * @param rows       must contain {@link QualityColumns#SOURCE_ID} (unique per line, e.g. "&lt;_id&gt;#2")
+     *                   and {@link QualityColumns#RAW_RECORD} (JSON of the line, for the rejected table)
+     */
+    public SourceBatch processDerived(PipelineContext context, SourceDefinition definition,
+                                      Dataset<Row> rows, DataQualityRules rules) {
+        String name = definition.collection();
+        SourceBatch batch = stepTracker.track(context, "Validate " + name + " (lines)", () -> {
+            QualityResult result = qualityEngine.check(rows, rules, definition.businessKey(),
+                    definition.latestRecordColumn(), definition.pii());
+            Dataset<Row> valid = context.cache(result.valid());
+            Dataset<Row> rejected = context.cache(result.rejected());
+            Dataset<Row> warnings = context.cache(result.warnings());
+            long validCount = valid.count();
+            long rejectedCount = rejected.count();
+            long duplicateCount = rejected
+                    .filter(col(QualityColumns.REJECTED_ERROR_TYPE).equalTo(ErrorType.DUPLICATE.name()))
+                    .count();
+            return new SourceBatch(definition, valid, rejected, warnings, validCount + rejectedCount,
+                    validCount, rejectedCount, duplicateCount, warnings.count(), true);
+        }, SourceBatch::validCount);
+
+        // Lines are not extra SOURCE documents: only the rejected lines are added to the job counters
+        context.metrics().addRejected(batch.rejectedCount());
+        context.metrics().addDuplicates(batch.duplicateCount());
+        context.addSourceBatch(batch);
+
+        log.info("[job {}] {}: lines={}, valid={}, rejected={}, warnings={}", context.jobRunId(), name,
+                batch.sourceCount(), batch.validCount(), batch.rejectedCount(), batch.warningCount());
+        return batch;
+    }
+
     // ================================================================== checks
 
     /** @return number of drifted fields (saved as SCHEMA_DRIFT warnings) */

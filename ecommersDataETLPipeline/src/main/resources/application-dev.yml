@@ -7,14 +7,15 @@ spring:
     # SILVER layer: PostgreSQL (star schema + ETL audit tables)
     # Local PostgreSQL 18 service runs on port 5433 (docker-compose.yml uses 5432 -> set POSTGRES_URL).
     # Put your real password in the POSTGRES_PASSWORD environment variable (or replace the default below).
-    url: ${POSTGRES_URL:jdbc:postgresql://localhost:5433/silver}
+    # Create the database once:  CREATE DATABASE shop_dw;   then run sample-data/<job>/03_postgres_tables.sql
+    url: ${POSTGRES_URL:jdbc:postgresql://localhost:5433/shop_dw?reWriteBatchedInserts=true}
     username: ${POSTGRES_USER:postgres}
     password: ${POSTGRES_PASSWORD:root}
   data:
     mongodb:
       # BRONZE layer: MongoDB (raw source collections)
-      uri: mongodb://localhost:27017
-      database: bronze_db
+      uri: ${MONGO_URI:mongodb://localhost:27017}
+      database: ${MONGO_DATABASE:shopdb}
 
 etl:
   spark:

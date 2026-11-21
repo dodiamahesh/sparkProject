@@ -13,7 +13,7 @@ spring:
   data:
     mongodb:
       uri: ${MONGO_URI}
-      database: ${MONGO_DATABASE:bronze_db}
+      database: ${MONGO_DATABASE:shopdb}
 
 etl:
   spark:
