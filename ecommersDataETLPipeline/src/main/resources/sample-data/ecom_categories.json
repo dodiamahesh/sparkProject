@@ -1,0 +1,14 @@
+[
+  {"categoryId":"CAT-01","categoryName":"  mobile phones ","department":"electronics","updatedAt":"2026-01-01T09:00:00","processedFlag":"N"},
+  {"categoryId":"CAT-02","categoryName":"laptops","department":"ELECTRONICS","updatedAt":"2026-01-02T09:00:00","processedFlag":"N"},
+  {"categoryId":"CAT-03","categoryName":"audio","department":"ELECTRONICS","updatedAt":"2026-01-03T09:00:00","processedFlag":"N"},
+  {"categoryId":"CAT-04","categoryName":"  men's clothing ","department":"FASHION","updatedAt":"2026-01-04T09:00:00","processedFlag":"N"},
+  {"categoryId":"CAT-05","categoryName":"women's clothing","department":"fashion","updatedAt":"2026-01-05T09:00:00","processedFlag":"N"},
+  {"categoryId":"CAT-06","categoryName":"kitchen appliances","department":"HOME","updatedAt":"2026-01-06T09:00:00","processedFlag":"N"},
+  {"categoryId":"CAT-07","categoryName":"  furniture ","department":"HOME","updatedAt":"2026-01-07T09:00:00","processedFlag":"N"},
+  {"categoryId":"CAT-08","categoryName":"skin care","department":"BEAUTY","updatedAt":"2026-01-08T09:00:00","processedFlag":"N"},
+  {"categoryId":"CAT-09","categoryName":"fitness","department":"sports","updatedAt":"2026-01-09T09:00:00","processedFlag":"N"},
+  {"categoryId":"CAT-10","categoryName":"  fiction books ","department":"BOOKS","updatedAt":"2026-01-01T09:00:00","processedFlag":"N"},
+  {"categoryId":"CAT-11","categoryName":"Toys","department":"TOYS","updatedAt":"2026-01-05T09:00:00","processedFlag":"N"},
+  {"categoryId":"CAT-03","categoryName":"Audio & Headphones","department":"ELECTRONICS","updatedAt":"2026-02-01T09:00:00","processedFlag":"N"}
+]

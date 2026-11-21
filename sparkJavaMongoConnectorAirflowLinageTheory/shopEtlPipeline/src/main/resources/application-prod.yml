@@ -1,0 +1,59 @@
+# =====================================================================================
+#  PROD PROFILE
+#  Badha secrets / hosts ENVIRONMENT VARIABLES thi. Real password kyarey file ma commit na karo.
+#    java -jar shop-etl-pipeline-1.0.0-exec.jar --spring.profiles.active=prod
+# =====================================================================================
+spring:
+  datasource:
+    hikari:
+      maximum-pool-size: 10
+
+etl:
+  spark:
+    # local[*]  = ek moto server (driver + executors ek JVM ma). Saral ane mostly puratu.
+    # spark://host:7077 = standalone cluster. Tyare niche spark.jars uncomment karo.
+    master: ${SPARK_MASTER:local[*]}
+    config:
+      # AQE nana partitions pote bhega kare, etle aa "upper limit" che
+      "[spark.sql.shuffle.partitions]": "${SPARK_SHUFFLE_PARTITIONS:64}"
+      "[spark.driver.memory]": "${SPARK_DRIVER_MEMORY:4g}"
+      "[spark.executor.memory]": "${SPARK_EXECUTOR_MEMORY:8g}"
+      "[spark.executor.cores]": "${SPARK_EXECUTOR_CORES:4}"
+      # Cluster mode: aapna classes (plain jar, -exec nahi) ane Mongo connector executors ne moklo
+      # "[spark.jars]": "/opt/shop-etl/shop-etl-pipeline-1.0.0.jar"
+      # "[spark.jars.packages]": "org.mongodb.spark:mongo-spark-connector_2.12:10.7.0,org.postgresql:postgresql:42.7.7"
+      # Executor JVM pan IST ma (JDBC TIMESTAMP read mate)
+      "[spark.executor.extraJavaOptions]": "-Duser.timezone=Asia/Kolkata"
+
+  mongo:
+    # readPreference=secondaryPreferred: bhare ETL read secondary par, app writes vala primary par nahi
+    uri: ${MONGO_URI}
+    database: ${MONGO_DATABASE:shopdb}
+    partition-size-mb: 64
+
+  postgres:
+    url: ${POSTGRES_URL}
+    username: ${POSTGRES_USER}
+    password: ${POSTGRES_PASSWORD}
+    write-batch-size: 5000
+    write-parallelism: ${PG_WRITE_PARALLELISM:8}
+    read-partitions: 8
+
+  jobs:
+    "[J2_SALES]":
+      # Prod ma 5% thi vadhu reject = source ma kaik motu tutyu che → rokvo
+      reject-threshold-percent: 5
+      reject-gate-min-records: 1000
+      # Prod ma Airflow chalave, etle app no scheduler aa job mate bandh
+      schedule-enabled: false
+
+  # Prod: Airflow trigger kare che (API ke CLI). In-app scheduler bandh.
+  scheduler:
+    enabled: ${ETL_SCHEDULER_ENABLED:false}
+
+  executor:
+    pool-size: ${ETL_JOB_THREADS:2}
+
+logging:
+  level:
+    com.shop.etl: INFO

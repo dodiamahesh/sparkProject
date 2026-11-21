@@ -1,0 +1,24 @@
+### =====================================================================
+### shop-etl-pipeline API (VS Code "REST Client" / IntelliJ HTTP client)
+### =====================================================================
+
+@host = http://localhost:8080
+
+### 1) FULL LOAD (design doc mujab window end 2026-10-21 00:00 IST), sync: puru thay pachhi response
+POST {{host}}/api/jobs/J2_SALES/runs?windowEnd=2026-10-21T00:00&mode=sync
+
+### 2) INCREMENTAL 04:00 (02 Mongo script + 04 SQL PART B pachhi), async: turant runId
+POST {{host}}/api/jobs/J2_SALES/runs?windowEnd=2026-10-21T04:00
+X-Triggered-By: API
+
+### 3) Run status (runId upar na response mathi)
+GET {{host}}/api/jobs/runs/J2_20261021_0400
+
+### 4) Badha jobs + watermarks
+GET {{host}}/api/jobs
+
+### 5) Have sudhi no data (windowEnd vagar = current time)
+POST {{host}}/api/jobs/J2_SALES/runs
+
+### 6) Health (Airflow / load balancer)
+GET {{host}}/actuator/health

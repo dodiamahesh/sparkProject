@@ -1,0 +1,43 @@
+# =====================================================================================
+#  DEV PROFILE (local laptop)
+#  Default profile che. Values environment variable thi override thay (kaunsa nathi to default).
+#    PowerShell:  $env:POSTGRES_PASSWORD="root"
+# =====================================================================================
+etl:
+  spark:
+    master: local[*]
+    config:
+      # Laptop par nana data mate ochha shuffle partitions (default 200 = 200 nana tasks, bahu overhead)
+      "[spark.sql.shuffle.partitions]": "4"
+      # VPN / hostname problem na aave
+      "[spark.driver.host]": "localhost"
+      "[spark.driver.bindAddress]": "127.0.0.1"
+
+  mongo:
+    uri: ${MONGO_URI:mongodb://localhost:27017}
+    database: ${MONGO_DATABASE:shopdb}
+    partition-size-mb: 16
+
+  postgres:
+    # Tamaru local PostgreSQL 5433 port par che (sparkETLPipelineDemo mujab). Database pehla banavo:
+    #   CREATE DATABASE shop_dw;   pachhi 03_postgres_create_tables.sql chalavo
+    url: ${POSTGRES_URL:jdbc:postgresql://localhost:5433/shop_dw?reWriteBatchedInserts=true}
+    username: ${POSTGRES_USER:postgres}
+    password: ${POSTGRES_PASSWORD:root}
+    write-batch-size: 500
+    write-parallelism: 2
+    read-partitions: 2
+
+  jobs:
+    "[J2_SALES]":
+      # Sample data ma jaanibujhi ne 13–17% kharab data che, etle dev ma threshold 25%
+      reject-threshold-percent: 25
+      reject-gate-min-records: 0
+
+  # Dev ma scheduler bandh: test vakhte achanak run na thay. Try karvo hoy to true karo.
+  scheduler:
+    enabled: false
+
+logging:
+  level:
+    com.shop.etl: DEBUG

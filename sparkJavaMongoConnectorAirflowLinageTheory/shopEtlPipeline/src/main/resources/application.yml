@@ -1,0 +1,138 @@
+# =====================================================================================
+#  DEFAULT (COMMON) SETTINGS: badha profiles (dev, prod) mate same.
+#  Environment wise value application-dev.yml / application-prod.yml ma override thay.
+#
+#  Profile kevi rite pasand karvo:
+#     java -jar shop-etl-pipeline-1.0.0-exec.jar --spring.profiles.active=prod
+#  Kai na aapo to "dev" (spring.profiles.default).
+# =====================================================================================
+spring:
+  application:
+    name: shop-etl-pipeline
+  profiles:
+    default: dev
+  # Meta tables (audit, watermark, lock) mate Spring DataSource (HikariCP).
+  # Connection EK j jagyae (etl.postgres) thi aave: Spark JDBC ane Spring banne same vapare.
+  datasource:
+    url: ${etl.postgres.url}
+    username: ${etl.postgres.username}
+    password: ${etl.postgres.password}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      # 1 connection darek chalta job na LOCK mate + audit/watermark statements.
+      maximum-pool-size: 5
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+etl:
+  # Business timezone: date key (20261021), run id (J2_20261021_0400), window end
+  timezone: Asia/Kolkata
+
+  # --------------------------------------------------------------------------------
+  # SPARK
+  # --------------------------------------------------------------------------------
+  spark:
+    app-name: ${spring.application.name}
+    master: local[*]
+    # Koi pan spark.* setting. Key [square bracket] ma rakho, jethi "." key no bhag rahe.
+    config:
+      # ⚠️ BADLAVVU NAHI: Row ma Timestamp → java.time.Instant, Date → LocalDate (RowValues aa mane che)
+      "[spark.sql.datetime.java8API.enabled]": "true"
+      # Kharab cast (price "abc" → number) NULL aape, exception nahi. Aapda CORRUPT rules aa par chale che.
+      "[spark.sql.ansi.enabled]": "false"
+      "[spark.sql.legacy.timeParserPolicy]": "CORRECTED"
+      # ---- PERFORMANCE ----
+      # AQE: runtime par data size joi ne plan sudhare (nana partitions bhega kare, nani table broadcast kare,
+      #      skew (ek key par ghano data) vala partition todi nakhe)
+      "[spark.sql.adaptive.enabled]": "true"
+      "[spark.sql.adaptive.coalescePartitions.enabled]": "true"
+      "[spark.sql.adaptive.skewJoin.enabled]": "true"
+      # 50 MB sudhi ni table join ma BROADCAST (shuffle vagar). Dims (product, status, method) aama aave.
+      "[spark.sql.autoBroadcastJoinThreshold]": "52428800"
+      # Kryo: Java serialization karta fast ane nanu (shuffle / persist MEMORY_AND_DISK mate)
+      "[spark.serializer]": "org.apache.spark.serializer.KryoSerializer"
+      # Spark 3.5 UI javax servlet vapare, Spring Boot 3 jakarta. Sathe na chale, etle UI bandh.
+      "[spark.ui.enabled]": "false"
+
+  # --------------------------------------------------------------------------------
+  # MONGODB (raw layer)
+  # --------------------------------------------------------------------------------
+  mongo:
+    uri: mongodb://localhost:27017
+    database: shopdb
+    # SamplePartitioner: ek Spark partition ma ketlo data (MB). Moto = ochha tasks, nano = vadhu parallel.
+    partition-size-mb: 64
+    # Logical naam (code ma) → actual collection naam (DB ma). Prod ma naam alag hoy to fakt aa badlo.
+    collections:
+      customers: customers
+      orders: orders
+      payments: payments
+
+  # --------------------------------------------------------------------------------
+  # POSTGRESQL / EPAS (silver + gold + meta)
+  # --------------------------------------------------------------------------------
+  postgres:
+    # reWriteBatchedInserts=true: 1000 INSERT ne ek multi-row INSERT ma badle (5–10x fast). Rakhvu j.
+    url: jdbc:postgresql://localhost:5432/shop_dw?reWriteBatchedInserts=true
+    username: postgres
+    password: postgres
+    schema:
+      silver: curated
+      gold: gold
+      meta: meta
+    write-batch-size: 1000
+    # Ek sathe ketla DB connections thi lakhvu. DB ni max_connections ane CPU joi ne rakho.
+    write-parallelism: 4
+    read-fetch-size: 10000
+    read-partitions: 4
+
+  # --------------------------------------------------------------------------------
+  # JOBS (job wise settings). Map key [bracket] ma, kem ke "_" vali key Spring ma bracket vagar badlai jay.
+  # --------------------------------------------------------------------------------
+  jobs:
+    "[J2_SALES]":
+      enabled: true
+      # In-app scheduler (etl.scheduler.enabled pan true hovu joie). Cron: sec min hour day month weekday
+      schedule-enabled: true
+      schedule-cron: "0 0 0/4 * * *"
+      # Koi source ma aathi vadhu % reject → job FAIL, kai load nahi, watermark same
+      reject-threshold-percent: 25
+      reject-gate-min-records: 0
+      params:
+        # Payment FK check mate fact_sales na chhella ketla divas na orders vanchva
+        payment-order-lookback-days: "90"
+
+  # In-app scheduler master switch (dev/prod ma override)
+  scheduler:
+    enabled: false
+    pool-size: 2
+
+  # API async runs mate thread pool
+  executor:
+    pool-size: 2
+    queue-capacity: 10
+
+  # Airflow CLI mode: --etl.cli.job=J2_SALES --etl.cli.window-end=2026-10-21T04:00+05:30
+  cli:
+    job:
+    window-end:
+
+logging:
+  level:
+    root: INFO
+    com.shop.etl: INFO
+    org.apache.spark: WARN
+    org.sparkproject: WARN
+    org.apache.hadoop: ERROR
+    org.mongodb.driver: WARN
+    org.apache.parquet: WARN

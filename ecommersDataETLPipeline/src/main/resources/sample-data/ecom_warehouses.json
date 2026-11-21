@@ -1,0 +1,9 @@
+[
+  {"warehouseId":"WH-01","warehouseName":"Ahmedabad Fulfilment Centre","city":"ahmedabad","state":"gujarat","pincode":"382210","capacityUnits":50000,"status":"ACTIVE","updatedAt":"2026-01-02T10:00:00","processedFlag":"N"},
+  {"warehouseId":"WH-02","warehouseName":"Bhiwandi Mega Warehouse","city":"bhiwandi","state":"maharashtra","pincode":"421302","capacityUnits":120000,"status":"ACTIVE","updatedAt":"2026-01-02T10:00:00","processedFlag":"N"},
+  {"warehouseId":"WH-03","warehouseName":"Bengaluru Hub","city":"bengaluru","state":"karnataka","pincode":"562149","capacityUnits":"80,000","status":"ACTIVE","updatedAt":"2026-01-02T10:00:00","processedFlag":"N"},
+  {"warehouseId":"WH-04","warehouseName":"Gurugram Fulfilment Centre","city":"gurugram","state":"haryana","pincode":"122413","capacityUnits":95000,"status":"ACTIVE","updatedAt":"2026-01-02T10:00:00","processedFlag":"N"},
+  {"warehouseId":"WH-05","warehouseName":"Chennai Sortation Centre","city":"chennai","state":"tamil nadu","pincode":"600056","capacityUnits":40000,"status":"ACTIVE","updatedAt":"2026-01-02T10:00:00","processedFlag":"N"},
+  {"warehouseId":"WH-06","warehouseName":"Kolkata Hub","city":"kolkata","state":"west bengal","pincode":"711302","capacityUnits":35000,"status":"inactive","updatedAt":"2026-01-02T10:00:00","processedFlag":"N"},
+  {"warehouseId":"WH-07","warehouseName":"Jaipur Mini Hub","city":"Jaipur","state":"Rajasthan","pincode":"302013","capacityUnits":"lots","status":"ACTIVE","updatedAt":"2026-01-02T10:00:00","processedFlag":"N"}
+]
