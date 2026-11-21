@@ -12,8 +12,8 @@ import org.apache.spark.sql.Row;
  *                 (saved at the end of the job)
  * @param derived  true = the rows do not come straight from a MongoDB collection but were built from
  *                 another batch (e.g. the items[] array of an order, one row per line). Rejected rows and
- *                 warnings are saved as usual, but NO MongoDB flag is written for them: the parent
- *                 document already gets its own flag.
+ *                 warnings are saved as usual, but they have NO watermark of their own: the parent
+ *                 collection's watermark covers them.
  */
 public record SourceBatch(
         SourceDefinition source,

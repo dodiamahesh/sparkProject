@@ -3,14 +3,11 @@ package com.demo.etl.framework.job;
 import com.demo.etl.framework.audit.DataWarningRepository;
 import com.demo.etl.framework.audit.RejectedRecordRepository;
 import com.demo.etl.framework.audit.StepTracker;
+import com.demo.etl.framework.audit.WatermarkRepository;
 import com.demo.etl.framework.pipeline.PipelineContext;
-import com.demo.etl.framework.quality.ErrorType;
 import com.demo.etl.framework.quality.QualityColumns;
-import com.demo.etl.framework.source.MongoFlagUpdater;
 import com.demo.etl.framework.source.SourceBatch;
-import com.demo.etl.framework.source.SourceFlag;
 import com.demo.etl.framework.target.PostgresWriter;
-import org.apache.spark.sql.Column;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 import org.springframework.stereotype.Service;
@@ -24,11 +21,14 @@ import static org.apache.spark.sql.functions.col;
  *   1. save rejected rows        -> etl_audit.etl_rejected_record (insert new / update existing)
  *   2. remove fixed rows         -> rows that were rejected before and are valid now are deleted
  *   3. save rule warnings        -> etl_audit.etl_data_warning (loaded rows that broke a warning rule)
- *   4. update MongoDB flags      -> valid = 'Y', rejected = 'E', duplicate = 'D'
- *                                   (skipped for derived batches such as order lines)
+ *   4. advance the watermark     -> etl_audit.etl_watermark = start time of this run
+ *                                   (skipped for derived batches such as order lines: the parent collection has it)
  *
- * Because the flags are updated last, a job that fails half-way leaves MongoDB untouched and the
- * next run simply processes the same documents again (the UPSERT makes that safe).
+ * Because the watermark moves LAST, a job that fails half-way changes nothing: the next run reads the same
+ * window again (the UPSERTs make that safe). MongoDB is never written.
+ *
+ * A rejected document is read again when the source changes it (its timestamp becomes newer than the
+ * watermark). If it is valid then, it is loaded and step 2 removes it from the rejected table.
  */
 @Service
 public class SourceCommitService {
@@ -36,16 +36,16 @@ public class SourceCommitService {
     private final PostgresWriter postgresWriter;
     private final RejectedRecordRepository rejectedRecordRepository;
     private final DataWarningRepository warningRepository;
-    private final MongoFlagUpdater flagUpdater;
+    private final WatermarkRepository watermarkRepository;
     private final StepTracker stepTracker;
 
     public SourceCommitService(PostgresWriter postgresWriter, RejectedRecordRepository rejectedRecordRepository,
-                               DataWarningRepository warningRepository, MongoFlagUpdater flagUpdater,
+                               DataWarningRepository warningRepository, WatermarkRepository watermarkRepository,
                                StepTracker stepTracker) {
         this.postgresWriter = postgresWriter;
         this.rejectedRecordRepository = rejectedRecordRepository;
         this.warningRepository = warningRepository;
-        this.flagUpdater = flagUpdater;
+        this.watermarkRepository = watermarkRepository;
         this.stepTracker = stepTracker;
     }
 
@@ -65,11 +65,16 @@ public class SourceCommitService {
                         () -> saveRuleWarnings(context, batch));
                 context.metrics().addWarnings(saved);
             }
+        }
 
-            // Derived rows (e.g. order lines) are not MongoDB documents: the parent document has its own flag
+        // Only after everything above succeeded: the next run starts where this one ended
+        for (SourceBatch batch : context.sourceBatches()) {
             if (!batch.derived()) {
-                stepTracker.track(context, "Update MongoDB flags [" + collection + "]",
-                        () -> updateSourceFlags(context, batch));
+                stepTracker.track(context, "Advance watermark [" + batch.collection() + "] to " + context.windowEnd(), () -> {
+                    watermarkRepository.advance(context.pipelineName(), batch.collection(),
+                            batch.source().latestRecordColumn(), context.windowEnd(), context.jobRunId());
+                    return batch.sourceCount();
+                });
             }
         }
     }
@@ -108,22 +113,5 @@ public class SourceCommitService {
         } finally {
             postgresWriter.dropStagingTable(staging);
         }
-    }
-
-    private long updateSourceFlags(PipelineContext context, SourceBatch batch) {
-        String collection = batch.collection();
-        Column errorType = col(QualityColumns.REJECTED_ERROR_TYPE);
-
-        Dataset<Row> loadedIds = batch.valid().select(QualityColumns.SOURCE_ID);
-        Dataset<Row> rejectedIds = batch.rejected()
-                .filter(errorType.notEqual(ErrorType.DUPLICATE.name()))
-                .select(QualityColumns.REJECTED_SOURCE_ID);
-        Dataset<Row> duplicateIds = batch.rejected()
-                .filter(errorType.equalTo(ErrorType.DUPLICATE.name()))
-                .select(QualityColumns.REJECTED_SOURCE_ID);
-
-        return flagUpdater.updateFlag(collection, loadedIds, SourceFlag.LOADED, context.jobRunId())
-                + flagUpdater.updateFlag(collection, rejectedIds, SourceFlag.REJECTED, context.jobRunId())
-                + flagUpdater.updateFlag(collection, duplicateIds, SourceFlag.DUPLICATE, context.jobRunId());
     }
 }

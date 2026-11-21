@@ -1,8 +1,8 @@
 // =============================================================================
-//  ecommerce-order-pipeline  |  01_mongo_full_load.js  |  MongoDB sample data for the FULL load
+//  ecommerce-order-pipeline  |  01_mongo_full_load.js  |  MongoDB sample data for the FIRST run
 //
 //  Run:   mongosh "mongodb://localhost:27017" sample-data/ecommerce-order-pipeline/01_mongo_full_load.js
-//  Then:  POST http://localhost:8080/api/etl/pipelines/ecommerce-order-pipeline/run?loadType=FULL
+//  Then:  POST http://localhost:8080/api/etl/pipelines/ecommerce-order-pipeline/run   (first run: no watermark yet, reads everything)
 //
 //  Database: shopdb (default MONGO_DATABASE). Collections ecom_* do not clash with the sales job.
 //
@@ -11,7 +11,7 @@
 //             ecom_orders     -> fact_order       (customer must exist)
 //             ecom_order_items-> fact_order_item  (order + product must exist)
 //
-//  EXPECTED FULL LOAD:
+//  EXPECTED FIRST RUN:
 //      ecom_categories   read 6  | valid 5 | rejected 1 (VALIDATION CAT-06 department TOYS)
 //      ecom_products     read 11 | valid 8 | rejected 3 (DUPLICATE PRD-0002, ORPHAN PRD-0009, VALIDATION PRD-0010)
 //      ecom_customers    read 8  | valid 6 | rejected 2 (VALIDATION ECU-0007 email, ECU-0008 segment)
@@ -22,11 +22,15 @@
 const DB_NAME = "shopdb";
 db = db.getSiblingDB(DB_NAME);
 
+// updatedAt = the INCREMENTAL WATERMARK field: it must be a BSON Date (IST time written here, MongoDB stores UTC)
+const ist = (s) => new Date(s + "+05:30");   // "2026-11-01T09:16:00" (IST) -> Date
+
+
 const COLLECTIONS = ["ecom_categories", "ecom_products", "ecom_customers", "ecom_orders", "ecom_order_items"];
 COLLECTIONS.forEach(c => db.getCollection(c).drop());
 
 // ---------------------------------------------------------------- ecom_categories (6)
-const cat = (id, name, dept) => ({ categoryId: id, categoryName: name, department: dept, updatedAt: "2026-10-01T09:00:00" });
+const cat = (id, name, dept) => ({ categoryId: id, categoryName: name, department: dept, updatedAt: ist("2026-10-01T09:00:00") });
 db.ecom_categories.insertMany([
   cat("CAT-01", " mobile phones ", "electronics"),   // sanitize: trim, Proper Case, UPPER
   cat("CAT-02", "Laptops",         "ELECTRONICS"),
@@ -39,7 +43,7 @@ db.ecom_categories.insertMany([
 // ---------------------------------------------------------------- ecom_products (11)
 function prd(id, sku, name, catId, brand, list, cost, status, launch, updatedAt) {
   return { productId: id, sku, productName: name, categoryId: catId, brand, listPrice: list, costPrice: cost,
-           status, launchDate: launch, updatedAt: updatedAt || "2026-10-02T09:00:00" };
+           status, launchDate: launch, updatedAt: ist(updatedAt || "2026-10-02T09:00:00") };
 }
 db.ecom_products.insertMany([
   prd("PRD-0001", "SAM-0001", "Galaxy S24",          "CAT-01", "Samsung", 74999,       44853.88, "ACTIVE",       "2024-01-24"),
@@ -58,7 +62,7 @@ db.ecom_products.insertMany([
 // ---------------------------------------------------------------- ecom_customers (8)
 function ecu(id, first, last, email, phone, city, state, pincode, segment, signup) {
   return { customerId: id, firstName: first, lastName: last, email, phone, city, state, pincode, segment,
-           signupDate: signup, updatedAt: "2026-10-04T09:00:00" };
+           signupDate: signup, updatedAt: ist("2026-10-04T09:00:00") };
 }
 db.ecom_customers.insertMany([
   ecu("ECU-0001", "Meera",  "Iyer",   "meera.iyer@yahoo.in",      "7889079928",     "Surat",     "Gujarat",     "395007", "REGULAR", "2023-06-18"),
@@ -74,7 +78,7 @@ db.ecom_customers.insertMany([
 // ---------------------------------------------------------------- ecom_orders (11)
 function ord(id, cust, date, status, mode, channel, coupon, fee, city, state, updatedAt) {
   return { orderId: id, customerId: cust, orderDate: date, orderStatus: status, paymentMode: mode, channel,
-           couponCode: coupon, shippingFee: fee, shippingCity: city, shippingState: state, updatedAt: updatedAt || date };
+           couponCode: coupon, shippingFee: fee, shippingCity: city, shippingState: state, updatedAt: ist(updatedAt || date) };
 }
 db.ecom_orders.insertMany([
   ord("ORD-00001", "ECU-0001", "2026-11-01T10:00:00", "DELIVERED", "UPI",        "WEB",     "DIWALI10", 0,    "Surat",     "Gujarat"),
@@ -92,7 +96,7 @@ db.ecom_orders.insertMany([
 
 // ---------------------------------------------------------------- ecom_order_items (15)
 const oit = (id, order, product, qty, price, discount, updatedAt) => ({ orderItemId: id, orderId: order, productId: product,
-  quantity: qty, unitPrice: price, discountAmount: discount, updatedAt: updatedAt || "2026-11-10T12:00:00" });
+  quantity: qty, unitPrice: price, discountAmount: discount, updatedAt: ist(updatedAt || "2026-11-10T12:00:00") });
 db.ecom_order_items.insertMany([
   oit("OIT-000001", "ORD-00001", "PRD-0001", 1, 74999,      7499.90),
   oit("OIT-000002", "ORD-00001", "PRD-0006", 2, 299,        0),
@@ -111,7 +115,7 @@ db.ecom_order_items.insertMany([
   oit("OIT-000015", "ORD-00005", "PRD-0006", "2.5", 299,    0)          // CORRUPT quantity
 ]);
 
-COLLECTIONS.forEach(c => db.getCollection(c).createIndex({ processedFlag: 1 }));
+COLLECTIONS.forEach(c => db.getCollection(c).createIndex({ updatedAt: 1 }));   // watermark field
 db.ecom_categories.createIndex({ categoryId: 1 });  db.ecom_products.createIndex({ productId: 1 });
 db.ecom_customers.createIndex({ customerId: 1 });   db.ecom_orders.createIndex({ orderId: 1 });
 db.ecom_order_items.createIndex({ orderItemId: 1 }); db.ecom_order_items.createIndex({ orderId: 1 });
@@ -119,4 +123,4 @@ db.ecom_order_items.createIndex({ orderItemId: 1 }); db.ecom_order_items.createI
 print("");
 COLLECTIONS.forEach(c => print(`✔ ${DB_NAME}.${c.padEnd(17)} ${db.getCollection(c).countDocuments()} documents`));
 print("  expected: categories 6, products 11, customers 8, orders 11, order_items 15");
-print("  Next: POST /api/etl/pipelines/ecommerce-order-pipeline/run?loadType=FULL");
+print("  Next: POST /api/etl/pipelines/ecommerce-order-pipeline/run");

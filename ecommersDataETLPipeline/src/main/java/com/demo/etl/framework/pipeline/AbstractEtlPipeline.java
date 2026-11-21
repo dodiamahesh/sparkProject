@@ -19,7 +19,7 @@ import org.apache.spark.sql.Row;
  * </pre>
  *
  * Every building block is recorded as a step in etl_audit.etl_job_step.
- * Saving rejected records and updating MongoDB flags happens automatically after run() succeeds.
+ * Saving rejected records and advancing the watermarks happens automatically after run() succeeds.
  */
 public abstract class AbstractEtlPipeline implements EtlPipeline {
 

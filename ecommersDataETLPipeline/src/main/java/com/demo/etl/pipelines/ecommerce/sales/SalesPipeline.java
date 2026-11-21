@@ -37,9 +37,9 @@ import static com.demo.etl.pipelines.ecommerce.sales.SalesStarSchemaMapper.withO
  *
  * Order matters: products + customers first (orders need their keys), then orders, then payments
  * (a payment needs its order loaded). Rejects (document AND line level) end up in
- * etl_audit.etl_rejected_record; MongoDB flags are written after everything was loaded.
+ * etl_audit.etl_rejected_record; the watermarks move only after everything was loaded.
  *
- * Trigger: POST /api/etl/pipelines/sales-pipeline/run?loadType=FULL
+ * Trigger: POST /api/etl/pipelines/sales-pipeline/run   (incremental: updated_at after the last watermark)
  */
 @Component
 public class SalesPipeline extends AbstractEtlPipeline {
@@ -82,12 +82,6 @@ public class SalesPipeline extends AbstractEtlPipeline {
     public List<String> targetTables() {
         return List.of(DIM_PRODUCT, DIM_CUSTOMER, DIM_ORDER_STATUS, DIM_PAYMENT_METHOD, "silver.dim_date",
                 FACT_SALES, FACT_PAYMENT);
-    }
-
-    /** Facts are rebuilt on a FULL load; dimensions are kept (SCD2 history must never be lost). */
-    @Override
-    public List<String> fullLoadTruncateTables() {
-        return List.of(FACT_PAYMENT, FACT_SALES);
     }
 
     @Override

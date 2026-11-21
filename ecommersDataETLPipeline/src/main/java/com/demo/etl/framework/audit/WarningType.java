@@ -9,6 +9,6 @@ public enum WarningType {
     /** A MongoDB collection has a field the source definition does not know, or misses an expected field. */
     SCHEMA_DRIFT,
 
-    /** An INCREMENTAL run read fewer / more rows than expected. */
+    /** A run read fewer / more rows than expected (not checked on the first run). */
     VOLUME
 }

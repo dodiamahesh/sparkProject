@@ -3,7 +3,7 @@
 --  Job-2 (J2_SALES): products + customers + orders + payments -> star schema (curated)
 --
 --  Contents:
---    PART 1  META tables (etl_audit.* + etl_staging + silver.dim_date), shared by every job
+--    PART 1  META tables (etl_audit.* incl. etl_watermark + etl_staging + silver.dim_date), shared by every job
 --    PART 2  the target tables of this job
 --
 --  Run (database must exist:  CREATE DATABASE shop_dw;):
@@ -22,6 +22,7 @@
 --   etl_audit.etl_job_step         one row per step of a run (where did it fail, how long)
 --   etl_audit.etl_rejected_record  bad records (CORRUPT / VALIDATION / ORPHAN / DUPLICATE), one per document
 --   etl_audit.etl_data_warning     loaded records that broke a warning rule + schema drift + volume warnings
+--   etl_audit.etl_watermark        incremental watermark per pipeline + collection (timestamp based)
 --   etl_staging                    temporary tables used by the UPSERT (created and dropped by the job)
 --   silver.dim_date                shared (conformed) date dimension, filled by the jobs
 -- =====================================================================
@@ -32,7 +33,7 @@ CREATE SCHEMA IF NOT EXISTS silver;
 CREATE TABLE IF NOT EXISTS etl_audit.etl_job_run (
     job_run_id       BIGSERIAL    PRIMARY KEY,
     pipeline_name    VARCHAR(100) NOT NULL,
-    load_type        VARCHAR(30)  NOT NULL,              -- FULL, INCREMENTAL, RETRY_REJECTED
+    window_end       TIMESTAMPTZ  NOT NULL,              -- this run read data with updatedAt <= window_end
     status           VARCHAR(30)  NOT NULL,              -- RUNNING, SUCCESS, SUCCESS_WITH_REJECTS, FAILED
     triggered_by     VARCHAR(100),
     start_time       TIMESTAMP    NOT NULL DEFAULT now(),
@@ -96,6 +97,17 @@ CREATE TABLE IF NOT EXISTS etl_audit.etl_data_warning (
 );
 CREATE INDEX IF NOT EXISTS idx_data_warning_run    ON etl_audit.etl_data_warning (job_run_id);
 CREATE INDEX IF NOT EXISTS idx_data_warning_source ON etl_audit.etl_data_warning (pipeline_name, source_collection, warning_type);
+
+-- incremental watermark: up to which timestamp did pipeline X read collection Y (moved only after a successful run)
+CREATE TABLE IF NOT EXISTS etl_audit.etl_watermark (
+    pipeline_name      VARCHAR(100) NOT NULL,
+    source_collection  VARCHAR(100) NOT NULL,
+    watermark_field    VARCHAR(100) NOT NULL,            -- e.g. updatedAt (BSON Date in MongoDB)
+    last_watermark     TIMESTAMPTZ  NOT NULL,            -- next run reads watermark_field > last_watermark
+    last_job_run_id    BIGINT       NOT NULL,
+    updated_at         TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    PRIMARY KEY (pipeline_name, source_collection)       -- no row = first run: read everything
+);
 
 CREATE TABLE IF NOT EXISTS silver.dim_date (
     date_key      INT         PRIMARY KEY,               -- yyyyMMdd, e.g. 20261015

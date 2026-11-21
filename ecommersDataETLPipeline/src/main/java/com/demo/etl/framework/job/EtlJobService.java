@@ -4,15 +4,12 @@ import com.demo.etl.config.AsyncConfig;
 import com.demo.etl.framework.audit.JobRunRepository;
 import com.demo.etl.framework.audit.JobStatus;
 import com.demo.etl.framework.audit.JobStepRepository;
-import com.demo.etl.framework.audit.StepTracker;
 import com.demo.etl.framework.common.ErrorMessages;
 import com.demo.etl.framework.exception.EtlException;
 import com.demo.etl.framework.exception.JobRunNotFoundException;
 import com.demo.etl.framework.pipeline.EtlPipeline;
-import com.demo.etl.framework.pipeline.LoadType;
 import com.demo.etl.framework.pipeline.PipelineContext;
 import com.demo.etl.framework.pipeline.PipelineRegistry;
-import com.demo.etl.framework.target.PostgresWriter;
 import org.apache.spark.sql.SparkSession;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,16 +21,20 @@ import org.springframework.jdbc.BadSqlGrammarException;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Service;
 
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+
 /**
  * Runs a pipeline from start to end and records everything in the audit tables.
+ * There is ONE way to run: INCREMENTAL by timestamp (watermark).
  *
  *   1. lock the pipeline (no double runs)
- *   2. create job run row (status RUNNING)
- *   3. FULL load only: truncate the pipeline's fact tables
- *   4. pipeline.run()          -> extract, validate, transform, load
- *   5. commit                  -> save rejects, remove fixed rejects, update MongoDB flags
- *   6. finish job run row      -> SUCCESS / SUCCESS_WITH_REJECTS / FAILED + counts + error
- *   7. always: free Spark cache, release lock
+ *   2. window end = now; create job run row (status RUNNING, window_end)
+ *   3. pipeline.run()          -> per source: read updatedAt > last watermark AND <= window end,
+ *                                 validate, transform, load
+ *   4. commit                  -> save rejects, remove fixed rejects, save warnings, advance watermarks
+ *   5. finish job run row      -> SUCCESS / SUCCESS_WITH_REJECTS / FAILED + counts + error
+ *   6. always: free Spark cache, release lock
  */
 @Service
 public class EtlJobService {
@@ -44,23 +45,19 @@ public class EtlJobService {
     private final JobRunRepository jobRunRepository;
     private final JobStepRepository jobStepRepository;
     private final SourceCommitService commitService;
-    private final PostgresWriter postgresWriter;
-    private final StepTracker stepTracker;
     private final JobLockManager lockManager;
     private final ThreadPoolTaskExecutor executor;
     private final SparkSession spark;
 
     public EtlJobService(PipelineRegistry pipelineRegistry, JobRunRepository jobRunRepository,
                          JobStepRepository jobStepRepository, SourceCommitService commitService,
-                         PostgresWriter postgresWriter, StepTracker stepTracker, JobLockManager lockManager,
+                         JobLockManager lockManager,
                          @Qualifier(AsyncConfig.ETL_JOB_EXECUTOR) ThreadPoolTaskExecutor executor,
                          SparkSession spark) {
         this.pipelineRegistry = pipelineRegistry;
         this.jobRunRepository = jobRunRepository;
         this.jobStepRepository = jobStepRepository;
         this.commitService = commitService;
-        this.postgresWriter = postgresWriter;
-        this.stepTracker = stepTracker;
         this.lockManager = lockManager;
         this.executor = executor;
         this.spark = spark;
@@ -70,13 +67,17 @@ public class EtlJobService {
      * @param async true  = return immediately (status RUNNING), poll GET /api/etl/jobs/{id}
      *              false = wait until the job ends and return the final status
      */
-    public JobRunDetails runPipeline(String pipelineName, LoadType loadType, boolean async, String triggeredBy) {
+    public JobRunDetails runPipeline(String pipelineName, boolean async, String triggeredBy) {
         EtlPipeline pipeline = pipelineRegistry.getPipeline(pipelineName);
         lockManager.acquire(pipeline.name());
 
+        // Upper bound of the window for EVERY source of this run. Data changed after this moment is read next run.
+        // MILLIS (not seconds): MongoDB dates have millisecond precision, so a document changed in the same second
+        // as the run start is still inside the window and can never fall between two runs.
+        Instant windowEnd = Instant.now().truncatedTo(ChronoUnit.MILLIS);
         long jobRunId;
         try {
-            jobRunId = jobRunRepository.createRun(pipeline.name(), loadType, triggeredBy);
+            jobRunId = jobRunRepository.createRun(pipeline.name(), windowEnd, triggeredBy);
         } catch (RuntimeException e) {
             lockManager.release(pipeline.name());
             throw e;
@@ -84,15 +85,15 @@ public class EtlJobService {
 
         if (async) {
             try {
-                executor.execute(() -> execute(pipeline, jobRunId, loadType));
+                executor.execute(() -> execute(pipeline, jobRunId, windowEnd));
             } catch (TaskRejectedException e) {
                 lockManager.release(pipeline.name());
-                PipelineContext context = new PipelineContext(jobRunId, pipeline.name(), loadType);
+                PipelineContext context = new PipelineContext(jobRunId, pipeline.name(), windowEnd);
                 jobRunRepository.finishRun(jobRunId, JobStatus.FAILED, context.metrics(), "Job queue is full", null);
                 throw new EtlException("Too many jobs are waiting. Try again later.", e);
             }
         } else {
-            execute(pipeline, jobRunId, loadType);
+            execute(pipeline, jobRunId, windowEnd);
         }
         return getJobRun(jobRunId);
     }
@@ -103,23 +104,14 @@ public class EtlJobService {
                 .orElseThrow(() -> new JobRunNotFoundException(jobRunId));
     }
 
-    private void execute(EtlPipeline pipeline, long jobRunId, LoadType loadType) {
-        PipelineContext context = new PipelineContext(jobRunId, pipeline.name(), loadType);
+    private void execute(EtlPipeline pipeline, long jobRunId, Instant windowEnd) {
+        PipelineContext context = new PipelineContext(jobRunId, pipeline.name(), windowEnd);
         long startMillis = System.currentTimeMillis();
-        log.info("========== Job {} STARTED: pipeline={}, loadType={} ==========", jobRunId, pipeline.name(), loadType);
+        log.info("========== Job {} STARTED: pipeline={}, windowEnd={} ==========", jobRunId, pipeline.name(), windowEnd);
 
         // Groups all Spark jobs of this run under one name (visible in Spark logs / UI)
-        spark.sparkContext().setJobGroup("etl-job-" + jobRunId, pipeline.name() + " " + loadType, true);
+        spark.sparkContext().setJobGroup("etl-job-" + jobRunId, pipeline.name() + " until " + windowEnd, true);
         try {
-            if (loadType == LoadType.FULL) {
-                for (String table : pipeline.fullLoadTruncateTables()) {
-                    stepTracker.track(context, "Truncate " + table + " (FULL load)", () -> {
-                        postgresWriter.truncate(table);
-                        return 0L;
-                    });
-                }
-            }
-
             pipeline.run(context);
             commitService.commit(context);
 

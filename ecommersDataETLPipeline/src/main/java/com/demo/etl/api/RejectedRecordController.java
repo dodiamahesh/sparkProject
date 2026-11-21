@@ -16,7 +16,8 @@ import java.util.List;
  *   GET /api/etl/rejected-records?pipelineName=payment-pipeline&collection=payments&errorType=CORRUPT
  *   GET /api/etl/rejected-records/summary
  *
- * How to fix: correct the document in MongoDB, then run the pipeline with loadType=RETRY_REJECTED.
+ * How to fix: correct the document in MongoDB (the source sets a newer updatedAt) and run the pipeline:
+ * the corrected document is inside the next incremental window.
  * Records that are valid now are loaded and disappear from this list.
  */
 @RestController

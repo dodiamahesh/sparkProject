@@ -4,8 +4,8 @@ import com.demo.etl.config.EtlProperties;
 import com.demo.etl.framework.audit.DataWarningRepository;
 import com.demo.etl.framework.audit.StepTracker;
 import com.demo.etl.framework.audit.WarningType;
+import com.demo.etl.framework.audit.WatermarkRepository;
 import com.demo.etl.framework.exception.DataQualityGateException;
-import com.demo.etl.framework.pipeline.LoadType;
 import com.demo.etl.framework.pipeline.PipelineContext;
 import com.demo.etl.framework.quality.DataQualityEngine;
 import com.demo.etl.framework.quality.DataQualityRules;
@@ -31,12 +31,15 @@ import static org.apache.spark.sql.functions.to_json;
 /**
  * The standard "first half" of every pipeline, for one source collection:
  *
- *   SCHEMA CHECK -> EXTRACT (MongoDB) -> VOLUME CHECK -> SANITIZE -> VALIDATE -> DE-DUPLICATE
- *     -> MASK PII -> split into valid / rejected / warnings -> REJECT GATE
+ *   WINDOW (watermark) -> SCHEMA CHECK -> EXTRACT (MongoDB) -> VOLUME CHECK -> SANITIZE -> VALIDATE
+ *     -> DE-DUPLICATE -> MASK PII -> split into valid / rejected / warnings -> REJECT GATE
  *
- * Rejected rows and rule warnings are NOT written here. They are written at the end of the job by
- * {@code SourceCommitService}, together with the MongoDB flag update, so a failed job changes nothing.
- * Schema-drift and volume warnings describe the source itself, so they are saved right away.
+ * Every run is INCREMENTAL: only documents whose timestamp field is inside the window are read
+ * (see {@link LoadWindow}). MongoDB is only READ, never updated.
+ *
+ * Rejected rows, rule warnings and the new watermark are NOT written here. They are written at the end
+ * of the job by {@code SourceCommitService}, so a failed job changes nothing and the next run reads the
+ * same window again. Schema-drift and volume warnings describe the source itself, so they are saved right away.
  */
 @Component
 public class SourceProcessor {
@@ -48,32 +51,39 @@ public class SourceProcessor {
     private final DataQualityEngine qualityEngine;
     private final StepTracker stepTracker;
     private final DataWarningRepository warningRepository;
+    private final WatermarkRepository watermarkRepository;
     private final int rejectGateMinRecords;
 
     public SourceProcessor(MongoSourceReader reader, SchemaDriftDetector schemaDriftDetector,
                            DataQualityEngine qualityEngine, StepTracker stepTracker,
-                           DataWarningRepository warningRepository, EtlProperties properties) {
+                           DataWarningRepository warningRepository, WatermarkRepository watermarkRepository,
+                           EtlProperties properties) {
         this.reader = reader;
         this.schemaDriftDetector = schemaDriftDetector;
         this.qualityEngine = qualityEngine;
         this.stepTracker = stepTracker;
         this.warningRepository = warningRepository;
+        this.watermarkRepository = watermarkRepository;
         this.rejectGateMinRecords = properties.quality().rejectGateMinRecords();
     }
 
     public SourceBatch process(PipelineContext context, SourceDefinition source, DataSanitizer sanitizer, DataQualityRules rules) {
         String collection = source.collection();
 
-        // 0. SCHEMA DRIFT: new / missing fields in MongoDB (warning, or FAIL with failOnSchemaDrift())
-        stepTracker.track(context, "Schema check " + collection, () -> checkSchema(context, source));
+        // 0. WINDOW: last watermark of this pipeline + collection -> start of this run
+        LoadWindow window = watermarkRepository.window(context.pipelineName(), collection, context.windowEnd());
+
+        // 0b. SCHEMA DRIFT: new / missing fields in MongoDB (warning, or FAIL with failOnSchemaDrift())
+        stepTracker.track(context, "Schema check " + collection, () -> checkSchema(context, source, window));
 
         // 1. EXTRACT: read + keep a JSON copy of the original document (PII masked) for the rejected table
-        Dataset<Row> raw = context.cache(reader.read(source, context.loadType())
+        Dataset<Row> raw = context.cache(reader.read(source, window)
                 .withColumn(QualityColumns.RAW_RECORD, to_json(struct(rawRecordColumns(source)))));
-        long sourceCount = stepTracker.track(context, "Extract " + collection + " (" + context.loadType() + ")", raw::count);
+        long sourceCount = stepTracker.track(context,
+                "Extract " + collection + " (" + window.describe(source.latestRecordColumn()) + ")", raw::count);
 
-        // 1b. VOLUME: unusually few / many rows in an INCREMENTAL run -> warning
-        checkVolume(context, source, sourceCount);
+        // 1b. VOLUME: unusually few / many rows in this run -> warning
+        checkVolume(context, source, window, sourceCount);
 
         // 2-4. SANITIZE + VALIDATE + DE-DUPLICATE (+ warning rules), then mask PII before anything is stored
         SourceBatch batch = stepTracker.track(context, "Validate " + collection, () -> {
@@ -106,7 +116,7 @@ public class SourceProcessor {
                 batch.rejectedCount(), batch.duplicateCount(), batch.warningCount());
 
         // 5. REJECT GATE: too many bad rows -> stop the job BEFORE the pipeline loads this collection
-        if (source.checks().maxRejectPercent() != null && context.loadType() != LoadType.RETRY_REJECTED) {
+        if (source.checks().maxRejectPercent() != null) {
             stepTracker.track(context, "Reject gate " + collection, () -> checkRejectGate(batch));
         }
         return batch;
@@ -117,7 +127,7 @@ public class SourceProcessor {
      * lines of an array field: one order document with items[] -> one row per line.
      *
      * A bad line is rejected on its own (with its own source_id / business_key in the rejected table),
-     * while the rest of the document is still loaded. No MongoDB flag is written for these rows.
+     * while the rest of the document is still loaded. These rows have no watermark of their own.
      *
      * @param definition describes the line rows: collection (e.g. "orders.items"), fields, business key
      * @param rows       must contain {@link QualityColumns#SOURCE_ID} (unique per line, e.g. "&lt;_id&gt;#2")
@@ -154,8 +164,8 @@ public class SourceProcessor {
     // ================================================================== checks
 
     /** @return number of drifted fields (saved as SCHEMA_DRIFT warnings) */
-    private long checkSchema(PipelineContext context, SourceDefinition source) {
-        SchemaDriftDetector.SchemaDrift drift = schemaDriftDetector.detect(source, context.loadType());
+    private long checkSchema(PipelineContext context, SourceDefinition source, LoadWindow window) {
+        SchemaDriftDetector.SchemaDrift drift = schemaDriftDetector.detect(source, window);
         if (!drift.hasDrift()) {
             return 0;
         }
@@ -173,17 +183,17 @@ public class SourceProcessor {
         return messages.size();
     }
 
-    private void checkVolume(PipelineContext context, SourceDefinition source, long sourceCount) {
+    private void checkVolume(PipelineContext context, SourceDefinition source, LoadWindow window, long sourceCount) {
         SourceDefinition.QualityChecks checks = source.checks();
-        if (context.loadType() != LoadType.INCREMENTAL) {
-            return;   // FULL reads everything, RETRY_REJECTED only bad rows: no "normal" volume
+        if (window.isFirstRun()) {
+            return;   // the first run reads the whole history: no "normal" volume to compare with
         }
         String message = null;
         if (checks.minRows() != null && sourceCount < checks.minRows()) {
-            message = "INCREMENTAL run read " + sourceCount + " documents, expected at least " + checks.minRows()
+            message = "Run read " + sourceCount + " documents, expected at least " + checks.minRows()
                     + " (is the source still sending data?)." + source.ownerHint();
         } else if (checks.maxRows() != null && sourceCount > checks.maxRows()) {
-            message = "INCREMENTAL run read " + sourceCount + " documents, expected at most " + checks.maxRows()
+            message = "Run read " + sourceCount + " documents, expected at most " + checks.maxRows()
                     + " (re-sent history or duplicate feed?)." + source.ownerHint();
         }
         if (message != null) {
@@ -207,8 +217,8 @@ public class SourceProcessor {
         if (percent > maxPercent) {
             throw new DataQualityGateException(source.collection(), String.format(Locale.ROOT,
                     "Reject gate failed for %s: %d of %d rows rejected (%.1f%%), allowed at most %.1f%%. "
-                            + "Reasons: %s. Example: %s. Nothing from this collection was loaded and MongoDB "
-                            + "flags were not changed.%s",
+                            + "Reasons: %s. Example: %s. Nothing from this collection was loaded and the "
+                            + "watermark did not move.%s",
                     source.collection(), batch.badRowCount(), batch.sourceCount(), percent, maxPercent,
                     reasonSummary(batch), exampleReason(batch), source.ownerHint()));
         }

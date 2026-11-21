@@ -1,7 +1,6 @@
 package com.demo.etl.framework.source;
 
 import com.demo.etl.config.EtlProperties;
-import com.demo.etl.framework.pipeline.LoadType;
 import org.bson.Document;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.stereotype.Component;
@@ -54,9 +53,9 @@ public class SchemaDriftDetector {
         this.sampleSize = properties.quality().schemaSampleSize();
     }
 
-    public SchemaDrift detect(SourceDefinition source, LoadType loadType) {
+    public SchemaDrift detect(SourceDefinition source, LoadWindow window) {
         // field name -> number of sampled documents that have it
-        List<Document> pipeline = new ArrayList<>(reader.matchStages(source, loadType));
+        List<Document> pipeline = new ArrayList<>(reader.matchStages(source, window));
         pipeline.add(new Document("$limit", sampleSize));
         pipeline.add(Document.parse("{\"$project\": {\"f\": {\"$objectToArray\": \"$$ROOT\"}}}"));
         pipeline.add(new Document("$unwind", "$f"));

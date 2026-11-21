@@ -1,22 +1,26 @@
 // =============================================================================
-//  payment-pipeline  |  01_mongo_full_load.js  |  MongoDB sample data for the FULL load
+//  payment-pipeline  |  01_mongo_full_load.js  |  MongoDB sample data for the FIRST run
 //
 //  Run:   mongosh "mongodb://localhost:27017" sample-data/payment-pipeline/01_mongo_full_load.js
-//  Then:  POST http://localhost:8080/api/etl/pipelines/payment-pipeline/run?loadType=FULL
+//  Then:  POST http://localhost:8080/api/etl/pipelines/payment-pipeline/run   (first run: no watermark yet, reads everything)
 //
 //  Database: bankdb (banking examples). The collection "payments" also exists in shopdb with the
 //  SALES shape, so the banking jobs use their own database. Start the app for this job with
 //      $env:MONGO_DATABASE="bankdb"
 //
-//  Re-run safe: the collection is dropped and loaded again (all processedFlag values gone = new).
+//  Re-run on an EMPTY target only: the collection is dropped and loaded again with the original timestamps.
 //  Dates are strings "yyyy-MM-ddTHH:mm:ss" (IST); every field is read by Spark as String.
 //
-//  EXPECTED FULL LOAD (test document is never read):
+//  EXPECTED FIRST RUN (test document is never read):
 //      read 20 | valid 13 | rejected 7 (1 DUPLICATE, 2 CORRUPT, 4 VALIDATION) | warnings 1
 //      fact_payment 13, dim_payer 9, dim_payment_method 7, dim_biller 9
 // =============================================================================
 const DB_NAME = "bankdb";
 db = db.getSiblingDB(DB_NAME);
+
+// updatedAt = the INCREMENTAL WATERMARK field: it must be a BSON Date (IST time written here, MongoDB stores UTC)
+const ist = (s) => new Date(s + "+05:30");   // "2026-11-01T09:16:00" (IST) -> Date
+
 
 const COLLECTIONS = ["payments"];
 COLLECTIONS.forEach(c => db.getCollection(c).drop());
@@ -26,7 +30,7 @@ function pay(id, payerId, payerName, email, phone, city, method, provider, bille
   return Object.assign({
     paymentId: id, payerId, payerName, payerEmail: email, payerPhone: phone, payerCity: city,
     paymentMethod: method, paymentProvider: provider, billerName: biller, billerCategory: category,
-    amount, currency, paymentDate, status, referenceNumber: ref, updatedAt
+    amount, currency, paymentDate, status, referenceNumber: ref, updatedAt: ist(updatedAt)
   }, extra || {});
 }
 
@@ -61,9 +65,9 @@ db.payments.insertMany([
   pay("PAY-0018", "PYR-999", "QA Tester",    "qa@demo.com",               "9999999999",       "Test",      "UPI",        "GPAY",    "Test Biller",    "TEST",        1,           "INR", "2026-11-12T15:00:00", "SUCCESS", "REF-TEST",   "2026-11-12T15:01:00", { isTest: true })
 ]);
 
-// Indexes: business key + flag (INCREMENTAL reads {processedFlag: "N"/missing} -> index makes the $match fast)
+// Indexes: business key + updatedAt (the watermark field: the incremental $match on the time window uses it)
 db.payments.createIndex({ paymentId: 1 });
-db.payments.createIndex({ processedFlag: 1 });
+db.payments.createIndex({ updatedAt: 1 });
 
 print(`\n✔ ${DB_NAME}.payments: ${db.payments.countDocuments()} documents (expected 21, of which 1 test document)`);
-print("  Next: POST /api/etl/pipelines/payment-pipeline/run?loadType=FULL");
+print("  Next: POST /api/etl/pipelines/payment-pipeline/run");

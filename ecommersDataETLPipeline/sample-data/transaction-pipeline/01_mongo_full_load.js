@@ -1,8 +1,8 @@
 // =============================================================================
-//  transaction-pipeline  |  01_mongo_full_load.js  |  MongoDB sample data for the FULL load
+//  transaction-pipeline  |  01_mongo_full_load.js  |  MongoDB sample data for the FIRST run
 //
 //  Run:   mongosh "mongodb://localhost:27017" sample-data/transaction-pipeline/01_mongo_full_load.js
-//  Then:  POST http://localhost:8080/api/etl/pipelines/transaction-pipeline/run?loadType=FULL
+//  Then:  POST http://localhost:8080/api/etl/pipelines/transaction-pipeline/run   (first run: no watermark yet, reads everything)
 //
 //  Database: bankdb (banking examples). "customers" also exists in shopdb with the SALES shape, so the
 //  banking jobs use their own database. Start the app for this job with  $env:MONGO_DATABASE="bankdb"
@@ -11,7 +11,7 @@
 //      customers -> dim_customer,  accounts -> dim_account (customer must exist),
 //      merchants -> dim_merchant,  transactions -> fact_transaction (customer, account, merchant must exist)
 //
-//  EXPECTED FULL LOAD:
+//  EXPECTED FIRST RUN:
 //      customers     read 12 | valid 8  | rejected 4 (DUPLICATE CUST-0004, VALIDATION CUST-0009 / CUST-0010, CORRUPT CUST-0011)
 //      accounts      read 11 | valid 8  | rejected 3 (ORPHAN ACC-0009, CORRUPT ACC-0010, VALIDATION ACC-0011)
 //      merchants     read 8  | valid 7  | rejected 1 (VALIDATION MER-0007)
@@ -21,13 +21,17 @@
 const DB_NAME = "bankdb";
 db = db.getSiblingDB(DB_NAME);
 
+// updatedAt = the INCREMENTAL WATERMARK field: it must be a BSON Date (IST time written here, MongoDB stores UTC)
+const ist = (s) => new Date(s + "+05:30");   // "2026-11-01T09:16:00" (IST) -> Date
+
+
 const COLLECTIONS = ["customers", "accounts", "merchants", "transactions"];
 COLLECTIONS.forEach(c => db.getCollection(c).drop());
 
 // ---------------------------------------------------------------- customers (11)
 function cust(id, first, last, email, phone, dob, gender, city, state, kyc, updatedAt) {
   return { customerId: id, firstName: first, lastName: last, email, phone, dateOfBirth: dob, gender,
-           city, state, country: "India", kycStatus: kyc, createdAt: "2025-01-10T10:00:00", updatedAt };
+           city, state, country: "India", kycStatus: kyc, createdAt: "2025-01-10T10:00:00", updatedAt: ist(updatedAt) };
 }
 db.customers.insertMany([
   cust("CUST-0001", "Nikhil",  "Agarwal", "nikhil.agarwal@gmail.com",   "8164452831",      "1985-01-06", "M", "Rajkot",    "Gujarat",     "VERIFIED", "2026-10-01T10:00:00"),
@@ -47,7 +51,7 @@ db.customers.insertMany([
 // ---------------------------------------------------------------- accounts (11)
 function acc(id, customerId, type, balance, status, openedDate, updatedAt, ifsc) {
   return { accountId: id, customerId, accountType: type, branchCode: "BR-0" + id.slice(-2), ifscCode: ifsc || "HDFC0001234",
-           balance, currency: "INR", status, openedDate, updatedAt };
+           balance, currency: "INR", status, openedDate, updatedAt: ist(updatedAt) };
 }
 db.accounts.insertMany([
   acc("ACC-0001", "CUST-0001", "SAVINGS", 84904.69,     "ACTIVE",  "2018-11-14", "2026-10-01T11:00:00"),
@@ -66,7 +70,7 @@ db.accounts.insertMany([
 // ---------------------------------------------------------------- merchants (8)
 function mer(id, name, category, mcc, city, onboarded, updatedAt) {
   return { merchantId: id, merchantName: name, category, mccCode: mcc, city, country: "India",
-           status: "ACTIVE", onboardedDate: onboarded, updatedAt };
+           status: "ACTIVE", onboardedDate: onboarded, updatedAt: ist(updatedAt) };
 }
 db.merchants.insertMany([
   mer("MER-0001", "Apollo Pharmacy Indore",  "HEALTHCARE",  "5912", "Indore",    "2020-06-14", "2026-10-01T12:00:00"),
@@ -82,7 +86,7 @@ db.merchants.insertMany([
 // ---------------------------------------------------------------- transactions (17)
 function txn(id, acc, cust, mer, type, channel, amount, date, status, updatedAt) {
   return { transactionId: id, accountId: acc, customerId: cust, merchantId: mer, transactionType: type,
-           channel, amount, currency: "INR", transactionDate: date, status, description: "Payment " + id, updatedAt };
+           channel, amount, currency: "INR", transactionDate: date, status, description: "Payment " + id, updatedAt: ist(updatedAt) };
 }
 db.transactions.insertMany([
   txn("TXN-000001", "ACC-0001", "CUST-0001", "MER-0001", "DEBIT",  "POS",        1250.75,    "2026-11-01T10:15:00", "SUCCESS", "2026-11-01T10:16:00"),
@@ -104,13 +108,13 @@ db.transactions.insertMany([
   txn("TXN-000016", "ACC-0099", "CUST-0003", "MER-0001", "DEBIT",  "POS",        300,        "2026-11-12T12:00:00", "SUCCESS", "2026-11-12T12:01:00")    // ORPHAN account
 ]);
 
-// Indexes: business key + flag (fast INCREMENTAL $match)
-db.customers.createIndex({ customerId: 1 });       db.customers.createIndex({ processedFlag: 1 });
-db.accounts.createIndex({ accountId: 1 });         db.accounts.createIndex({ processedFlag: 1 });
-db.merchants.createIndex({ merchantId: 1 });       db.merchants.createIndex({ processedFlag: 1 });
-db.transactions.createIndex({ transactionId: 1 }); db.transactions.createIndex({ processedFlag: 1 });
+// Indexes: business key + updatedAt (the watermark field: fast incremental $match on the time window)
+db.customers.createIndex({ customerId: 1 });       db.customers.createIndex({ updatedAt: 1 });
+db.accounts.createIndex({ accountId: 1 });         db.accounts.createIndex({ updatedAt: 1 });
+db.merchants.createIndex({ merchantId: 1 });       db.merchants.createIndex({ updatedAt: 1 });
+db.transactions.createIndex({ transactionId: 1 }); db.transactions.createIndex({ updatedAt: 1 });
 
 print("");
 COLLECTIONS.forEach(c => print(`✔ ${DB_NAME}.${c.padEnd(13)} ${db.getCollection(c).countDocuments()} documents`));
 print("  expected: customers 12, accounts 11, merchants 8, transactions 17");
-print("  Next: POST /api/etl/pipelines/transaction-pipeline/run?loadType=FULL");
+print("  Next: POST /api/etl/pipelines/transaction-pipeline/run");

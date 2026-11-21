@@ -54,11 +54,6 @@ public class PaymentPipeline extends AbstractEtlPipeline {
     }
 
     @Override
-    public List<String> fullLoadTruncateTables() {
-        return List.of("silver.fact_payment");
-    }
-
-    @Override
     public void run(PipelineContext context) {
         // 1. EXTRACT + DATA QUALITY (bad rows are kept aside and saved automatically)
         SourceBatch payments = extractAndValidate(context,PaymentSource.PAYMENTS, PaymentSource.sanitizer(), PaymentSource.rules());

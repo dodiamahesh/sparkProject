@@ -13,7 +13,6 @@ public record EtlProperties(
         Spark spark,
         Mongo mongo,
         Postgres postgres,
-        Source source,
         Job job,
         Quality quality) {
 
@@ -37,10 +36,6 @@ public record EtlProperties(
 
     /** Silver layer (target). */
     public record Postgres(String url, String username, String password, String stagingSchema, int batchSize) {
-    }
-
-    /** Name of the flag field in every MongoDB document (drives incremental load). */
-    public record Source(String flagField) {
     }
 
     /** Thread pool used when a job is triggered with async=true. */

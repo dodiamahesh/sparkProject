@@ -29,7 +29,8 @@ import static com.demo.etl.pipelines.ecommerce.fulfillment.FulfillmentStarSchema
  *                                 its customer_key is taken from that order (conformed dim_ecom_customer)
  *
  * Run ecommerce-order-pipeline FIRST. If you do not, shipments are rejected as ORPHAN
- * ("orderId not found in fact_order"); run the order pipeline, then this one with loadType=RETRY_REJECTED.
+ * ("orderId not found in fact_order"). They are read again by a later run when the source updates them
+ * (newer updatedAt), e.g. after the order arrived.
  */
 @Component
 public class FulfillmentPipeline extends AbstractEtlPipeline {
@@ -57,11 +58,6 @@ public class FulfillmentPipeline extends AbstractEtlPipeline {
     @Override
     public List<String> targetTables() {
         return List.of("silver.dim_warehouse", "silver.dim_carrier", "silver.dim_date", "silver.fact_shipment");
-    }
-
-    @Override
-    public List<String> fullLoadTruncateTables() {
-        return List.of("silver.fact_shipment");
     }
 
     @Override

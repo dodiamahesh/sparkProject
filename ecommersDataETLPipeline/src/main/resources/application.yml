@@ -51,13 +51,9 @@ etl:
     staging-schema: etl_staging
     batch-size: 1000
 
-  source:
-    # Flag field in every MongoDB document that drives incremental load.
-    #   N (or missing) = new / changed   -> picked by INCREMENTAL
-    #   Y              = loaded          -> skipped
-    #   E              = rejected        -> picked by RETRY_REJECTED
-    #   D              = duplicate       -> skipped (kept in rejected table for audit)
-    flag-field: processedFlag
+  # Incremental load: every source reads only documents whose timestamp field (SourceDefinition
+  # latestRecordColumn, e.g. updatedAt) is after its last watermark (etl_audit.etl_watermark).
+  # MongoDB is only READ, the ETL never writes to it.
 
   job:
     # How many pipelines can run at the same time (async mode)

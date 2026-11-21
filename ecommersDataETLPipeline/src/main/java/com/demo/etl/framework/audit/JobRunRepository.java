@@ -1,12 +1,14 @@
 package com.demo.etl.framework.audit;
 
 import com.demo.etl.framework.pipeline.JobMetrics;
-import com.demo.etl.framework.pipeline.LoadType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -20,7 +22,7 @@ public class JobRunRepository {
     private static final RowMapper<JobRun> ROW_MAPPER = (rs, rowNum) -> new JobRun(
             rs.getLong("job_run_id"),
             rs.getString("pipeline_name"),
-            rs.getString("load_type"),
+            rs.getObject("window_end", OffsetDateTime.class),
             rs.getString("status"),
             rs.getString("triggered_by"),
             rs.getObject("start_time", LocalDateTime.class),
@@ -43,12 +45,13 @@ public class JobRunRepository {
     }
 
     /** Inserts a RUNNING row and returns the new job_run_id. */
-    public long createRun(String pipelineName, LoadType loadType, String triggeredBy) {
+    public long createRun(String pipelineName, Instant windowEnd, String triggeredBy) {
         return jdbc.queryForObject("""
-                INSERT INTO etl_audit.etl_job_run (pipeline_name, load_type, status, triggered_by, start_time)
+                INSERT INTO etl_audit.etl_job_run (pipeline_name, window_end, status, triggered_by, start_time)
                 VALUES (?, ?, ?, ?, now())
                 RETURNING job_run_id
-                """, Long.class, pipelineName, loadType.name(), JobStatus.RUNNING.name(), triggeredBy);
+                """, Long.class, pipelineName, OffsetDateTime.ofInstant(windowEnd, ZoneOffset.UTC),
+                JobStatus.RUNNING.name(), triggeredBy);
     }
 
     public void finishRun(long jobRunId, JobStatus status, JobMetrics metrics, String errorMessage, String errorDetail) {

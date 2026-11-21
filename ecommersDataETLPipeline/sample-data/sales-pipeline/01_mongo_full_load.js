@@ -1,8 +1,8 @@
 // =============================================================================
-//  sales-pipeline (Job-2, J2_SALES)  |  01_mongo_full_load.js  |  MongoDB sample data for the FULL load
+//  sales-pipeline (Job-2, J2_SALES)  |  01_mongo_full_load.js  |  MongoDB sample data for the FIRST run
 //
 //  Run:   mongosh "mongodb://localhost:27017" sample-data/sales-pipeline/01_mongo_full_load.js
-//  Then:  POST http://localhost:8080/api/etl/pipelines/sales-pipeline/run?loadType=FULL
+//  Then:  POST http://localhost:8080/api/etl/pipelines/sales-pipeline/run   (first run: no watermark yet, reads everything)
 //
 //  Database: shopdb (default MONGO_DATABASE). Data = design document "Job-2: Multiple Collections",
 //  taken from "../sparkJavaMongoConnectorAirflowLinageTheory/sample_data/01_mongo_full_load_data.js" (only the 4
@@ -10,7 +10,7 @@
 //
 //  Self-contained job: "products" is part of THIS job (it builds dim_product), no other job runs first.
 //
-//  EXPECTED FULL LOAD:
+//  EXPECTED FIRST RUN:
 //      products   read 24 | valid 20 | rejected 4 (DUPLICATE P003, VALIDATION P021 / P023, CORRUPT P022)
 //      customers  read 23 | valid 20 | rejected 3 (DUPLICATE C005, VALIDATION C021 email / C022 name)
 //      orders     read 24 | valid 20 | rejected 4 (DUPLICATE O1005, ORPHAN O1021, CORRUPT O1022, VALIDATION O1023)
@@ -210,14 +210,14 @@ db.payments.insertMany([
   pay("PAY22", "O1020", "UPI",         "abc",     "FAILED",   ist("2026-10-16 16:35"))                           // ⚠️ corrupt amount
 ]);
 
-// Indexes: business key + processedFlag (INCREMENTAL reads {processedFlag: "N"/missing} -> fast $match)
+// Indexes: business key + updated_at (the incremental watermark field -> fast $match on the time window)
 // Business key index is NOT unique on purpose: the source really contains duplicates (the ETL removes them).
-db.products.createIndex({ product_code: 1 });   db.products.createIndex({ processedFlag: 1 });
-db.customers.createIndex({ customer_code: 1 }); db.customers.createIndex({ processedFlag: 1 });
-db.orders.createIndex({ order_no: 1 });         db.orders.createIndex({ processedFlag: 1 });
-db.payments.createIndex({ payment_id: 1 });     db.payments.createIndex({ processedFlag: 1 });
+db.products.createIndex({ product_code: 1 });   db.products.createIndex({ updated_at: 1 });
+db.customers.createIndex({ customer_code: 1 }); db.customers.createIndex({ updated_at: 1 });
+db.orders.createIndex({ order_no: 1 });         db.orders.createIndex({ updated_at: 1 });
+db.payments.createIndex({ payment_id: 1 });     db.payments.createIndex({ updated_at: 1 });
 
 print("");
 COLLECTIONS.forEach(c => print(`✔ ${DB_NAME}.${c.padEnd(10)} ${db.getCollection(c).countDocuments()} documents`));
 print("  expected: products 24, customers 23, orders 24, payments 23");
-print("  Next: POST /api/etl/pipelines/sales-pipeline/run?loadType=FULL");
+print("  Next: POST /api/etl/pipelines/sales-pipeline/run");

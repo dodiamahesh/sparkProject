@@ -64,11 +64,6 @@ public class EcommerceOrderPipeline extends AbstractEtlPipeline {
     }
 
     @Override
-    public List<String> fullLoadTruncateTables() {
-        return List.of("silver.fact_order_item", "silver.fact_order");
-    }
-
-    @Override
     public void run(PipelineContext context) {
         // ---------------- 1. SNOWFLAKE branch: category -> product ----------------
         SourceBatch categories = extractAndValidate(context, EcommerceOrderSources.CATEGORIES,

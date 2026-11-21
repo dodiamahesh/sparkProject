@@ -28,7 +28,7 @@ import java.util.Set;
  *       // ---- optional ----
  *       .excludeTestRecords()                     // source filter: skip {"isTest": true}
  *       .maxRejectPercent(30)                     // quality gate: more bad rows -> job FAILS
- *       .expectedRows(1, 50_000)                  // volume check (INCREMENTAL): outside -> warning
+ *       .expectedRows(1, 50_000)                  // volume check (not on the first run): outside -> warning
  *       .maskEmail("payerEmail")                  // PII: masked in silver + rejected table
  *       .owner("payments-team@demo.com")          // metadata: who to ask when it breaks
  *       .sla("new data every hour")
@@ -37,7 +37,7 @@ import java.util.Set;
  * </pre>
  *
  * @param pii           field -> how to mask it (empty = no PII)
- * @param sourceFilter  extra MongoDB $match (JSON), applied for every load type; null = none
+ * @param sourceFilter  extra MongoDB $match (JSON), applied on every run next to the timestamp window; null = none
  * @param ignoredFields fields that exist in MongoDB but are not read on purpose (no schema-drift warning)
  */
 public record SourceDefinition(
@@ -56,8 +56,8 @@ public record SourceDefinition(
 
     /**
      * @param maxRejectPercent  null = no gate. Duplicates do NOT count as bad rows.
-     * @param minRows           null = no minimum (volume check, INCREMENTAL only)
-     * @param maxRows           null = no maximum (volume check, INCREMENTAL only)
+     * @param minRows           null = no minimum (volume check, skipped on the first run)
+     * @param maxRows           null = no maximum (volume check, skipped on the first run)
      * @param failOnSchemaDrift false = new / missing fields give a warning, true = the job fails
      */
     public record QualityChecks(Double maxRejectPercent, Long minRows, Long maxRows, boolean failOnSchemaDrift) {
@@ -137,7 +137,12 @@ public record SourceDefinition(
             return this;
         }
 
-        /** When the same business key appears twice, the row with the highest value here is kept. */
+        /**
+         * The TIMESTAMP field of the source (e.g. updatedAt). Two jobs:
+         *   1. INCREMENTAL WATERMARK: a run reads only documents with this field &gt; last watermark and &lt;= run start
+         *      (it must be a BSON Date in MongoDB, and should be indexed)
+         *   2. DE-DUPLICATION: when the same business key appears twice, the row with the highest value is kept
+         */
         public Builder latestRecordColumn(String latestRecordColumn) {
             this.latestRecordColumn = latestRecordColumn;
             return this;
@@ -148,7 +153,7 @@ public record SourceDefinition(
         /**
          * QUALITY GATE: if more than {@code percent} % of the rows read are rejected (duplicates not counted),
          * the job FAILS before this collection is loaded, so a broken source cannot fill silver with gaps.
-         * Not applied to RETRY_REJECTED (it reads only bad rows) or to very small batches
+         * Not applied to very small batches
          * (fewer than etl.quality.reject-gate-min-records rows).
          */
         public Builder maxRejectPercent(double percent) {
@@ -156,7 +161,7 @@ public record SourceDefinition(
             return this;
         }
 
-        /** VOLUME CHECK (INCREMENTAL only): fewer than min or more than max rows read -> warning. */
+        /** VOLUME CHECK (skipped on the first run): fewer than min or more than max rows read -> warning. */
         public Builder expectedRows(long min, long max) {
             this.minRows = min;
             this.maxRows = max;

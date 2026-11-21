@@ -1,17 +1,17 @@
 // =============================================================================
-//  ecommerce-fulfillment-pipeline  |  01_mongo_full_load.js  |  MongoDB sample data for the FULL load
+//  ecommerce-fulfillment-pipeline  |  01_mongo_full_load.js  |  MongoDB sample data for the FIRST run
 //
 //  ⚠️ DEPENDS ON ecommerce-order-pipeline: every shipment's orderId must exist in silver.fact_order.
-//     Run ecommerce-order-pipeline (its 01 script + FULL load) FIRST.
+//     Run ecommerce-order-pipeline (its 01 script + first run) FIRST.
 //
 //  Run:   mongosh "mongodb://localhost:27017" sample-data/ecommerce-fulfillment-pipeline/01_mongo_full_load.js
-//  Then:  POST http://localhost:8080/api/etl/pipelines/ecommerce-fulfillment-pipeline/run?loadType=FULL
+//  Then:  POST http://localhost:8080/api/etl/pipelines/ecommerce-fulfillment-pipeline/run   (first run: no watermark yet, reads everything)
 //
 //  Database: shopdb (default MONGO_DATABASE).
 //      ecom_warehouses -> dim_warehouse, ecom_carriers -> dim_carrier,
 //      ecom_shipments  -> fact_shipment (order, warehouse, carrier must exist; customer_key taken from fact_order)
 //
-//  EXPECTED FULL LOAD:
+//  EXPECTED FIRST RUN:
 //      ecom_warehouses read 6  | valid 5 | rejected 1 (VALIDATION WH-06 pincode)
 //      ecom_carriers   read 5  | valid 4 | rejected 1 (VALIDATION CRR-05 serviceType)
 //      ecom_shipments  read 15 | valid 10 | rejected 5 (DUPLICATE SHP-00004, ORPHAN SHP-00009 order,
@@ -22,12 +22,16 @@
 const DB_NAME = "shopdb";
 db = db.getSiblingDB(DB_NAME);
 
+// updatedAt = the INCREMENTAL WATERMARK field: it must be a BSON Date (IST time written here, MongoDB stores UTC)
+const ist = (s) => new Date(s + "+05:30");   // "2026-11-01T09:16:00" (IST) -> Date
+
+
 const COLLECTIONS = ["ecom_warehouses", "ecom_carriers", "ecom_shipments"];
 COLLECTIONS.forEach(c => db.getCollection(c).drop());
 
 // ---------------------------------------------------------------- ecom_warehouses (6)
 const wh = (id, name, city, state, pincode, capacity, status) => ({ warehouseId: id, warehouseName: name, city, state,
-  pincode, capacityUnits: capacity, status, updatedAt: "2026-10-01T10:00:00" });
+  pincode, capacityUnits: capacity, status, updatedAt: ist("2026-10-01T10:00:00") });
 db.ecom_warehouses.insertMany([
   wh("WH-01", "Ahmedabad Fulfilment Centre", "ahmedabad", "gujarat",     "382210", 50000,     "ACTIVE"),   // sanitize: Proper Case
   wh("WH-02", "Bhiwandi Mega Warehouse",     "Bhiwandi",  "Maharashtra", "421302", "1,20,000","active"),   // sanitize: separators, case
@@ -39,7 +43,7 @@ db.ecom_warehouses.insertMany([
 
 // ---------------------------------------------------------------- ecom_carriers (5)
 const crr = (id, name, service, email, status) => ({ carrierId: id, carrierName: name, serviceType: service,
-  contactEmail: email, status, updatedAt: "2026-10-01T10:00:00" });
+  contactEmail: email, status, updatedAt: ist("2026-10-01T10:00:00") });
 db.ecom_carriers.insertMany([
   crr("CRR-01", "Delhivery",       "STANDARD", "support@delhivery.example", "ACTIVE"),
   crr("CRR-02", "Blue Dart",       "express",  "CARE@BLUEDART.EXAMPLE",     "ACTIVE"),   // sanitize
@@ -53,7 +57,7 @@ function shp(id, order, warehouse, carrier, shipped, promised, delivered, status
   return { shipmentId: id, orderId: order, warehouseId: warehouse, carrierId: carrier,
            trackingNumber: "TRK" + id.slice(-5), shippedDate: shipped, promisedDate: promised,
            deliveredDate: delivered, shipmentStatus: status, shippingCost: cost, weightKg: weight,
-           updatedAt: updatedAt || delivered || shipped };
+           updatedAt: ist(updatedAt || delivered || shipped) };
 }
 db.ecom_shipments.insertMany([
   shp("SHP-00001", "ORD-00001", "WH-01", "CRR-01", "2026-11-01T18:00:00", "2026-11-05", "2026-11-03T14:00:00", "DELIVERED",  53.10, 0.45),   // on time
@@ -73,11 +77,11 @@ db.ecom_shipments.insertMany([
   shp("SHP-00012", "ORD-00005", "WH-03", "CRR-05", "2026-11-05T21:00:00", "2026-11-06", null,                  "IN_TRANSIT", 99,    1.00)    // ORPHAN carrier (CRR-05 was rejected)
 ]);
 
-COLLECTIONS.forEach(c => db.getCollection(c).createIndex({ processedFlag: 1 }));
+COLLECTIONS.forEach(c => db.getCollection(c).createIndex({ updatedAt: 1 }));   // watermark field
 db.ecom_warehouses.createIndex({ warehouseId: 1 }); db.ecom_carriers.createIndex({ carrierId: 1 });
 db.ecom_shipments.createIndex({ shipmentId: 1 });   db.ecom_shipments.createIndex({ orderId: 1 });
 
 print("");
 COLLECTIONS.forEach(c => print(`✔ ${DB_NAME}.${c.padEnd(16)} ${db.getCollection(c).countDocuments()} documents`));
 print("  expected: warehouses 6, carriers 5, shipments 15");
-print("  Next: POST /api/etl/pipelines/ecommerce-fulfillment-pipeline/run?loadType=FULL");
+print("  Next: POST /api/etl/pipelines/ecommerce-fulfillment-pipeline/run");

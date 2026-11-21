@@ -60,11 +60,6 @@ public class TransactionPipeline extends AbstractEtlPipeline {
     }
 
     @Override
-    public List<String> fullLoadTruncateTables() {
-        return List.of("silver.fact_transaction");
-    }
-
-    @Override
     public void run(PipelineContext context) {
         // ---------------- 1. DIMENSIONS (one collection -> one dimension) ----------------
         SourceBatch customers = extractAndValidate(context, TransactionSources.CUSTOMERS,TransactionSources.customerSanitizer(), TransactionSources.customerRules());

@@ -34,14 +34,6 @@ public interface EtlPipeline {
     /** PostgreSQL tables this pipeline writes (shown in the API). */
     List<String> targetTables();
 
-    /**
-     * Tables emptied before a FULL load. Usually only the FACT tables:
-     * dimensions are shared with other pipelines, so they are upserted instead of truncated.
-     */
-    default List<String> fullLoadTruncateTables() {
-        return List.of();
-    }
-
     /** The pipeline logic: extract -> validate -> transform -> load. */
     void run(PipelineContext context);
 }
