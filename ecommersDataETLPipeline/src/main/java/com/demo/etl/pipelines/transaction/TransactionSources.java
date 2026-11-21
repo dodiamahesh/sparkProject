@@ -24,8 +24,6 @@ final class TransactionSources {
             .latestRecordColumn("updatedAt")
             .excludeTestRecords()
             .maxRejectPercent(30)
-            .maskEmail("email")
-            .maskPhone("phone")
             .description("Bank customers (KYC master data) from the core banking system")
             .owner("core-banking-team@demo.com")
             .sla("daily by 06:00")

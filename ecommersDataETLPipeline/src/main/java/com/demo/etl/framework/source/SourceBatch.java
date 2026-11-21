@@ -6,7 +6,7 @@ import org.apache.spark.sql.Row;
 /**
  * Result of reading + cleaning + validating ONE source collection in ONE job run.
  *
- * @param valid    clean rows, ready to transform (same column names as MongoDB, all String, PII masked)
+ * @param valid    clean rows, ready to transform (same column names as MongoDB, all String)
  * @param rejected bad rows in the standard rejected format, one row per record (saved at the end of the job)
  * @param derived  true = the rows do not come straight from a MongoDB collection but were built from
  *                 another batch (e.g. the items[] array of an order, one row per line). Rejected rows are

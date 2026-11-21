@@ -11,8 +11,6 @@ import org.springframework.stereotype.Component;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
-import java.util.function.Function;
 
 import static com.demo.etl.framework.quality.QualityColumns.ERRORS;
 import static com.demo.etl.framework.quality.QualityColumns.RAW_RECORD;
@@ -42,25 +40,13 @@ import static org.apache.spark.sql.functions.size;
 @Component
 public class DataQualityEngine {
 
-    /** Same as {@link #check(Dataset, DataQualityRules, String, String, Map)} without PII fields. */
-    public QualityResult check(Dataset<Row> rows, DataQualityRules qualityRules,
-                               String businessKey, String latestRecordColumn) {
-        return check(rows, qualityRules, businessKey, latestRecordColumn, Map.of());
-    }
-
     /**
      * @param rows               cleaned rows (must contain _id and _raw_record)
      * @param businessKey        column that identifies a record, e.g. "paymentId"
      * @param latestRecordColumn when duplicates exist, the row with the highest value here wins (e.g. "updatedAt")
-     * @param piiFields          fields whose value is MASKED in the stored error value
      */
     public QualityResult check(Dataset<Row> rows, DataQualityRules qualityRules,
-                               String businessKey, String latestRecordColumn, Map<String, PiiType> piiFields) {
-
-        Function<String, Column> valueOf = column -> piiFields.containsKey(column)
-                ? piiFields.get(column).mask(col(column))
-                : col(column);
-
+                               String businessKey, String latestRecordColumn) {
         List<ValidationRule> rules = new ArrayList<>(qualityRules.rules());
         Dataset<Row> checked = rows;
 
@@ -81,7 +67,7 @@ public class DataQualityEngine {
 
         // 2. Evaluate all rules. Sorted by type (stable), so errors[0] is always the most serious error.
         rules.sort(Comparator.comparing(ValidationRule::errorType));
-        checked = checked.withColumn(ERRORS, failedRules(rules, valueOf));
+        checked = checked.withColumn(ERRORS, failedRules(rules));
         for (int i = 0; i < index; i++) {
             checked = checked.drop(REFERENCE_PREFIX + i);
         }
@@ -108,11 +94,11 @@ public class DataQualityEngine {
     }
 
     /** Every failed rule of a row as an array of error structs; empty array when the row is fine. */
-    private Column failedRules(List<ValidationRule> rules, Function<String, Column> valueOf) {
+    private Column failedRules(List<ValidationRule> rules) {
         if (rules.isEmpty()) {
             return array().cast(DataTypes.createArrayType(QualityColumns.ERROR_SCHEMA));
         }
-        Column[] errors = rules.stream().map(rule -> rule.errorWhenFailed(valueOf)).toArray(Column[]::new);
+        Column[] errors = rules.stream().map(rule -> rule.errorWhenFailed()).toArray(Column[]::new);
         return array_compact(array(errors));   // a passed rule gives NULL -> removed
     }
 

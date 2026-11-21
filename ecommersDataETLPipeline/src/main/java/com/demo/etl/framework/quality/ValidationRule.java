@@ -2,8 +2,7 @@ package com.demo.etl.framework.quality;
 
 import org.apache.spark.sql.Column;
 
-import java.util.function.Function;
-
+import static org.apache.spark.sql.functions.col;
 import static org.apache.spark.sql.functions.lit;
 import static org.apache.spark.sql.functions.when;
 
@@ -18,14 +17,9 @@ import static org.apache.spark.sql.functions.when;
  */
 public record ValidationRule(ErrorType errorType, Column failWhen, String fieldName, String message) {
 
-    /**
-     * struct(error_type, field_name, error_message, field_value) when the rule fails, NULL when it passes.
-     *
-     * @param valueOf column name -> column to store as field_value; masks PII fields, so a real email
-     *                never ends up in the rejected table
-     */
-    public Column errorWhenFailed(Function<String, Column> valueOf) {
-        Column value = fieldName == null ? lit(null) : valueOf.apply(fieldName);
+    /** struct(error_type, field_name, error_message, field_value) when the rule fails, NULL when it passes. */
+    public Column errorWhenFailed() {
+        Column value = fieldName == null ? lit(null) : col(fieldName);
         return when(failWhen, QualityColumns.errorStruct(errorType, fieldName, message, value));
     }
 }

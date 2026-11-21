@@ -3,8 +3,6 @@ package com.demo.etl.api.dto;
 import com.demo.etl.framework.source.SourceDefinition;
 
 import java.util.List;
-import java.util.Map;
-import java.util.TreeMap;
 
 /** The data contract of one source, as shown in GET /api/etl/pipelines. */
 public record SourceInfo(
@@ -15,12 +13,9 @@ public record SourceInfo(
         String businessKey,
         List<String> fields,
         Double maxRejectPercent,
-        Map<String, String> piiFields,
         String sourceFilter) {
 
     public static SourceInfo from(SourceDefinition source) {
-        Map<String, String> pii = new TreeMap<>();
-        source.pii().forEach((field, type) -> pii.put(field, type.name()));
         return new SourceInfo(
                 source.collection(),
                 source.metadata().description(),
@@ -29,7 +24,6 @@ public record SourceInfo(
                 source.businessKey(),
                 source.fields(),
                 source.maxRejectPercent(),
-                pii,
                 source.sourceFilter());
     }
 }

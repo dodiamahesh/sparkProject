@@ -1,15 +1,12 @@
 package com.demo.etl.framework.source;
 
-import com.demo.etl.framework.quality.PiiType;
 import com.demo.etl.framework.quality.QualityColumns;
 import org.apache.spark.sql.types.DataTypes;
 import org.apache.spark.sql.types.StructField;
 import org.apache.spark.sql.types.StructType;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Describes ONE MongoDB collection that a pipeline reads: the "data contract" of that source.
@@ -26,7 +23,6 @@ import java.util.Map;
  *       // ---- optional ----
  *       .excludeTestRecords()                     // source filter: skip {"isTest": true}
  *       .maxRejectPercent(30)                     // quality gate: more bad rows -> job FAILS
- *       .maskEmail("payerEmail")                  // PII: masked in silver + rejected table
  *       .owner("payments-team@demo.com")          // metadata: who to ask when it breaks
  *       .sla("new data every hour")
  *       .description("Bill payments from the payment app")
@@ -34,7 +30,6 @@ import java.util.Map;
  * </pre>
  *
  * @param maxRejectPercent null = no reject gate. Duplicates do NOT count as bad rows.
- * @param pii              field -> how to mask it (empty = no PII)
  * @param sourceFilter     extra MongoDB $match (JSON), applied on every run next to the timestamp window; null = none
  */
 public record SourceDefinition(
@@ -43,7 +38,6 @@ public record SourceDefinition(
         String businessKey,
         String latestRecordColumn,
         Double maxRejectPercent,
-        Map<String, PiiType> pii,
         String sourceFilter,
         SourceMetadata metadata) {
 
@@ -61,16 +55,10 @@ public record SourceDefinition(
         if (!fields.contains(latestRecordColumn)) {
             throw new IllegalArgumentException("latestRecordColumn '" + latestRecordColumn + "' must be one of the fields of " + collection);
         }
-        for (String piiField : pii.keySet()) {
-            if (!fields.contains(piiField)) {
-                throw new IllegalArgumentException("PII field '" + piiField + "' must be one of the fields of " + collection);
-            }
-        }
         if (maxRejectPercent != null && (maxRejectPercent < 0 || maxRejectPercent > 100)) {
             throw new IllegalArgumentException("maxRejectPercent of " + collection + " must be between 0 and 100");
         }
         fields = List.copyOf(fields);
-        pii = Map.copyOf(pii);
     }
 
     /** Spark schema: _id + every field, all as String. */
@@ -98,7 +86,6 @@ public record SourceDefinition(
         private String businessKey;
         private String latestRecordColumn;
         private Double maxRejectPercent;
-        private final Map<String, PiiType> pii = new LinkedHashMap<>();
         private String sourceFilter;
         private String description;
         private String owner;
@@ -143,24 +130,6 @@ public record SourceDefinition(
             return this;
         }
 
-        // ------------------------------------------------------------ PII
-
-        /** "rahul.shah@gmail.com" -> "r****@gmail.com" in silver and in the rejected table. */
-        public Builder maskEmail(String... fieldNames) {
-            for (String field : fieldNames) {
-                pii.put(field, PiiType.EMAIL);
-            }
-            return this;
-        }
-
-        /** "9876543210" -> "XXXXXX3210" in silver and in the rejected table. */
-        public Builder maskPhone(String... fieldNames) {
-            for (String field : fieldNames) {
-                pii.put(field, PiiType.PHONE);
-            }
-            return this;
-        }
-
         // ------------------------------------------------------------ source filter
 
         /** Extra MongoDB $match, e.g. {@code {"country": "India"}}. Documents that do not match are never read. */
@@ -195,7 +164,7 @@ public record SourceDefinition(
 
         public SourceDefinition build() {
             return new SourceDefinition(collection, fields, businessKey, latestRecordColumn, maxRejectPercent,
-                    pii, sourceFilter, new SourceMetadata(description, owner, sla));
+                    sourceFilter, new SourceMetadata(description, owner, sla));
         }
     }
 }

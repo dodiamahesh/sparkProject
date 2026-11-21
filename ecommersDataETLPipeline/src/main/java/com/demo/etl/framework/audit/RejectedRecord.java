@@ -6,7 +6,7 @@ import java.time.LocalDateTime;
  * One row of meta.meta_rejected_record (= one failed rule of one record), with its error from
  * meta.meta_error_master. A record that broke 2 rules has 2 rows (same sourceId, different errorId).
  *
- * @param fieldValue the bad value of {@code fieldName} in this record (PII masked)
+ * @param fieldValue the bad value of {@code fieldName} in this record
  */
 public record RejectedRecord(
         long rejectedRecordId,

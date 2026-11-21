@@ -16,11 +16,9 @@ final class PaymentSource {
                     "amount", "currency", "paymentDate", "status", "referenceNumber", "updatedAt")
             .businessKey("paymentId")
             .latestRecordColumn("updatedAt")
-            // ---- data contract: filter, quality gate, PII, metadata ----
+            // ---- data contract: filter, quality gate, metadata ----
             .excludeTestRecords()
             .maxRejectPercent(30)
-            .maskEmail("payerEmail")
-            .maskPhone("payerPhone")
             .description("Bill payments made in the payment app, one document per payment")
             .owner("payments-platform-team@demo.com")
             .sla("new payments every hour")

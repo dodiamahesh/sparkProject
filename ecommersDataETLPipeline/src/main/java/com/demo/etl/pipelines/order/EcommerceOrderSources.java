@@ -91,8 +91,6 @@ final class EcommerceOrderSources {
             .latestRecordColumn("updatedAt")
             .excludeTestRecords()
             .maxRejectPercent(30)
-            .maskEmail("email")
-            .maskPhone("phone")
             .description("Registered shop customers (sign-ups and profile changes)")
             .owner("customer-accounts-team@demo.com")
             .sla("every hour")

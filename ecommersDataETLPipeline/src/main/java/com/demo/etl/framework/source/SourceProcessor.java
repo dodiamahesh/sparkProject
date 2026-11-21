@@ -29,7 +29,7 @@ import static org.apache.spark.sql.functions.to_json;
 /**
  * The standard "first half" of every pipeline, for one source collection:
  *
- *   WINDOW (watermark) -> EXTRACT (MongoDB) -> SANITIZE -> VALIDATE -> DE-DUPLICATE -> MASK PII
+ *   WINDOW (watermark) -> EXTRACT (MongoDB) -> SANITIZE -> VALIDATE -> DE-DUPLICATE
  *     -> split into valid / rejected -> REJECT GATE
  *
  * Every run is INCREMENTAL: only documents whose timestamp field is inside the window are read
@@ -64,18 +64,18 @@ public class SourceProcessor {
         // 0. WINDOW: last watermark of this pipeline + collection -> start of this run
         LoadWindow window = watermarkRepository.window(context.pipelineName(), collection, context.windowEnd());
 
-        // 1. EXTRACT: read + keep a JSON copy of the original document (PII masked) for the rejected table
+        // 1. EXTRACT: read + keep a JSON copy of the original document for the rejected table
         Dataset<Row> raw = context.cache(reader.read(source, window)
-                .withColumn(QualityColumns.RAW_RECORD, to_json(struct(rawRecordColumns(source)))));
+                .withColumn(QualityColumns.RAW_RECORD, to_json(struct(fieldColumns(source)))));
         long sourceCount = stepTracker.track(context,
                 "Extract " + collection + " (" + window.describe(source.latestRecordColumn()) + ")", raw::count);
 
-        // 2-4. SANITIZE + VALIDATE + DE-DUPLICATE, then mask PII before anything is stored
+        // 2-4. SANITIZE + VALIDATE + DE-DUPLICATE
         SourceBatch batch = stepTracker.track(context, "Validate " + collection, () -> {
             Dataset<Row> cleaned = sanitizer.apply(raw);
             QualityResult result = qualityEngine.check(cleaned, rules, source.businessKey(),
-                    source.latestRecordColumn(), source.pii());
-            Dataset<Row> valid = context.cache(maskPii(result.valid(), source));
+                    source.latestRecordColumn());
+            Dataset<Row> valid = context.cache(result.valid());
             return toBatch(context, source, valid, result.rejected(), sourceCount, false);
         }, SourceBatch::validCount);
 
@@ -112,7 +112,7 @@ public class SourceProcessor {
         String name = definition.collection();
         SourceBatch batch = stepTracker.track(context, "Validate " + name + " (lines)", () -> {
             QualityResult result = qualityEngine.check(rows, rules, definition.businessKey(),
-                    definition.latestRecordColumn(), definition.pii());
+                    definition.latestRecordColumn());
             return toBatch(context, definition, context.cache(result.valid()), result.rejected(), -1, true);
         }, SourceBatch::validCount);
 
@@ -184,23 +184,8 @@ public class SourceProcessor {
                 + " (value: " + error.getAs(QualityColumns.FIELD_VALUE) + ")";
     }
 
-    // ================================================================== PII
-
-    /** Fields for the raw JSON copy; PII fields are masked, so the rejected table never holds the real value. */
-    private Column[] rawRecordColumns(SourceDefinition source) {
-        return source.fields().stream()
-                .map(field -> source.pii().containsKey(field)
-                        ? source.pii().get(field).mask(col(field)).as(field)
-                        : col(field))
-                .toArray(Column[]::new);
-    }
-
-    /** Valid rows go to silver: replace every PII field with its masked value. */
-    private Dataset<Row> maskPii(Dataset<Row> rows, SourceDefinition source) {
-        Dataset<Row> masked = rows;
-        for (var pii : source.pii().entrySet()) {
-            masked = masked.withColumn(pii.getKey(), pii.getValue().mask(col(pii.getKey())));
-        }
-        return masked;
+    /** Every field of the source, for the raw JSON copy of the document. */
+    private Column[] fieldColumns(SourceDefinition source) {
+        return source.fields().stream().map(field -> col(field)).toArray(Column[]::new);
     }
 }

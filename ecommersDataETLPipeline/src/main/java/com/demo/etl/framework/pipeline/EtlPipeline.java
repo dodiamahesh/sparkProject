@@ -21,7 +21,7 @@ public interface EtlPipeline {
     String description();
 
     /**
-     * The source definitions (data contracts) this pipeline reads: collection, checks, PII, owner, SLA ...
+     * The source definitions (data contracts) this pipeline reads: collection, checks, owner, SLA ...
      * Shown in GET /api/etl/pipelines.
      */
     List<SourceDefinition> sources();

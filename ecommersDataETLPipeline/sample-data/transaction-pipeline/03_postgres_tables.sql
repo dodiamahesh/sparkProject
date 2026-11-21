@@ -88,7 +88,7 @@ CREATE TABLE IF NOT EXISTS meta.meta_rejected_record (
     source_id           VARCHAR(100) NOT NULL,           -- MongoDB _id (order lines: <_id>#<line_no>)
     business_key        VARCHAR(200),                    -- e.g. PAY-0007, O1008/line-2
     error_id            INT          NOT NULL REFERENCES meta.meta_error_master (error_id),
-    field_value         TEXT,                            -- the bad value of error_master.field_name (PII masked)
+    field_value         TEXT,                            -- the bad value of error_master.field_name
     raw_record          JSONB,                           -- original document (before cleaning)
     attempt_count       INT          NOT NULL DEFAULT 1, -- how many runs rejected this record with this error
     first_job_run_id    BIGINT       NOT NULL,
@@ -137,8 +137,8 @@ CREATE TABLE IF NOT EXISTS silver.dim_customer (
     first_name     VARCHAR(100) NOT NULL,
     last_name      VARCHAR(100) NOT NULL,
     full_name      VARCHAR(200) NOT NULL,
-    email          VARCHAR(150) NOT NULL,            -- masked (PII)
-    phone          VARCHAR(15)  NOT NULL,            -- masked (PII)
+    email          VARCHAR(150) NOT NULL,
+    phone          VARCHAR(15)  NOT NULL,
     date_of_birth  DATE,
     gender         VARCHAR(1),
     city           VARCHAR(100),

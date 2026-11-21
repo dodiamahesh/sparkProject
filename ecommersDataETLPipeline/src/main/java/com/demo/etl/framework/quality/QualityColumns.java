@@ -38,7 +38,7 @@ public final class QualityColumns {
 
     /**
      * Fields of ONE error (struct inside errors[]). error_type + error_message identify the row in
-     * meta.meta_error_master; field_value is the bad value of this record (PII masked).
+     * meta.meta_error_master; field_value is the bad value of this record.
      */
     public static final String ERROR_TYPE = "error_type";
     public static final String FIELD_NAME = "field_name";
