@@ -23,6 +23,7 @@ final class FulfillmentSources {
             .fields("warehouseId", "warehouseName", "city", "state", "pincode", "capacityUnits", "status", "updatedAt")
             .businessKey("warehouseId")
             .latestRecordColumn("updatedAt")
+            .softDelete()                         // isDeleted = true at the source -> soft delete in silver
             .excludeTestRecords()
             .maxRejectPercent(30)
             .description("Fulfilment centres and hubs that ship orders")
@@ -53,6 +54,7 @@ final class FulfillmentSources {
             .fields("carrierId", "carrierName", "serviceType", "contactEmail", "status", "updatedAt")
             .businessKey("carrierId")
             .latestRecordColumn("updatedAt")
+            .softDelete()                         // isDeleted = true at the source -> soft delete in silver
             .excludeTestRecords()
             .maxRejectPercent(30)
             .description("Courier companies that deliver the parcels")
@@ -82,6 +84,7 @@ final class FulfillmentSources {
                     "promisedDate", "deliveredDate", "shipmentStatus", "shippingCost", "weightKg", "updatedAt")
             .businessKey("shipmentId")
             .latestRecordColumn("updatedAt")
+            .softDelete()                         // isDeleted = true at the source -> soft delete in silver
             .excludeTestRecords()
             .maxRejectPercent(30)
             .description("Parcel shipments with tracking status, one per shipped order")

@@ -124,5 +124,11 @@ public class SalesPipeline extends AbstractEtlPipeline {
         Dataset<Row> paymentsWithKeys = withOrderCustomerKey(typedPayments, readTable(FACT_SALES, "order_no", "customer_key"));
         paymentsWithKeys = addSurrogateKey(paymentsWithKeys, DIM_PAYMENT_METHOD, "payment_method_key", "method_code");
         load(context, toFactPayment(paymentsWithKeys), FACT_PAYMENT, "payment_id");
+
+        // ---------------- PART D: SOFT DELETES (rows are marked, never removed) ----------------
+        applyDeletes(context, products, DIM_PRODUCT, "product_code");
+        applyDeletesScd2(context, customers, CUSTOMER_SCD2);                        // closes the current version
+        applyDeletes(context, orders, FACT_SALES, "order_no");                        // every line of a deleted order
+        applyDeletes(context, payments, FACT_PAYMENT, "payment_id");
     }
 }

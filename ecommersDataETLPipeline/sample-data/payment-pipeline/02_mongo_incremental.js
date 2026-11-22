@@ -14,8 +14,10 @@
 //  from MongoDB, and the rejected-table row stays as history.
 //
 //  EXPECTED INCREMENTAL RUN:
-//      read 5 | valid 4 | rejected 1 (VALIDATION) (PAY-0013 was rejected, now fixed -> loaded)
-//      fact_payment 13 -> 16 (PAY-0013 fixed, PAY-0021 + PAY-0022 new; PAY-0007 updated in place)
+//      read 6 | valid 4 | rejected 1 (VALIDATION) | deleted 1 (PAY-0005 soft-deleted at the source)
+//      (PAY-0013 was rejected, now fixed -> loaded)
+//      fact_payment 13 -> 16 rows (PAY-0013 fixed, PAY-0021 + PAY-0022 new; PAY-0007 updated in place),
+//      of which 1 is_deleted = TRUE (PAY-0005)
 //      status: SUCCESS_WITH_FAILED (1 rejected)
 // =============================================================================
 const DB_NAME = "bankdb";
@@ -69,6 +71,10 @@ insert("payments", { paymentId: "PAY-0023" }, Object.assign({}, base, {
 remove("payments", { paymentId: "PAY-0016" });
 remove("payments", { paymentId: "PAY-0018", isTest: true });
 
+// SOFT DELETE: the payment was cancelled at the source -> isDeleted = true + new updatedAt.
+// Not validated: fact_payment row PAY-0005 gets is_deleted = TRUE (the row stays, reports filter it out).
+update("payments", { paymentId: "PAY-0005" }, { isDeleted: true });
+
 const pending = db.payments.countDocuments({ updatedAt: { $gte: NOW }, isTest: { $ne: true } });
-print(`\n✔ Documents the INCREMENTAL run will read: ${pending} (expected 5)`);
+print(`\n✔ Documents the INCREMENTAL run will read: ${pending} (expected 6)`);
 print("  Next: POST /api/etl/pipelines/payment-pipeline/run");

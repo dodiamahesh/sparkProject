@@ -21,6 +21,7 @@ public record JobRun(
         long validCount,
         long rejectedCount,
         long duplicateCount,
+        long deletedCount,
         long loadedCount,
         String errorMessage,
         String errorDetail) {

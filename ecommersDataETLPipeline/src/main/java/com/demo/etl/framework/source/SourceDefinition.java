@@ -31,6 +31,9 @@ import java.util.List;
  *
  * @param maxRejectPercent null = no reject gate. Duplicates do NOT count as bad rows.
  * @param sourceFilter     extra MongoDB $match (JSON), applied on every run next to the timestamp window; null = none
+ * @param softDeleteField  field that marks a document as deleted at the source (e.g. isDeleted = true); null = the
+ *                         source never soft-deletes. Deleted documents are not validated: their business key is
+ *                         soft-deleted in the target tables (is_deleted = true), see SourceProcessor.
  */
 public record SourceDefinition(
         String collection,
@@ -39,10 +42,14 @@ public record SourceDefinition(
         String latestRecordColumn,
         Double maxRejectPercent,
         String sourceFilter,
+        String softDeleteField,
         SourceMetadata metadata) {
 
     /** Field set on test documents in MongoDB; {@link Builder#excludeTestRecords()} skips them. */
     public static final String TEST_RECORD_FIELD = "isTest";
+
+    /** Default soft-delete flag field, see {@link Builder#softDelete()}. */
+    public static final String DEFAULT_SOFT_DELETE_FIELD = "isDeleted";
 
     /** Documentation of the source; shown in GET /api/etl/pipelines and in quality-gate errors. */
     public record SourceMetadata(String description, String owner, String sla) {
@@ -68,6 +75,9 @@ public record SourceDefinition(
         for (String field : fields) {
             structFields.add(DataTypes.createStructField(field, DataTypes.StringType, true));
         }
+        if (softDeleteField != null && !fields.contains(softDeleteField)) {
+            structFields.add(DataTypes.createStructField(softDeleteField, DataTypes.StringType, true));
+        }
         return DataTypes.createStructType(structFields);
     }
 
@@ -87,6 +97,7 @@ public record SourceDefinition(
         private String latestRecordColumn;
         private Double maxRejectPercent;
         private String sourceFilter;
+        private String softDeleteField;
         private String description;
         private String owner;
         private String sla;
@@ -143,6 +154,23 @@ public record SourceDefinition(
             return sourceFilter("{\"" + TEST_RECORD_FIELD + "\": {\"$ne\": true}}");
         }
 
+        // ------------------------------------------------------------ soft delete
+
+        /**
+         * The source marks deleted documents with {@code isDeleted: true} (and a new updatedAt) instead of removing
+         * them. Such a document is NOT validated or loaded: its business key is soft-deleted in the target tables
+         * (is_deleted = true, deleted_at = its updatedAt). isDeleted = false again later = restored.
+         */
+        public Builder softDelete() {
+            return softDelete(DEFAULT_SOFT_DELETE_FIELD);
+        }
+
+        /** Same as {@link #softDelete()} with another flag field. Values true / 1 / Y / yes mean deleted. */
+        public Builder softDelete(String flagField) {
+            this.softDeleteField = flagField;
+            return this;
+        }
+
         // ------------------------------------------------------------ metadata
 
         public Builder description(String description) {
@@ -164,7 +192,7 @@ public record SourceDefinition(
 
         public SourceDefinition build() {
             return new SourceDefinition(collection, fields, businessKey, latestRecordColumn, maxRejectPercent,
-                    sourceFilter, new SourceMetadata(description, owner, sla));
+                    sourceFilter, softDeleteField, new SourceMetadata(description, owner, sla));
         }
     }
 }

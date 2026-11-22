@@ -13,7 +13,8 @@ public record SourceInfo(
         String businessKey,
         List<String> fields,
         Double maxRejectPercent,
-        String sourceFilter) {
+        String sourceFilter,
+        String softDeleteField) {
 
     public static SourceInfo from(SourceDefinition source) {
         return new SourceInfo(
@@ -24,6 +25,7 @@ public record SourceInfo(
                 source.businessKey(),
                 source.fields(),
                 source.maxRejectPercent(),
-                source.sourceFilter());
+                source.sourceFilter(),
+                source.softDeleteField());
     }
 }

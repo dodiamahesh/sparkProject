@@ -12,7 +12,7 @@
 //  never loaded (rejected); its rejected-table rows stay as history.
 //
 //  EXPECTED INCREMENTAL RUN:
-//      vat_return_coll  read 6 | valid 5 | rejected 1
+//      vat_return_coll  read 7 | valid 5 | rejected 1 | deleted 1
 //          UPDATE 120000000612  Accra Foods Oct: status PEND -> APRV           (fact row updated in place)
 //          UPDATE 120000000604  Asante Oct: taxpayer renamed                  (dim_taxpayer overwritten, SCD1)
 //          FIX    120000000619  Ama Owusu Oct: netOutputTax corrected          (was rejected, now loaded)
@@ -20,7 +20,8 @@
 //          INSERT 120000000622  Volta Logistics Oct
 //          INSERT 120000000623  Kwame Nov, filed before the month ended -> VALIDATION rtnToDate in the future
 //          DELETE 120000000617  bad tin, cancelled at the source
-//      -> dim_taxpayer 7, dim_tax_period 3, fact_vat_return 17 (14 + 3 new; 2 updated in place)
+//          SOFT DELETE 120000000614  BNSJ Aug withdrawn (isDeleted = true) -> fact row is_deleted = TRUE
+//      -> dim_taxpayer 7, dim_tax_period 3, fact_vat_return 17 (14 + 3 new; 2 updated in place; 1 is_deleted)
 //      status: SUCCESS_WITH_FAILED (120000000623 rejected)
 // =============================================================================
 const DB_NAME = "shopdb";
@@ -111,7 +112,11 @@ insertFrom("120000000606", "120000000623", {
 // 7) delete: the return with the invalid tin (never loaded) was cancelled at the source
 remove("120000000617");
 
+// 8) SOFT DELETE: the August return of BNSJ was withdrawn at the source (isDeleted = true + new updatedAt)
+//    -> fact_vat_return 120000000614 gets is_deleted = TRUE (row kept); same transaction as everything else
+update("120000000614", { isDeleted: true });
+
 print("");
 print(`✔ ${COLL} to read: ${coll.countDocuments({ updatedAt: { $gte: NOW }, isTest: { $ne: true } })}`);
-print("  expected: 6");
+print("  expected: 7");
 print("  Next: POST /api/etl/pipelines/vat-return-pipeline/run");

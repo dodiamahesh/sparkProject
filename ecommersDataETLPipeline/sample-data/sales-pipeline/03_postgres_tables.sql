@@ -48,12 +48,15 @@ CREATE TABLE IF NOT EXISTS meta.meta_pipeline_run (
     valid_count      BIGINT       NOT NULL DEFAULT 0,    -- records that passed all checks
     rejected_count   BIGINT       NOT NULL DEFAULT 0,    -- records that failed (includes duplicates)
     duplicate_count  BIGINT       NOT NULL DEFAULT 0,    -- part of rejected_count
+    deleted_count    BIGINT       NOT NULL DEFAULT 0,    -- documents soft-deleted at the source (applied, not validated)
     loaded_count     BIGINT       NOT NULL DEFAULT 0,    -- rows inserted/updated in target tables
     error_message    TEXT,                               -- short failure reason
     error_detail     TEXT                                -- stack trace (truncated)
 );
 CREATE INDEX IF NOT EXISTS idx_pipeline_run_pipeline ON meta.meta_pipeline_run (pipeline_name, start_time DESC);
 CREATE INDEX IF NOT EXISTS idx_pipeline_run_status   ON meta.meta_pipeline_run (status);
+-- upgrade of a database created before soft delete existed (re-run safe)
+ALTER TABLE meta.meta_pipeline_run ADD COLUMN IF NOT EXISTS deleted_count BIGINT NOT NULL DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS meta.meta_pipeline_step (
     job_step_id    BIGSERIAL    PRIMARY KEY,
@@ -261,6 +264,18 @@ CREATE TABLE IF NOT EXISTS curated.fact_payment (
 );
 CREATE INDEX IF NOT EXISTS idx_fact_payment_order    ON curated.fact_payment (order_no);
 CREATE INDEX IF NOT EXISTS idx_fact_payment_customer ON curated.fact_payment (customer_key);
+
+
+-- ---------------------------------------------------------------------
+-- SOFT DELETE columns: a document deleted at the source (isDeleted = true) is NOT removed here; the row is
+-- marked is_deleted = TRUE, deleted_at = when it was deleted. Reports filter WHERE NOT is_deleted.
+-- A document restored at the source (isDeleted = false again) sets is_deleted back to FALSE.
+-- ALTER ... ADD COLUMN IF NOT EXISTS also upgrades a database created with an older version (re-run safe).
+-- ---------------------------------------------------------------------
+ALTER TABLE curated.dim_product ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN NOT NULL DEFAULT FALSE, ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP;
+ALTER TABLE curated.dim_customer ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN NOT NULL DEFAULT FALSE, ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP;
+ALTER TABLE curated.fact_sales ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN NOT NULL DEFAULT FALSE, ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP;
+ALTER TABLE curated.fact_payment ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN NOT NULL DEFAULT FALSE, ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP;
 
 
 -- =====================================================================

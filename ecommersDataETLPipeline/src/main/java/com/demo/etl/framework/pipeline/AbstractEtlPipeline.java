@@ -98,6 +98,37 @@ public abstract class AbstractEtlPipeline implements EtlPipeline {
         return loadDirect(context, dates.distinct(), DateDimension.TABLE, List.of(DateDimension.KEY_COLUMN));
     }
 
+    // ------------------------------------------------------------------ soft delete
+
+    /**
+     * SOFT DELETE: the documents of {@code batch} that were deleted at the source (isDeleted = true) are marked
+     * is_deleted = true / deleted_at in {@code targetTable}, on the rows whose {@code targetKeyColumn} holds their
+     * business key. Rows are never removed, so facts and history stay. Call it once per target table that is
+     * built from this source; the job FAILS if a source with deletes is never applied (nothing is lost silently).
+     *
+     * <pre>
+     *   applyDeletes(ctx, payments, "silver.fact_payment", "payment_id");
+     *   applyDeletes(ctx, orders,   "silver.fact_order_item", "order_id");   // cascade: the lines of a deleted order
+     * </pre>
+     */
+    protected long applyDeletes(PipelineContext context, SourceBatch batch, String targetTable, String targetKeyColumn) {
+        return softDelete(context, batch, targetTable, targetKeyColumn, false);
+    }
+
+    /** SOFT DELETE for an SCD2 dimension: the CURRENT version is closed (valid_to = deleted_at) and marked deleted. */
+    protected long applyDeletesScd2(PipelineContext context, SourceBatch batch, Scd2Writer.Scd2Spec spec) {
+        return softDelete(context, batch, spec.table(), spec.businessKey(), true);
+    }
+
+    private long softDelete(PipelineContext context, SourceBatch batch, String table, String keyColumn, boolean scd2) {
+        context.markDeletesApplied(batch.collection());
+        if (batch.deletedCount() == 0) {
+            return 0;
+        }
+        return toolkit.stepTracker().track(context, "Soft delete " + table + " [" + batch.collection() + "]",
+                () -> toolkit.softDeleteWriter().apply(context, batch, table, keyColumn, scd2));
+    }
+
     /** Replaces a business key with the dimension's surrogate key (adds the key column). */
     protected Dataset<Row> addSurrogateKey(Dataset<Row> facts, String dimensionTable,
                                            String surrogateKeyColumn, String... businessKeyColumns) {

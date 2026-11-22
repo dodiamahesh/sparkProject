@@ -21,11 +21,15 @@ public enum JobStatus {
      */
     FAILED;
 
-    /** Status of a run that finished without an exception. */
-    public static JobStatus of(long validCount, long rejectedCount) {
+    /**
+     * Status of a run that finished without an exception.
+     *
+     * @param processedCount records handled successfully: valid (loaded) + soft-deleted at the source
+     */
+    public static JobStatus of(long processedCount, long rejectedCount) {
         if (rejectedCount == 0) {
             return SUCCESS;
         }
-        return validCount == 0 ? FAILED : SUCCESS_WITH_FAILED;
+        return processedCount == 0 ? FAILED : SUCCESS_WITH_FAILED;
     }
 }

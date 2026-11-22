@@ -45,6 +45,34 @@ SELECT r.pipeline_name, r.source_collection, r.business_key, e.error_type, e.err
  ORDER BY 1, 2, 3;
 ```
 
+## Soft delete (every pipeline)
+
+A record deleted in the source system arrives in MongoDB as a **soft delete**: `isDeleted: true` plus a new
+`updatedAt` (every source definition has `.softDelete()`). The next run reads it like any change, then:
+
+| Step | What happens |
+|---|---|
+| split | after sanitizing, the **latest** version of each business key decides: deleted -> delete list (not validated, never rejected) |
+| apply | the pipeline marks the rows built from that source: `is_deleted = TRUE`, `deleted_at` = its `updatedAt`. Rows are **never removed**, so facts keep their dimension rows (no broken foreign keys) and the history stays |
+| SCD2 | `curated.dim_customer`: the **current version is closed** (`is_current = N`, `valid_to = deleted_at`) and marked deleted |
+| cascade | a deleted order also marks its lines (`fact_order_item` by `order_id`, `curated.fact_sales` by `order_no`) |
+| restore | `isDeleted: false` again (+ new `updatedAt`): the upsert sets `is_deleted = FALSE`, `deleted_at = NULL`; SCD2 gets a new current version |
+| count | `meta_pipeline_run.deleted_count`; a run with only deletes is `SUCCESS` |
+| safety | a source that sends deletes which the pipeline does not apply FAILS the job (the watermark does not move: nothing is lost) |
+
+Reports / gold layer: `WHERE NOT is_deleted`. Both load modes are supported: staging (set-based UPDATE) and
+direct (`vat-return-pipeline`, inside its all-or-nothing transaction). The `03` scripts add the columns with
+`ALTER TABLE ... ADD COLUMN IF NOT EXISTS`, so running them again upgrades an existing database.
+
+| Pipeline | Tables with soft delete (key) | 02 sample |
+|---|---|---|
+| payment | fact_payment (payment_id) | PAY-0005 |
+| transaction | dim_customer, dim_account, dim_merchant, fact_transaction | MER-0006, TXN-000006 |
+| ecommerce-order | dim_category, dim_product, dim_ecom_customer, fact_order, fact_order_item (+ cascade by order_id) | ORD-00004 (+ 2 lines) |
+| ecommerce-fulfillment | dim_warehouse, dim_carrier, fact_shipment | SHP-00008 |
+| sales | curated.dim_product, dim_customer (SCD2), fact_sales (all lines of the order), fact_payment | C020, O1019 (+ 2 lines) |
+| vat-return | fact_vat_return (ack_no) | 120000000614 |
+
 ## Jobs
 
 | Folder | Mongo DB | Collections | Target |
@@ -86,9 +114,9 @@ order 01 → order run → fulfillment 01 → fulfillment run → order 02 → o
 - **Start again from zero:** the 01 scripts write the original (past) timestamps. Run them only on an empty target
   (or delete the job's rows from `meta.meta_watermark`), otherwise those timestamps are older than the watermark
   and are not read.
-- **DELETE is not pushed to PostgreSQL.** The job reads only documents that exist, so a deleted document is never
-  seen. The scripts delete only records that were never loaded (rejected / test ones); their row in
-  `meta.meta_rejected_record` stays as history.
+- **HARD delete (document removed from MongoDB) is not pushed to PostgreSQL.** The job reads only documents that
+  exist, so a removed document is never seen. The scripts hard-delete only records that were never loaded
+  (rejected / test ones); their rows in `meta.meta_rejected_record` stay as history. Use SOFT delete instead (below).
 - **Fixing a rejected record:** correct it in MongoDB (the source sets a new `updatedAt`, e.g. `PAY-0013` in the 02
   script). The next run reads it; when it is valid now it is loaded. Its rows in `meta.meta_rejected_record` stay as
   history (the table keeps every record that was ever rejected).

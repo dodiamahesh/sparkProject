@@ -9,6 +9,8 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -26,6 +28,7 @@ public class PipelineContext {
     private final List<Dataset<Row>> cachedDatasets = new ArrayList<>();
     private final AtomicInteger stepCounter = new AtomicInteger();
     private final AtomicInteger stagingTableCounter = new AtomicInteger();
+    private final Set<String> deletesApplied = ConcurrentHashMap.newKeySet();
 
     public PipelineContext(long jobRunId, String pipelineName, Instant windowEnd, boolean directLoad) {
         this.jobRunId = jobRunId;
@@ -83,6 +86,15 @@ public class PipelineContext {
     public void releaseResources() {
         cachedDatasets.forEach(Dataset::unpersist);
         cachedDatasets.clear();
+    }
+
+    /** The pipeline applied the soft deletes of this collection (AbstractEtlPipeline.applyDeletes). */
+    public void markDeletesApplied(String collection) {
+        deletesApplied.add(collection);
+    }
+
+    public boolean deletesApplied(String collection) {
+        return deletesApplied.contains(collection);
     }
 
     public int nextStepOrder() {

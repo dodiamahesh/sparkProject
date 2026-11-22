@@ -87,5 +87,11 @@ public class TransactionPipeline extends AbstractEtlPipeline {
         withKeys = addSurrogateKey(withKeys, "silver.dim_account", "account_key", "account_id");
         withKeys = addSurrogateKey(withKeys, "silver.dim_merchant", "merchant_key", "merchant_id");
         load(context, toFactTransaction(withKeys), "silver.fact_transaction", "transaction_id");
+
+        // ---------------- 3. SOFT DELETES (rows are marked, never removed: facts keep their dimension rows) ----------------
+        applyDeletes(context, customers, "silver.dim_customer", "customer_id");
+        applyDeletes(context, accounts, "silver.dim_account", "account_id");
+        applyDeletes(context, merchants, "silver.dim_merchant", "merchant_id");
+        applyDeletes(context, transactions, "silver.fact_transaction", "transaction_id");
     }
 }

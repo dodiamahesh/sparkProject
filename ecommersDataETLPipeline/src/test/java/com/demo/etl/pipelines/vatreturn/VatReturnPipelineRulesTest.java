@@ -160,11 +160,11 @@ class VatReturnPipelineRulesTest {
         d.put("updatedAt", "2026-10-14T10:43:38Z");
         change.accept(d);
 
-        Object[] values = new Object[d.size() + 1];
+        String[] schemaFields = VatReturnSources.VAT_RETURNS.schema().fieldNames();   // _id + fields + isDeleted
+        Object[] values = new Object[schemaFields.length];
         values[0] = id;
-        int i = 1;
-        for (String field : VatReturnSources.VAT_RETURNS.fields()) {
-            values[i++] = d.get(field);
+        for (int i = 1; i < schemaFields.length; i++) {
+            values[i] = d.get(schemaFields[i]);                                       // isDeleted: not set = null
         }
         return RowFactory.create(values);
     }

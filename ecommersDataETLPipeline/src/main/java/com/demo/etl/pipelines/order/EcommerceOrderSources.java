@@ -25,6 +25,7 @@ final class EcommerceOrderSources {
             .fields("categoryId", "categoryName", "department", "updatedAt")
             .businessKey("categoryId")
             .latestRecordColumn("updatedAt")
+            .softDelete()                         // isDeleted = true at the source -> soft delete in silver
             .excludeTestRecords()
             .maxRejectPercent(30)
             .description("Product categories of the web shop catalogue")
@@ -52,6 +53,7 @@ final class EcommerceOrderSources {
                     "status", "launchDate", "updatedAt")
             .businessKey("productId")
             .latestRecordColumn("updatedAt")
+            .softDelete()                         // isDeleted = true at the source -> soft delete in silver
             .excludeTestRecords()
             .maxRejectPercent(30)
             .description("Products (SKU master data) of the web shop catalogue")
@@ -89,6 +91,7 @@ final class EcommerceOrderSources {
                     "segment", "signupDate", "updatedAt")
             .businessKey("customerId")
             .latestRecordColumn("updatedAt")
+            .softDelete()                         // isDeleted = true at the source -> soft delete in silver
             .excludeTestRecords()
             .maxRejectPercent(30)
             .description("Registered shop customers (sign-ups and profile changes)")
@@ -123,6 +126,7 @@ final class EcommerceOrderSources {
                     "couponCode", "shippingFee", "shippingCity", "shippingState", "updatedAt")
             .businessKey("orderId")
             .latestRecordColumn("updatedAt")
+            .softDelete()                         // isDeleted = true at the source -> soft delete in silver
             .excludeTestRecords()
             .maxRejectPercent(30)
             .description("Order headers from web, Android and iOS checkout")
@@ -158,6 +162,7 @@ final class EcommerceOrderSources {
             .fields("orderItemId", "orderId", "productId", "quantity", "unitPrice", "discountAmount", "updatedAt")
             .businessKey("orderItemId")
             .latestRecordColumn("updatedAt")
+            .softDelete()                         // isDeleted = true at the source -> soft delete in silver
             .excludeTestRecords()
             .maxRejectPercent(30)
             .description("Order lines: one product (with quantity, price, discount) inside an order")

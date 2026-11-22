@@ -15,7 +15,8 @@
 //  EXPECTED INCREMENTAL RUN:
 //      ecom_warehouses read 1 (WH-03 capacity change)
 //      ecom_carriers   read 1 (CRR-06 new)
-//      ecom_shipments  read 3 (SHP-00002 delivered late, SHP-00010 fixed -> loaded, SHP-00013 new) -> all valid
+//      ecom_shipments  read 4 (SHP-00002 delivered late, SHP-00010 fixed -> loaded, SHP-00013 new) -> all valid
+//                      + SHP-00008 soft-deleted (fact_shipment row is_deleted = TRUE)
 //      status: SUCCESS (nothing rejected)
 // =============================================================================
 const DB_NAME = "shopdb";
@@ -56,8 +57,11 @@ insert("ecom_shipments", { shipmentId: "SHP-00013" }, {
 // delete: the impossible shipment (delivered before shipped, never loaded) was cancelled at the source
 remove("ecom_shipments", { shipmentId: "SHP-00011" });
 
+// SOFT DELETE (isDeleted = true + new updatedAt): the lost shipment record was withdrawn at the source.
+update("ecom_shipments", { shipmentId: "SHP-00008" }, { isDeleted: true });
+
 print("");
 ["ecom_warehouses", "ecom_carriers", "ecom_shipments"].forEach(c => print(
   `✔ ${c.padEnd(16)} to read: ${db.getCollection(c).countDocuments({ updatedAt: { $gte: NOW }, isTest: { $ne: true } })}`));
-print("  expected: warehouses 1, carriers 1, shipments 3");
+print("  expected: warehouses 1, carriers 1, shipments 4");
 print("  Next: POST /api/etl/pipelines/ecommerce-fulfillment-pipeline/run");

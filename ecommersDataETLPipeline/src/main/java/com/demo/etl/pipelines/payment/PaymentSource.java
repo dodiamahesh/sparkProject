@@ -16,6 +16,7 @@ final class PaymentSource {
                     "amount", "currency", "paymentDate", "status", "referenceNumber", "updatedAt")
             .businessKey("paymentId")
             .latestRecordColumn("updatedAt")
+            .softDelete()                         // isDeleted = true at the source -> soft delete in silver
             // ---- data contract: filter, quality gate, metadata ----
             .excludeTestRecords()
             .maxRejectPercent(30)

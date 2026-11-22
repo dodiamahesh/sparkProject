@@ -15,10 +15,12 @@
 //
 //  EXPECTED INCREMENTAL RUN:
 //      products   read 2 (P003 price 2000 -> 1800, P024 new)
-//      customers  read 3 (C003 Mumbai/Gold -> Pune/Platinum = SCD2 new version, C002 phone = SCD1, C023 new)
-//      orders     read 3 (O1024 new with 2 lines, O1015 SHIPPED -> DELIVERED, O1010 PLACED -> SHIPPED)
+//      customers  read 4 (C003 Mumbai/Gold -> Pune/Platinum = SCD2 new version, C002 phone = SCD1, C023 new,
+//                         C020 soft-deleted -> her current version is closed, is_deleted = TRUE)
+//      orders     read 4 (O1024 new with 2 lines, O1015 SHIPPED -> DELIVERED, O1010 PLACED -> SHIPPED,
+//                         O1019 soft-deleted -> its 2 fact_sales lines is_deleted = TRUE)
 //      payments   read 2 (PAY10 PENDING -> SUCCESS, PAY23 new)
-//      -> dim_customer 22 rows (C003 has 2 versions), fact_sales 32, fact_payment 21. Nothing rejected.
+//      -> dim_customer 22 rows (C003 has 2 versions), fact_sales 32, fact_payment 21. Nothing rejected, 2 soft-deleted.
 //      Old order O1003 keeps the Mumbai version of C003 (point-in-time lookup).
 //      status: SUCCESS (nothing rejected)
 // =============================================================================
@@ -133,8 +135,15 @@ insertNew("payments", { payment_id: "PAY23" }, {
 remove("orders", { order_no: "O1023" });      // empty order (no items) cancelled
 remove("payments", { payment_id: "PAY22" });  // corrupt payment ("abc") removed by the gateway team
 
+// SOFT DELETES (isDeleted = true + new updated_at)
+// C020 closed her account: the CURRENT version of curated.dim_customer is closed (valid_to = deleted time,
+// is_current = N, is_deleted = TRUE). Her old order O1020 keeps its customer_key.
+updateLatest("customers", { customer_code: "C020" }, { isDeleted: true });
+// O1019 was cancelled: BOTH lines in curated.fact_sales get is_deleted = TRUE (payment PAY19 is a separate record).
+updateLatest("orders", { order_no: "O1019" }, { isDeleted: true });
+
 print("");
 ["products", "customers", "orders", "payments"].forEach(c => print(
   `✔ ${c.padEnd(10)} to read: ${db.getCollection(c).countDocuments({ updated_at: { $gte: NOW } })}`));
-print("  expected: products 2, customers 3, orders 3, payments 2");
+print("  expected: products 2, customers 4, orders 4, payments 2");
 print("  Next: POST /api/etl/pipelines/sales-pipeline/run");

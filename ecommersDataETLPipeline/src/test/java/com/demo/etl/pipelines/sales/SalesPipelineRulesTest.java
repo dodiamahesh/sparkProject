@@ -106,8 +106,8 @@ class SalesPipelineRulesTest {
     @Test
     void paymentAmountIsCleanedAndCorruptAmountIsRejected() {
         Dataset<Row> payments = withRawRecord(spark.createDataFrame(List.of(
-                RowFactory.create("p1", "PAY01", "O1001", "UPI", "₹29,000", "success", "2026-10-01T04:46:00Z", "2026-10-01T04:46:00Z"),
-                RowFactory.create("p2", "PAY22", "O1020", "UPI", "abc", "FAILED", "2026-10-16T11:05:00Z", "2026-10-16T11:05:00Z")),
+                RowFactory.create("p1", "PAY01", "O1001", "UPI", "₹29,000", "success", "2026-10-01T04:46:00Z", "2026-10-01T04:46:00Z", null),
+                RowFactory.create("p2", "PAY22", "O1020", "UPI", "abc", "FAILED", "2026-10-16T11:05:00Z", "2026-10-16T11:05:00Z", null)),
                 SalesSources.PAYMENTS.schema()));
         Dataset<Row> loadedOrders = spark.createDataFrame(List.of(RowFactory.create("O1001"), RowFactory.create("O1020")),
                 new StructType().add("order_no", DataTypes.StringType));
@@ -149,11 +149,11 @@ class SalesPipelineRulesTest {
     private static Row customer(String id, String code, String name, String email, String phone,
                                 String city, String state, String tier, String updatedAt) {
         String address = "{\"city\": \"" + city + "\", \"state\": \"" + state + "\", \"pincode\": \"380001\"}";
-        return RowFactory.create(id, code, name, email, phone, address, tier, "2025-01-10", updatedAt);
+        return RowFactory.create(id, code, name, email, phone, address, tier, "2025-01-10", updatedAt, null);   // last = isDeleted
     }
 
     private static Row order(String id, String orderNo, String status, String method, String items) {
-        return RowFactory.create(id, orderNo, "C007", "2026-10-05T11:15:00Z", status, method, items, "2026-10-09T16:30:00Z");
+        return RowFactory.create(id, orderNo, "C007", "2026-10-05T11:15:00Z", status, method, items, "2026-10-09T16:30:00Z", null);
     }
 
     /** What SourceProcessor adds on extract: the raw document as JSON. */

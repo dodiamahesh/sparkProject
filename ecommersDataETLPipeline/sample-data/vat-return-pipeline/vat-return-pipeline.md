@@ -302,7 +302,7 @@ curl.exe -X POST "http://localhost:8080/api/etl/pipelines/vat-return-pipeline/ru
 | 3 | Duplicate fields | Top level and `rtnRegisterVatDTO` both carry period / type / due date. Decision: period, type and due date from the **top level**; status, filed time, credits and ack date from **`rtnRegisterVatDTO`**. |
 | 4 | Taxpayer history | `dim_taxpayer` is SCD1 (latest values). If reports need the jurisdiction **at filing time**, change it to SCD2 (more complex without staging) or store `jurisdiction_code` on the fact as well. |
 | 5 | Amended returns | Kept as separate fact rows (own `ack_no`). "Latest return per tin + period" is a query or view, not a separate table. |
-| 6 | Deletes | Not propagated (as in all jobs). A cancelled return should be a status (e.g. `REJT`) plus a new `updatedAt`. |
+| 6 | Deletes | Soft delete: `isDeleted: true` + new `updatedAt` -> `fact_vat_return.is_deleted = TRUE` (in the same transaction). A removed document (hard delete) is not propagated. |
 | 7 | Volume | Direct load in one transaction is fine for tens of thousands of returns per run; for millions use staging plus one final transaction. |
 
 ---

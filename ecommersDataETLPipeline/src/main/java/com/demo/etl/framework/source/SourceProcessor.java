@@ -2,6 +2,7 @@ package com.demo.etl.framework.source;
 
 import com.demo.etl.config.EtlProperties;
 import com.demo.etl.framework.audit.StepTracker;
+import com.demo.etl.framework.common.SparkTypes;
 import com.demo.etl.framework.audit.WatermarkRepository;
 import com.demo.etl.framework.exception.DataQualityGateException;
 import com.demo.etl.framework.pipeline.PipelineContext;
@@ -14,6 +15,7 @@ import com.demo.etl.framework.quality.QualityResult;
 import org.apache.spark.sql.Column;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
+import org.apache.spark.sql.expressions.Window;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -22,14 +24,21 @@ import java.util.List;
 import java.util.Locale;
 import java.util.stream.Collectors;
 
+import static org.apache.spark.sql.functions.coalesce;
 import static org.apache.spark.sql.functions.col;
+import static org.apache.spark.sql.functions.first;
+import static org.apache.spark.sql.functions.lit;
+import static org.apache.spark.sql.functions.lower;
+import static org.apache.spark.sql.functions.max;
+import static org.apache.spark.sql.functions.not;
 import static org.apache.spark.sql.functions.struct;
 import static org.apache.spark.sql.functions.to_json;
+import static org.apache.spark.sql.functions.trim;
 
 /**
  * The standard "first half" of every pipeline, for one source collection:
  *
- *   WINDOW (watermark) -> EXTRACT (MongoDB) -> SANITIZE -> VALIDATE -> DE-DUPLICATE
+ *   WINDOW (watermark) -> EXTRACT (MongoDB) -> SANITIZE -> SPLIT SOFT DELETES -> VALIDATE -> DE-DUPLICATE
  *     -> split into valid / rejected -> REJECT GATE
  *
  * Every run is INCREMENTAL: only documents whose timestamp field is inside the window are read
@@ -48,6 +57,9 @@ public class SourceProcessor {
     private final StepTracker stepTracker;
     private final WatermarkRepository watermarkRepository;
     private final int rejectGateMinRecords;
+
+    private static final String DELETED_FLAG = "_sd_deleted";
+    private static final String LATEST_IS_DELETED = "_sd_latest_deleted";
 
     public SourceProcessor(MongoSourceReader reader, DataQualityEngine qualityEngine, StepTracker stepTracker,
                            WatermarkRepository watermarkRepository, EtlProperties properties) {
@@ -73,21 +85,24 @@ public class SourceProcessor {
         // 2-4. SANITIZE + VALIDATE + DE-DUPLICATE
         SourceBatch batch = stepTracker.track(context, "Validate " + collection, () -> {
             Dataset<Row> cleaned = sanitizer.apply(raw);
-            QualityResult result = qualityEngine.check(cleaned, rules, source.businessKey(),
+            // 2b. SOFT DELETE: keys whose latest version is marked deleted are not validated, they are deleted
+            ActiveAndDeleted split = splitSoftDeletes(context, cleaned, source);
+            QualityResult result = qualityEngine.check(split.active(), rules, source.businessKey(),
                     source.latestRecordColumn());
             Dataset<Row> valid = context.cache(result.valid());
-            return toBatch(context, source, valid, result.rejected(), sourceCount, false);
+            return toBatch(context, source, valid, result.rejected(), split.deleted(), sourceCount, false);
         }, SourceBatch::validCount);
 
         context.metrics().addSource(batch.sourceCount());
         context.metrics().addValid(batch.validCount());
         context.metrics().addRejected(batch.rejectedCount());
         context.metrics().addDuplicates(batch.duplicateCount());
+        context.metrics().addDeleted(batch.deletedCount());
         context.addSourceBatch(batch);
 
-        log.info("[job {}] {}: read={}, valid={}, rejected={} (of which duplicates={})",
+        log.info("[job {}] {}: read={}, valid={}, rejected={} (of which duplicates={}), deleted at source={}",
                 context.jobRunId(), collection, batch.sourceCount(), batch.validCount(),
-                batch.rejectedCount(), batch.duplicateCount());
+                batch.rejectedCount(), batch.duplicateCount(), batch.deletedCount());
 
         // 5. REJECT GATE: too many bad rows -> stop the job BEFORE the pipeline loads this collection
         if (source.maxRejectPercent() != null) {
@@ -113,7 +128,7 @@ public class SourceProcessor {
         SourceBatch batch = stepTracker.track(context, "Validate " + name + " (lines)", () -> {
             QualityResult result = qualityEngine.check(rows, rules, definition.businessKey(),
                     definition.latestRecordColumn());
-            return toBatch(context, definition, context.cache(result.valid()), result.rejected(), -1, true);
+            return toBatch(context, definition, context.cache(result.valid()), result.rejected(), null, -1, true);
         }, SourceBatch::validCount);
 
         // Lines are not extra SOURCE documents: only the rejected lines are added to the job counters
@@ -126,17 +141,55 @@ public class SourceProcessor {
         return batch;
     }
 
-    /** @param sourceCount -1 = derived rows: valid + rejected */
+    /**
+     * @param deleted     soft-deleted keys (null = none)
+     * @param sourceCount -1 = derived rows: valid + rejected
+     */
     private SourceBatch toBatch(PipelineContext context, SourceDefinition source, Dataset<Row> valid,
-                                Dataset<Row> rejectedRows, long sourceCount, boolean derived) {
+                                Dataset<Row> rejectedRows, Dataset<Row> deleted, long sourceCount, boolean derived) {
         Dataset<Row> rejected = context.cache(rejectedRows);
         long validCount = valid.count();
         long rejectedCount = rejected.count();
         long duplicateCount = rejected
                 .filter(QualityColumns.mainErrorType().equalTo(ErrorType.DUPLICATE.name()))
                 .count();
+        long deletedCount = deleted == null ? 0 : deleted.count();
         long count = sourceCount >= 0 ? sourceCount : validCount + rejectedCount;
-        return new SourceBatch(source, valid, rejected, count, validCount, rejectedCount, duplicateCount, derived);
+        return new SourceBatch(source, valid, rejected, deleted, count, validCount, rejectedCount, duplicateCount,
+                deletedCount, derived);
+    }
+
+    // ================================================================== soft delete
+
+    /** Rows to validate + soft-deleted keys (deleted = null when the source has no soft delete). */
+    private record ActiveAndDeleted(Dataset<Row> active, Dataset<Row> deleted) {
+    }
+
+    /**
+     * Splits the cleaned rows on the soft-delete flag. The LATEST version of a business key decides (same order as
+     * the duplicate check): deleted -> the key goes to the deleted list (not validated, never rejected);
+     * not deleted -> all its rows are validated as usual (a deleted older copy is then just a duplicate).
+     *
+     * @return deleted = one row per key: business key + SourceBatch.DELETED_AT (when it was deleted)
+     */
+    private ActiveAndDeleted splitSoftDeletes(PipelineContext context, Dataset<Row> cleaned, SourceDefinition source) {
+        if (source.softDeleteField() == null) {
+            return new ActiveAndDeleted(cleaned, null);
+        }
+        String key = source.businessKey();
+        Column flag = lower(trim(col(source.softDeleteField()))).isin("true", "1", "y", "yes");
+        Dataset<Row> flagged = cleaned
+                .withColumn(DELETED_FLAG, coalesce(flag, lit(false)).and(col(key).isNotNull()))
+                .withColumn(LATEST_IS_DELETED, first(col(DELETED_FLAG)).over(Window.partitionBy(col(key))
+                        .orderBy(col(source.latestRecordColumn()).cast(SparkTypes.TIMESTAMP).desc_nulls_last(),
+                                col(QualityColumns.SOURCE_ID).asc())));
+
+        Dataset<Row> active = flagged.filter(not(col(LATEST_IS_DELETED))).drop(DELETED_FLAG, LATEST_IS_DELETED);
+        Dataset<Row> deleted = context.cache(flagged
+                .filter(col(LATEST_IS_DELETED).and(col(DELETED_FLAG)))
+                .groupBy(col(key))
+                .agg(max(col(source.latestRecordColumn()).cast(SparkTypes.TIMESTAMP)).as(SourceBatch.DELETED_AT)));
+        return new ActiveAndDeleted(active, deleted);
     }
 
     // ================================================================== reject gate
@@ -145,12 +198,12 @@ public class SourceProcessor {
     private long checkRejectGate(SourceBatch batch) {
         SourceDefinition source = batch.source();
         double maxPercent = source.maxRejectPercent();
-        if (batch.sourceCount() < rejectGateMinRecords) {
+        if (batch.activeCount() < rejectGateMinRecords) {
             log.info("Reject gate skipped for {}: only {} rows (minimum {})",
-                    source.collection(), batch.sourceCount(), rejectGateMinRecords);
+                    source.collection(), batch.activeCount(), rejectGateMinRecords);
             return batch.badRowCount();
         }
-        double percent = 100.0 * batch.badRowCount() / batch.sourceCount();
+        double percent = 100.0 * batch.badRowCount() / batch.activeCount();   // deleted documents are not validated
         if (percent > maxPercent) {
             Dataset<Row> badErrors = QualityColumns.oneRowPerError(batch.rejected()
                     .filter(QualityColumns.mainErrorType().notEqual(ErrorType.DUPLICATE.name())));
@@ -158,7 +211,7 @@ public class SourceProcessor {
                     "Reject gate failed for %s: %d of %d rows rejected (%.1f%%), allowed at most %.1f%%. "
                             + "Errors: %s. Example: %s. Nothing from this collection was loaded and the "
                             + "watermark did not move.%s",
-                    source.collection(), batch.badRowCount(), batch.sourceCount(), percent, maxPercent,
+                    source.collection(), batch.badRowCount(), batch.activeCount(), percent, maxPercent,
                     errorSummary(badErrors), exampleError(badErrors), source.ownerHint()));
         }
         return batch.badRowCount();

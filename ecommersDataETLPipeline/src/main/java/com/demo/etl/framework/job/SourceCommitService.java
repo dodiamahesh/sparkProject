@@ -17,6 +17,7 @@ import org.springframework.stereotype.Service;
  *                                   meta.meta_error_master)
  *                                   (directLoad pipelines: without staging table, in the job's transaction)
  *   2. advance the watermark     -> meta.meta_watermark = start time of this run
+ *   (first: every soft delete read from the source must have been applied by the pipeline, else the job fails)
  *                                   (skipped for derived batches such as order lines: the parent collection has it)
  *
  * Because the watermark moves LAST, a job that fails half-way changes nothing: the next run reads the same
@@ -42,6 +43,16 @@ public class SourceCommitService {
     }
 
     public void commit(PipelineContext context) {
+        // Safety: soft deletes read from the source must have been applied, otherwise they would be lost for good
+        // (the watermark moves on). Fails the job BEFORE anything of the commit phase is written.
+        for (SourceBatch batch : context.sourceBatches()) {
+            if (batch.deletedCount() > 0 && !context.deletesApplied(batch.collection())) {
+                throw new IllegalStateException(batch.deletedCount() + " document(s) of " + batch.collection()
+                        + " were soft-deleted at the source, but the pipeline did not apply them "
+                        + "(AbstractEtlPipeline.applyDeletes). The watermark was not moved.");
+            }
+        }
+
         for (SourceBatch batch : context.sourceBatches()) {
             stepTracker.track(context, "Save rejected records [" + batch.collection() + "]",
                     () -> saveRejectedRecords(context, batch));

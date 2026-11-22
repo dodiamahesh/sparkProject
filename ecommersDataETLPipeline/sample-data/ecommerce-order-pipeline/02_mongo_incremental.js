@@ -15,7 +15,8 @@
 //      ecom_categories   read 1 (CAT-07 new)
 //      ecom_products     read 2 (PRD-0001 price change, PRD-0011 new in CAT-07)
 //      ecom_customers    read 3 (ECU-0002 moved, ECU-0008 fixed -> loaded, ECU-0009 new)
-//      ecom_orders       read 2 (ORD-00002 SHIPPED -> DELIVERED, ORD-00011 new)
+//      ecom_orders       read 3 (ORD-00002 SHIPPED -> DELIVERED, ORD-00011 new, ORD-00004 soft-deleted
+//                                -> fact_order row + its 2 fact_order_item lines get is_deleted = TRUE)
 //      ecom_order_items  read 3 (OIT-000016/17 new, OIT-000018 VALIDATION: discount > quantity * unitPrice)
 //      status: SUCCESS_WITH_FAILED (OIT-000018 rejected)
 // =============================================================================
@@ -75,8 +76,12 @@ insert("ecom_order_items", { orderItemId: "OIT-000017" }, item("OIT-000017", "PR
 insert("ecom_order_items", { orderItemId: "OIT-000018" }, item("OIT-000018", "PRD-0006", 1, 299, 500));   // VALIDATION
 remove("ecom_order_items", { orderItemId: "OIT-000014" });                 // line of the removed order
 
+// SOFT DELETE (isDeleted = true + new updatedAt): order ORD-00004 was cancelled at the source.
+// fact_order ORD-00004 AND its 2 lines in fact_order_item (OIT-000005 / OIT-000006, cascade) get is_deleted = TRUE.
+update("ecom_orders", { orderId: "ORD-00004" }, { isDeleted: true });
+
 print("");
 ["ecom_categories", "ecom_products", "ecom_customers", "ecom_orders", "ecom_order_items"].forEach(c => print(
   `✔ ${c.padEnd(17)} to read: ${db.getCollection(c).countDocuments({ updatedAt: { $gte: NOW }, isTest: { $ne: true } })}`));
-print("  expected: categories 1, products 2, customers 3, orders 2, order_items 3");
+print("  expected: categories 1, products 2, customers 3, orders 3, order_items 3");
 print("  Next: POST /api/etl/pipelines/ecommerce-order-pipeline/run");

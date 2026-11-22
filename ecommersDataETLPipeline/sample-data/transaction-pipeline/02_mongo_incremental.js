@@ -18,9 +18,11 @@
 //  EXPECTED INCREMENTAL RUN:
 //      customers    read 3 (CUST-0002 update, CUST-0009 fixed, CUST-0012 new)  -> all valid
 //      accounts     read 3 (ACC-0003 update, ACC-0009 retry, ACC-0012 new)     -> all valid
-//      merchants    read 1 (MER-0009 new)
-//      transactions read 4 (TXN-000003 update, TXN-000017/18 new, TXN-000019 bad) -> 3 valid, 1 CORRUPT
-//      -> dim_customer 10, dim_account 10, dim_merchant 8, fact_transaction 14 (CUST-0009, ACC-0009 fixed -> loaded)
+//      merchants    read 2 (MER-0009 new, MER-0006 soft-deleted)
+//      transactions read 5 (TXN-000003 update, TXN-000017/18 new, TXN-000019 bad, TXN-000006 soft-deleted)
+//                   -> 3 valid, 1 CORRUPT, 1 deleted
+//      -> dim_customer 10, dim_account 10, dim_merchant 8 (1 is_deleted), fact_transaction 14 (1 is_deleted)
+//         (CUST-0009, ACC-0009 fixed -> loaded)
 //      status: SUCCESS_WITH_FAILED (TXN-000019 rejected)
 // =============================================================================
 const DB_NAME = "bankdb";
@@ -77,8 +79,13 @@ insert("transactions", { transactionId: "TXN-000019" }, t("TXN-000019", "ACC-000
 remove("merchants", { merchantId: "MER-0007" });          // casino merchant off-boarded
 remove("transactions", { transactionId: "TXN-000013" });  // its rejected (ORPHAN) transaction
 
+// SOFT DELETES (isDeleted = true + new updatedAt): the rows stay in silver with is_deleted = TRUE.
+// MER-0006 is a dimension row: its old transactions keep their merchant_key (no broken foreign keys).
+update("merchants", { merchantId: "MER-0006" }, { isDeleted: true });
+update("transactions", { transactionId: "TXN-000006" }, { isDeleted: true });
+
 print("");
 ["customers", "accounts", "merchants", "transactions"].forEach(c => print(
   `✔ ${c.padEnd(13)} to read: ${db.getCollection(c).countDocuments({ updatedAt: { $gte: NOW }, isTest: { $ne: true } })}`));
-print("  expected: customers 3, accounts 3, merchants 1, transactions 4");
+print("  expected: customers 3, accounts 3, merchants 2, transactions 5");
 print("  Next: POST /api/etl/pipelines/transaction-pipeline/run");

@@ -83,6 +83,7 @@ final class VatReturnSources {
                     "updatedAt")
             .businessKey("ackNo")                 // one filing = one acknowledgement number
             .latestRecordColumn("updatedAt")      // watermark: must be set by the source on every insert / update
+            .softDelete()                         // isDeleted = true at the source -> soft delete in silver
             .excludeTestRecords()
             .maxRejectPercent(30)
             .description("Monthly VAT returns filed by taxpayers (one document per filing)")

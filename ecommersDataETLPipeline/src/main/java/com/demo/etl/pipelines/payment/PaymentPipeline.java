@@ -72,5 +72,8 @@ public class PaymentPipeline extends AbstractEtlPipeline {
         withKeys = addSurrogateKey(withKeys, "silver.dim_payment_method", "payment_method_key", "payment_method", "payment_provider");
         withKeys = addSurrogateKey(withKeys, "silver.dim_biller", "biller_key", "biller_name");
         load(context, toFactPayment(withKeys), "silver.fact_payment", "payment_id");
+
+        // 5. SOFT DELETES: payments deleted at the source (dimensions are shared by many payments: not deleted)
+        applyDeletes(context, payments, "silver.fact_payment", "payment_id");
     }
 }

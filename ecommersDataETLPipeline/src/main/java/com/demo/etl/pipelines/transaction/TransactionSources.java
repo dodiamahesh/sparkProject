@@ -22,6 +22,7 @@ final class TransactionSources {
                     "city", "state", "country", "kycStatus", "createdAt", "updatedAt")
             .businessKey("customerId")
             .latestRecordColumn("updatedAt")
+            .softDelete()                         // isDeleted = true at the source -> soft delete in silver
             .excludeTestRecords()
             .maxRejectPercent(30)
             .description("Bank customers (KYC master data) from the core banking system")
@@ -56,6 +57,7 @@ final class TransactionSources {
                     "currency", "status", "openedDate", "updatedAt")
             .businessKey("accountId")
             .latestRecordColumn("updatedAt")
+            .softDelete()                         // isDeleted = true at the source -> soft delete in silver
             .excludeTestRecords()
             .maxRejectPercent(30)
             .description("Bank accounts, one per account number")
@@ -92,6 +94,7 @@ final class TransactionSources {
                     "onboardedDate", "updatedAt")
             .businessKey("merchantId")
             .latestRecordColumn("updatedAt")
+            .softDelete()                         // isDeleted = true at the source -> soft delete in silver
             .excludeTestRecords()
             .maxRejectPercent(30)
             .description("Card-acquiring merchants (shops) that customers pay")
@@ -123,6 +126,7 @@ final class TransactionSources {
                     "amount", "currency", "transactionDate", "status", "description", "updatedAt")
             .businessKey("transactionId")
             .latestRecordColumn("updatedAt")
+            .softDelete()                         // isDeleted = true at the source -> soft delete in silver
             .excludeTestRecords()
             .maxRejectPercent(30)
             .description("Card / UPI / ATM transactions of all accounts")

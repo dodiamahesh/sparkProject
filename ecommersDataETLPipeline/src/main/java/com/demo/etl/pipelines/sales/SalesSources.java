@@ -60,6 +60,7 @@ final class SalesSources {
             .fields("product_code", "name", "brand", "category", "price", "is_active", "updated_at")
             .businessKey("product_code")
             .latestRecordColumn("updated_at")
+            .softDelete()                         // isDeleted = true at the source -> soft delete in silver
             .maxRejectPercent(30)
             .description("Product catalogue (product master) of the shop")
             .owner("catalog-team@demo.com")
@@ -91,6 +92,7 @@ final class SalesSources {
             .fields("customer_code", "name", "email", "phone", "address", "tier", "signup_date", "updated_at")
             .businessKey("customer_code")
             .latestRecordColumn("updated_at")                                    // J2-D01 latest version kept
+            .softDelete()                         // isDeleted = true at the source -> soft delete in silver
             .maxRejectPercent(30)
             .description("Registered customers (sign-ups and profile changes)")
             .owner("customer-accounts-team@demo.com")
@@ -127,6 +129,7 @@ final class SalesSources {
             .fields("order_no", "customer_code", "order_ts", "status", "payment_method", "items", "updated_at")
             .businessKey("order_no")
             .latestRecordColumn("updated_at")                                    // J2-D02 latest version kept
+            .softDelete()                         // isDeleted = true at the source -> soft delete in silver
             .maxRejectPercent(30)
             .description("Orders with their product lines (items[] array)")
             .owner("checkout-team@demo.com")
@@ -183,6 +186,7 @@ final class SalesSources {
             .fields("payment_id", "order_no", "method", "amount", "status", "paid_at", "updated_at")
             .businessKey("payment_id")
             .latestRecordColumn("updated_at")                                    // J2-D03 PAY05 callback twice
+            .softDelete()                         // isDeleted = true at the source -> soft delete in silver
             .maxRejectPercent(30)
             .description("Payments from the payment gateway (UPI, card, net banking, COD)")
             .owner("payments-team@demo.com")

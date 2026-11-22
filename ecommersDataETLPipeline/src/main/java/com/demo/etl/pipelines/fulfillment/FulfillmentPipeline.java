@@ -87,5 +87,10 @@ public class FulfillmentPipeline extends AbstractEtlPipeline {
         withKeys = addSurrogateKey(withKeys, "silver.dim_carrier", "carrier_key", "carrier_id");
         withKeys = withOrderCustomerKey(withKeys, readTable("silver.fact_order", "order_id", "customer_key"));
         load(context, toFactShipment(withKeys), "silver.fact_shipment", "shipment_id");
+
+        // ---------------- 3. SOFT DELETES (rows are marked, never removed) ----------------
+        applyDeletes(context, warehouses, "silver.dim_warehouse", "warehouse_id");
+        applyDeletes(context, carriers, "silver.dim_carrier", "carrier_id");
+        applyDeletes(context, shipments, "silver.fact_shipment", "shipment_id");
     }
 }

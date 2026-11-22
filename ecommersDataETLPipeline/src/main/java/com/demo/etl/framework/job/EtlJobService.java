@@ -104,15 +104,15 @@ public class EtlJobService {
             }
 
             JobMetrics metrics = context.metrics();
-            JobStatus status = JobStatus.of(metrics.validCount(), metrics.rejectedCount());
+            JobStatus status = JobStatus.of(metrics.validCount() + metrics.deletedCount(), metrics.rejectedCount());
             String message = status == JobStatus.FAILED
                     ? "All " + metrics.rejectedCount() + " records were rejected (see meta.meta_rejected_record)"
                     : null;
             jobRunRepository.finishRun(jobRunId, status, metrics, message, null);
-            log.info("========== Job {} {} in {} ms: read={}, valid={}, rejected={}, loaded={} ==========",
+            log.info("========== Job {} {} in {} ms: read={}, valid={}, rejected={}, deleted={}, loaded={} ==========",
                     jobRunId, status, System.currentTimeMillis() - startMillis,
                     metrics.sourceCount(), metrics.validCount(), metrics.rejectedCount(),
-                    metrics.loadedCount());
+                    metrics.deletedCount(), metrics.loadedCount());
 
         } catch (Throwable error) {
             // Catch Throwable (not only Exception) so even an Error never leaves a run without a status

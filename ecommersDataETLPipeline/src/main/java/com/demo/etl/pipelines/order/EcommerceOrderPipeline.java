@@ -105,5 +105,13 @@ public class EcommerceOrderPipeline extends AbstractEtlPipeline {
         itemsWithKeys = withOrderHeaderKeys(itemsWithKeys,
                 readTable("silver.fact_order", "order_id", "customer_key", "date_key"));
         load(context, toFactOrderItem(itemsWithKeys), "silver.fact_order_item", "order_item_id");
+
+        // ---------------- 5. SOFT DELETES (rows are marked, never removed) ----------------
+        applyDeletes(context, categories, "silver.dim_category", "category_id");
+        applyDeletes(context, products, "silver.dim_product", "product_id");
+        applyDeletes(context, customers, "silver.dim_ecom_customer", "customer_id");
+        applyDeletes(context, orders, "silver.fact_order", "order_id");
+        applyDeletes(context, orders, "silver.fact_order_item", "order_id");          // cascade: lines of a deleted order
+        applyDeletes(context, items, "silver.fact_order_item", "order_item_id");
     }
 }

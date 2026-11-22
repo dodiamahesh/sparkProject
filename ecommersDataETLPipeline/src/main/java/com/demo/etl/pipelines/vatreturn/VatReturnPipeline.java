@@ -99,5 +99,8 @@ public class VatReturnPipeline extends AbstractEtlPipeline {
         loadDirect(context, toDimTaxPeriod(typed), DIM_TAX_PERIOD, List.of("period_key"));
         loadDateDimensionDirect(context, typed, "filed_date", "due_date", "ack_date");
         loadDirect(context, toFactVatReturn(typed), FACT_VAT_RETURN, List.of("ack_no"), FACT_KEYS);
+
+        // SOFT DELETES: returns deleted at the source (in the same transaction)
+        applyDeletes(context, returns, FACT_VAT_RETURN, "ack_no");
     }
 }

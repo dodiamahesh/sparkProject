@@ -11,6 +11,7 @@ public class JobMetrics {
     private final AtomicLong validCount = new AtomicLong();
     private final AtomicLong rejectedCount = new AtomicLong();
     private final AtomicLong duplicateCount = new AtomicLong();
+    private final AtomicLong deletedCount = new AtomicLong();
     private final AtomicLong loadedCount = new AtomicLong();
 
     public void addSource(long count) {
@@ -27,6 +28,15 @@ public class JobMetrics {
 
     public void addDuplicates(long count) {
         duplicateCount.addAndGet(count);
+    }
+
+    /** Documents soft-deleted at the source (applied to the target tables, not validated). */
+    public void addDeleted(long count) {
+        deletedCount.addAndGet(count);
+    }
+
+    public long deletedCount() {
+        return deletedCount.get();
     }
 
     public void addLoaded(long count) {
