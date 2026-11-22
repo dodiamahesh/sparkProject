@@ -2,7 +2,7 @@
 --  00_cdc_duplicate_rule.sql  |  duplicate check of the CDC subscriber: rule table + duplicate record table
 --
 --  Run (once; running it again is safe). Same database as 00_cdc_collection_mapping.sql:
---      & "C:\Program Files\PostgreSQL\18\bin\psql.exe" -h localhost -p 5433 -U postgres -d shop_dw -f sample-data\00_cdc_duplicate_rule.sql
+--      & "C:\Program Files\PostgreSQL\18\bin\psql.exe" -h localhost -p 5433 -U postgres -d silver -f sample-data\00_cdc_duplicate_rule.sql
 --
 --  Design: docs\DUPLICATE_CHECK_DESIGN_EN.md (Gujarati: docs\DUPLICATE_CHECK_DESIGN_GU.md)
 --

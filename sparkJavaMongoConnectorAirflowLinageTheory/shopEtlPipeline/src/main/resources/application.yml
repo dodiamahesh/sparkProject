@@ -83,9 +83,9 @@ etl:
   # --------------------------------------------------------------------------------
   postgres:
     # reWriteBatchedInserts=true: 1000 INSERT ne ek multi-row INSERT ma badle (5–10x fast). Rakhvu j.
-    url: jdbc:postgresql://localhost:5432/shop_dw?reWriteBatchedInserts=true
+    url: jdbc:postgresql://localhost:5433/silver?reWriteBatchedInserts=true
     username: postgres
-    password: postgres
+    password: root
     schema:
       silver: curated
       gold: gold

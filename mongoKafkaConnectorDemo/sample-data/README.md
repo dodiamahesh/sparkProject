@@ -76,8 +76,7 @@ Special cases that are tested:
    message goes to the DLQ. The table is read for every batch, so changes need no restart.
    ```powershell
    $psql = "C:\Program Files\PostgreSQL\18\bin\psql.exe"
-   & $psql -h localhost -p 5433 -U postgres -c "CREATE DATABASE shop_dw"      # once; "already exists" is fine
-   & $psql -h localhost -p 5433 -U postgres -d shop_dw -f sample-data\00_cdc_collection_mapping.sql
+   & $psql -h localhost -p 5433 -U postgres -d silver -f sample-data\00_cdc_collection_mapping.sql
    # ➡️ 5 rows: customers, products (NOSQL, t), orders (NOSQL, f), station, station_owner (SQL, f)
    ```
 3. **Destination collections in bronze_db.** The subscriber NEVER creates a collection (missing destination -> DLQ):
@@ -91,7 +90,7 @@ Special cases that are tested:
    unique indexes (option C) of every pipeline. A new record with the same rule values as a live bronze document is not
    written; it goes to `meta.meta_duplicate_record`.
    ```powershell
-   & $psql -h localhost -p 5433 -U postgres -d shop_dw -f sample-data\00_cdc_duplicate_rule.sql
+   & $psql -h localhost -p 5433 -U postgres -d silver -f sample-data\00_cdc_duplicate_rule.sql
    # ➡️ 18 rules (one business key per sample collection, for example products | NOSQL | product_code | t)
    "sales","payment","transaction","ecommerce-order","ecommerce-fulfillment","vat-return" | ForEach-Object {
        mongosh "mongodb://localhost:27017/?replicaSet=rs0" --quiet "sample-data\$_-pipeline\03_bronze_unique_indexes.js" }

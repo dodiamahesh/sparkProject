@@ -52,7 +52,7 @@
 | 12 | Index અને rule મેળ ન ખાય | Subscriber start વખતે warning (બંધ નહીં થાય) |
 | 13 | ધીમી query | 200 ms થી વધુ = warning log |
 | 14 | `meta_duplicate_record` columns | ફક્ત 5 (તમારા). Columns પછી `ALTER TABLE ... ADD COLUMN` થી ઉમેરી શકાય |
-| 15 | PostgreSQL database | `shop_dw` (`subscriber.properties`: `mapping.jdbc.url`). એક વાર `CREATE DATABASE shop_dw` |
+| 15 | PostgreSQL database | `silver` (`localhost:5433`, user `postgres`, schema `meta`; `subscriber.properties`: `mapping.jdbc.url`). પહેલેથી છે, `CREATE DATABASE` ની જરૂર નથી |
 
 ---
 
@@ -197,4 +197,4 @@ P1 નો update એના fields ને A1 જેવા કરી દે: index
 | 10 | A + C માં doubt? | Index ક્યાં / કોણ બનાવે, missing field, પહેલેથી duplicates, mismatch: બધા §1 અને §7 માં નક્કી |
 | 11 | `ALL_EXCEPT` જોઈએ? | ના, કાઢી નાખ્યું. ફક્ત તમે આપેલા fields |
 | 12 | ફક્ત મારા 5 columns રાખું તો ભવિષ્યમાં તકલીફ? | ચાલશે. Unique constraint (columns નહીં) રાખવો જરૂરી. બાકીના columns પછી ઉમેરી શકાય (§6) |
-| 13 | `shop_dw` ની જરૂર શું? | ફરજિયાત નથી. કોઈ પણ PostgreSQL database ચાલે (`mapping.jdbc.url`). ETL ના default સાથે મેળ માટે `shop_dw` |
+| 13 | `shop_dw` ની જરૂર શું? | ફરજિયાત નથી: કોઈ પણ PostgreSQL database ચાલે (`mapping.jdbc.url`). નિર્ણય: તમારો હાલનો database **`silver`** (`localhost:5433`, user `postgres`, schemas `meta` + `silver`) |

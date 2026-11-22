@@ -7,8 +7,8 @@ spring:
     # SILVER layer: PostgreSQL (star schema + meta tables)
     # Local PostgreSQL 18 service runs on port 5433 (docker-compose.yml uses 5432 -> set POSTGRES_URL).
     # Put your real password in the POSTGRES_PASSWORD environment variable (or replace the default below).
-    # Create the database once:  CREATE DATABASE shop_dw;   then run sample-data/<job>/03_postgres_tables.sql
-    url: ${POSTGRES_URL:jdbc:postgresql://localhost:5433/shop_dw?reWriteBatchedInserts=true}
+    # Database silver (exists, schemas meta + silver): run sample-data/<job>/03_postgres_tables.sql once per job
+    url: ${POSTGRES_URL:jdbc:postgresql://localhost:5433/silver?reWriteBatchedInserts=true}
     username: ${POSTGRES_USER:postgres}
     password: ${POSTGRES_PASSWORD:root}
   data:

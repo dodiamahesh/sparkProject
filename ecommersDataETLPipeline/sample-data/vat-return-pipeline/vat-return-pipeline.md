@@ -284,7 +284,7 @@ Reject gate: `maxRejectPercent(30)` (not applied below 10 rows).
 ### Run order
 
 ```powershell
-& "C:\Program Files\PostgreSQL\18\bin\psql.exe" -h localhost -p 5433 -U postgres -d shop_dw -f sample-data\vat-return-pipeline\03_postgres_tables.sql
+& "C:\Program Files\PostgreSQL\18\bin\psql.exe" -h localhost -p 5433 -U postgres -d silver -f sample-data\vat-return-pipeline\03_postgres_tables.sql
 mongosh "mongodb://localhost:27017" sample-data\vat-return-pipeline\01_mongo_full_load.js
 curl.exe -X POST "http://localhost:8080/api/etl/pipelines/vat-return-pipeline/run"
 mongosh "mongodb://localhost:27017" sample-data\vat-return-pipeline\02_mongo_incremental.js

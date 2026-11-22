@@ -20,8 +20,8 @@ etl:
 
   postgres:
     # Tamaru local PostgreSQL 5433 port par che (sparkETLPipelineDemo mujab). Database pehla banavo:
-    #   CREATE DATABASE shop_dw;   pachhi 03_postgres_create_tables.sql chalavo
-    url: ${POSTGRES_URL:jdbc:postgresql://localhost:5433/shop_dw?reWriteBatchedInserts=true}
+    #   database silver (pahelethi chhe), pachhi 03_postgres_create_tables.sql chalavo
+    url: ${POSTGRES_URL:jdbc:postgresql://localhost:5433/silver?reWriteBatchedInserts=true}
     username: ${POSTGRES_USER:postgres}
     password: ${POSTGRES_PASSWORD:root}
     write-batch-size: 500

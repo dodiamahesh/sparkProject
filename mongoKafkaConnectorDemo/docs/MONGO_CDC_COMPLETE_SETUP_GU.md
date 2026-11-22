@@ -758,7 +758,7 @@ target.database=bronze_db
 # Type of the source this subscriber reads (the topic above): NOSQL = MongoDB collections, SQL = SQL tables.
 # Only the mapping rows with this db_type are used. A SQL source = own topic + own properties file with source.db.type=SQL.
 source.db.type=NOSQL
-mapping.jdbc.url=jdbc:postgresql://localhost:5433/shop_dw
+mapping.jdbc.url=jdbc:postgresql://localhost:5433/silver
 mapping.jdbc.user=postgres
 # The environment variable MAPPING_JDBC_PASSWORD wins over this value
 mapping.jdbc.password=root

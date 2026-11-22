@@ -91,11 +91,10 @@ different shape. The app reads ONE database (`MONGO_DATABASE`, default `bronze_d
 ## Run order (PowerShell, local)
 
 ```powershell
-# 0) PostgreSQL database (once)
-& "C:\Program Files\PostgreSQL\18\bin\psql.exe" -h localhost -p 5433 -U postgres -c "CREATE DATABASE shop_dw"
+# 0) PostgreSQL: database silver on localhost:5433 (user postgres) already exists, nothing to create
 
 # 1) Tables of the job (meta tables are included in every file; running several files is fine)
-& "C:\Program Files\PostgreSQL\18\bin\psql.exe" -h localhost -p 5433 -U postgres -d shop_dw -f sample-data\sales-pipeline\03_postgres_tables.sql
+& "C:\Program Files\PostgreSQL\18\bin\psql.exe" -h localhost -p 5433 -U postgres -d silver -f sample-data\sales-pipeline\03_postgres_tables.sql
 
 # 2) First run (no watermark yet: reads everything)
 mongosh "mongodb://localhost:27017" sample-data\sales-pipeline\01_mongo_full_load.js

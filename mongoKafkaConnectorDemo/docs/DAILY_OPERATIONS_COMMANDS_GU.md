@@ -122,7 +122,7 @@ mongosh "mongodb://localhost:27017/?replicaSet=rs0" --quiet --eval "rs.status().
 **PostgreSQL ચાલુ છે?** Subscriber collection mapping (`meta.cdc_collection_mapping`) ત્યાંથી વાંચે છે:
 ```powershell
 Get-Service postgresql*
-& "C:\Program Files\PostgreSQL\18\bin\psql.exe" -h localhost -p 5433 -U postgres -d shop_dw -c "SELECT source, destination, db_type, active FROM meta.cdc_collection_mapping ORDER BY 1"
+& "C:\Program Files\PostgreSQL\18\bin\psql.exe" -h localhost -p 5433 -U postgres -d silver -c "SELECT source, destination, db_type, active FROM meta.cdc_collection_mapping ORDER BY 1"
 ```
 ➡️ Service `Running`, અને mapping rows (જેમ કે `customers | customers | NOSQL | t`). Table ન હોય તો એક વાર: `sample-data\00_cdc_collection_mapping.sql` ([../sample-data/README.md](../sample-data/README.md)).
 
@@ -222,7 +222,7 @@ java -jar target\mongo-cdc-subscriber-1.0.0-jar-with-dependencies.jar src\main\r
 | `MongoTimeoutException` | MongoDB બંધ (1.1) |
 | લાંબો સમય `Node -1 disconnected` / `Connection to node ... could not be established` | Kafka broker બંધ (1.2) |
 | `NoSuchFileException: ...subscriber.properties` | ખોટા folder માં છો. `mongo-cdc-subscriber` folder માં જાઓ |
-| `Cannot read the collection mapping table meta.cdc_collection_mapping ...` (start વખતે બંધ થાય) | PostgreSQL બંધ, ખોટો password, DB `shop_dw` નથી, અથવા table નથી: 1.1 નું PostgreSQL check, `sample-data\00_cdc_collection_mapping.sql`, `subscriber.properties` ના `mapping.jdbc.*` |
+| `Cannot read the collection mapping table meta.cdc_collection_mapping ...` (start વખતે બંધ થાય) | PostgreSQL બંધ, ખોટો password, DB `silver` નથી, અથવા table નથી: 1.1 નું PostgreSQL check, `sample-data\00_cdc_collection_mapping.sql`, `subscriber.properties` ના `mapping.jdbc.*` |
 | `Not applied (...): No active NOSQL mapping for source 'x'` | Mapping table માં `x` ની active row (`db_type` = subscriber નો `source.db.type`, હાલ `NOSQL`) નથી. Row ઉમેરો / `active = TRUE` કરો (restart જરૂરી નથી). એ message DLQ માં ગયો ([5](#5-dlq-ચકાસવો)) |
 | `Not applied (...): Destination collection 'bronze_db.y' does not exist` | Subscriber collection **બનાવતો નથી**. `db.getSiblingDB('bronze_db').createCollection('y')` અથવા `sample-data\00_create_bronze_collections.js`. એ message DLQ માં ગયો |
 | `Cannot read the duplicate rule table meta.cdc_duplicate_rule ...` | Table નથી: `sample-data\00_cdc_duplicate_rule.sql` ચલાવો |
@@ -752,11 +752,11 @@ Design: [DUPLICATE_CHECK_DESIGN_GU.md](DUPLICATE_CHECK_DESIGN_GU.md). Rule ન�
 ```powershell
 $psql = "C:\Program Files\PostgreSQL\18\bin\psql.exe"
 # rules
-& $psql -h localhost -p 5433 -U postgres -d shop_dw -c "SELECT source, fields, active FROM meta.cdc_duplicate_rule WHERE db_type = 'NOSQL' ORDER BY 1"
+& $psql -h localhost -p 5433 -U postgres -d silver -c "SELECT source, fields, active FROM meta.cdc_duplicate_rule WHERE db_type = 'NOSQL' ORDER BY 1"
 # કયા collection માં કેટલા duplicates
-& $psql -h localhost -p 5433 -U postgres -d shop_dw -c "SELECT data_store_name, count(*) FROM meta.meta_duplicate_record GROUP BY 1 ORDER BY 1"
+& $psql -h localhost -p 5433 -U postgres -d silver -c "SELECT data_store_name, count(*) FROM meta.meta_duplicate_record GROUP BY 1 ORDER BY 1"
 # એક collection ના duplicates, payload ના field સાથે
-& $psql -h localhost -p 5433 -U postgres -d shop_dw -c "SELECT id_pk, record_id, object_payload->>'product_code' AS product_code FROM meta.meta_duplicate_record WHERE data_store_name = 'products'"
+& $psql -h localhost -p 5433 -U postgres -d silver -c "SELECT id_pk, record_id, object_payload->>'product_code' AS product_code FROM meta.meta_duplicate_record WHERE data_store_name = 'products'"
 ```
 ➡️ Sales 01 script પછી (rules `product_code`, `customer_code`): `customers | 1`, `products | 1` (C005, P003).
 

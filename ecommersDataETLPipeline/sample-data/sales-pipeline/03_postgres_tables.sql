@@ -7,8 +7,8 @@
 --    PART 2  the target tables of this job
 --    PART 3  meta.meta_error_master seed: every data-quality error of this job
 --
---  Run (database must exist:  CREATE DATABASE shop_dw;):
---      psql -h localhost -p 5433 -U postgres -d shop_dw -f sample-data/sales-pipeline/03_postgres_tables.sql
+--  Run (database silver on localhost:5433 already exists):
+--      psql -h localhost -p 5433 -U postgres -d silver -f sample-data/sales-pipeline/03_postgres_tables.sql
 --
 --  Re-run safe: every statement uses IF NOT EXISTS / ON CONFLICT, so you can run it again, and you can
 --  run the files of several jobs on the same database (the meta part is identical in all of them).

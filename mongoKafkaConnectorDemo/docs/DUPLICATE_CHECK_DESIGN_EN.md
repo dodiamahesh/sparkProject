@@ -52,7 +52,7 @@
 | 12 | Index and rule do not match | Warning at subscriber start (it does not stop) |
 | 13 | Slow query | More than 200 ms = warning log |
 | 14 | `meta_duplicate_record` columns | Only the 5 you defined. More columns can be added later with `ALTER TABLE ... ADD COLUMN` |
-| 15 | PostgreSQL database | `shop_dw` (`subscriber.properties`: `mapping.jdbc.url`). Once: `CREATE DATABASE shop_dw` |
+| 15 | PostgreSQL database | `silver` (`localhost:5433`, user `postgres`, schema `meta`; `subscriber.properties`: `mapping.jdbc.url`). Already exists, no `CREATE DATABASE` |
 
 ---
 
@@ -197,4 +197,4 @@ An update of P1 makes its fields equal to A1: the index (C) **blocks** it. P1 st
 | 10 | Any doubts about A + C? | Where / who creates the index, missing fields, existing duplicates, mismatch: all decided in §1 and §7 |
 | 11 | Is `ALL_EXCEPT` needed? | No, removed. Only the fields you define |
 | 12 | Any future problem if I keep only my 5 columns? | Works. The unique constraint (not a column) is required. More columns can be added later (§6) |
-| 13 | Why is `shop_dw` needed? | It is not mandatory. Any PostgreSQL database works (`mapping.jdbc.url`). `shop_dw` matches the ETL default |
+| 13 | Why is `shop_dw` needed? | It is not mandatory: any PostgreSQL database works (`mapping.jdbc.url`). Decision: your existing database **`silver`** (`localhost:5433`, user `postgres`, schemas `meta` + `silver`) |

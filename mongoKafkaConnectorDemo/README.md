@@ -98,7 +98,7 @@ C:\Program Files\MongoDB\Server\<version>\bin\mongod.cfg ← replica set rs0 (§
 | CDC topic / DLQ topic | `sourceMongo_db` (3 partitions) / `cdc-dlq` |
 | Source connector નામ | `mongo-cdc-db-source` |
 | Subscriber consumer group | `mongo-cdc-subscriber` |
-| Collection mapping (PostgreSQL) | `localhost:5433` / `shop_dw` / `meta.cdc_collection_mapping` (`source`, `destination`, `db_type`, `active`) |
+| Collection mapping (PostgreSQL) | `localhost:5433` / `silver` / `meta.cdc_collection_mapping` (`source`, `destination`, `db_type`, `active`) |
 | Versions | JDK 17, Maven 3.9.11, MongoDB 8.x, Kafka 4.3.1, MongoDB Kafka Connector 3.1.2 |
 
 ---
@@ -322,6 +322,7 @@ java -jar target\mongo-cdc-subscriber-1.0.0-jar-with-dependencies.jar
 
 | તારીખ | ફેરફાર | Commit |
 |---|---|---|
+| 2026-11-23 | PostgreSQL database `shop_dw` → **`silver`** (`localhost:5433`, user `postgres`, password `root`, schema `meta`) આખા repo માં: `subscriber.properties`, `00_*.sql`, docs, `ecommersDataETLPipeline` (dev config + sample-data), `shopEtlPipeline` (dev + base config). `CREATE DATABASE` steps કાઢ્યા (silver પહેલેથી છે) | _(commit પછી લખો)_ |
 | 2026-11-23 | `kafka-connect\deletedConnectorOld\` (જૂના sink + `de_source_mongo` source connectors, વપરાતા નહોતા) કાઢ્યું. જોઈએ તો: `git show dbd3ab1:mongoKafkaConnectorDemo/kafka-connect/deletedConnectorOld/mongo-cdc-source.json` | _(commit પછી લખો)_ |
 | 2026-11-23 | **Duplicate check (A + C)** ([design](docs/DUPLICATE_CHECK_DESIGN_GU.md)): rule table `meta.cdc_duplicate_rule` (source + fields, બધા સરખા = duplicate), rejected records → `meta.meta_duplicate_record`. A = લખતા પહેલાં query, C = partial unique index `cdc_dup_rule` + E11000 loop. નવું: `MetaDatabase`, `DuplicateRules`, `DuplicateDetector`, `DuplicateRecordStore`, `PendingWrite`, test `DuplicateCheckIT` (`mvn test`), `sample-data\00_cdc_duplicate_rule.sql` (18 rules), `sample-data\<pipeline>\03_bronze_unique_indexes.js` + `lib_unique_index.js`; `99_verify_bronze.js` માં `duplicates` column | _(commit પછી લખો)_ |
 | 2026-11-22 | Mapping માં **SQL tables** પણ: `db_type` = **source** નો type (`NOSQL` = MongoDB collection, `SQL` = SQL table), destination હંમેશા `bronze_db` collection. Subscriber setting `source.db.type` (default `NOSQL`) પ્રમાણે ફક્ત એ type ની rows વાપરે. Sample rows: `station`, `station_owner` (SQL, inactive) | _(commit પછી લખો)_ |

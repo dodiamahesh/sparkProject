@@ -92,7 +92,7 @@ Rule.of("J2-V02", RejectType.VALIDATION, "Email format khoto",
 
 ```powershell
 # 1) Postgres DB (ek vaar)
-#    CREATE DATABASE shop_dw;
+#    (database silver on localhost:5433 already exists)
 #    03_postgres_create_tables.sql, pachhi 04_postgres_seed_job1_output.sql (PART A)
 #    (04 = Job-1 nu output. Job-1 code ready thay pachhi jarur nahi)
 

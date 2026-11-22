@@ -2,8 +2,8 @@
 --  00_cdc_collection_mapping.sql  |  PostgreSQL meta table for the CDC subscriber (mongo-cdc-subscriber)
 --
 --  Run (once; running it again is safe):
---      & "C:\Program Files\PostgreSQL\18\bin\psql.exe" -h localhost -p 5433 -U postgres -d shop_dw -f sample-data\00_cdc_collection_mapping.sql
---  (database shop_dw must exist:  psql ... -c "CREATE DATABASE shop_dw")
+--      & "C:\Program Files\PostgreSQL\18\bin\psql.exe" -h localhost -p 5433 -U postgres -d silver -f sample-data\00_cdc_collection_mapping.sql
+--  (database silver already exists; the script creates schema meta if it is missing)
 --
 --  Sources can be MongoDB COLLECTIONS and SQL TABLES (same message format: ns.coll = collection / table name).
 --  db_type = type of the SOURCE:  NOSQL = MongoDB collection,  SQL = SQL table.
