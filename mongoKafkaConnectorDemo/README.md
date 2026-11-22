@@ -47,11 +47,14 @@ mongoKafkaConnectorDemo\
     └── src\main\
         ├── java\com\de\cdc\
         │   ├── SubscriberApp.java              ← Kafka loop: read → apply → DLQ → commit
-        │   └── ChangeEventApplier.java         ← change event → MongoDB write (upsert / soft delete)
+        │   ├── ChangeEventApplier.java         ← change event → mapping check → MongoDB write (upsert / soft delete)
+        │   └── CollectionMappings.java         ← PostgreSQL meta.cdc_collection_mapping (source → destination) વાંચે
         └── resources\
             └── subscriber.properties           ← Kafka, MongoDB, target DB settings (topic sourceMongo_db → bronze_db)
 └── sample-data\                                ← sourceMongo_db માટે test data (6 pipelines)
     ├── README.md                               ← hard delete → soft delete test: steps + expected counts
+    ├── 00_cdc_collection_mapping.sql           ← PostgreSQL mapping table + insert rows
+    ├── 00_create_bronze_collections.js         ← bronze_db ના destination collections બનાવે
     ├── 99_verify_bronze.js                     ← sourceMongo_db vs bronze_db સરખામણી
     └── <pipeline>\01_mongo_full_load.js, 02_mongo_incremental.js
 ```
@@ -93,6 +96,7 @@ C:\Program Files\MongoDB\Server\<version>\bin\mongod.cfg ← replica set rs0 (§
 | CDC topic / DLQ topic | `sourceMongo_db` (3 partitions) / `cdc-dlq` |
 | Source connector નામ | `mongo-cdc-db-source` |
 | Subscriber consumer group | `mongo-cdc-subscriber` |
+| Collection mapping (PostgreSQL) | `localhost:5433` / `shop_dw` / `meta.cdc_collection_mapping` (`source`, `destination`, `db_type`, `active`) |
 | Versions | JDK 17, Maven 3.9.11, MongoDB 8.x, Kafka 4.3.1, MongoDB Kafka Connector 3.1.2 |
 
 ---
@@ -316,6 +320,8 @@ java -jar target\mongo-cdc-subscriber-1.0.0-jar-with-dependencies.jar
 
 | તારીખ | ફેરફાર | Commit |
 |---|---|---|
+| 2026-11-22 | Mapping માં **SQL tables** પણ: `db_type` = **source** નો type (`NOSQL` = MongoDB collection, `SQL` = SQL table), destination હંમેશા `bronze_db` collection. Subscriber setting `source.db.type` (default `NOSQL`) પ્રમાણે ફક્ત એ type ની rows વાપરે. Sample rows: `station`, `station_owner` (SQL, inactive) | _(commit પછી લખો)_ |
+| 2026-11-22 | Subscriber: **collection mapping** PostgreSQL `meta.cdc_collection_mapping` થી (source → destination, `db_type`, `active`; દરેક batch પર વંચાય). Active `NOSQL` mapping નથી, અથવા destination collection `bronze_db` માં નથી → `MappingException`, message DLQ માં. Subscriber હવે collection **બનાવતો નથી**. નવું: `CollectionMappings.java`, PostgreSQL JDBC dependency, `mapping.*` properties, `sample-data\00_cdc_collection_mapping.sql`, `00_create_bronze_collections.js`; `99_verify_bronze.js` માં `SYNCED` = source → destination | _(commit પછી લખો)_ |
 | 2026-11-22 | Connector હવે **ફક્ત `customers`, `products`** sync કરે છે (`pipeline` + `startup.mode.copy.existing.namespace.regex`), `offset.partition.name` → `sourceMongo_db-v2` (આ 2 નો existing data ફરી copy થાય). `99_verify_bronze.js` માં `SYNCED` list | _(commit પછી લખો)_ |
 | 2026-11-22 | **એક જ DLQ `cdc-dlq`** બધા CDC topics માટે (`subscriber.properties`). Subscriber DLQ message માં નવા headers `source.topic`, `source.partition`, `source.offset`. Docs: DLQ filter commands, જૂના DLQ topics દૂર કરવાના steps (DAILY_OPERATIONS §5.3–5.4) | _(commit પછી લખો)_ |
 | 2026-11-22 | `docs\DAILY_OPERATIONS_COMMANDS_GU.md`: રોજનો start/stop, topics, messages, DLQ, consumer groups, Connect REST, logs, health check (commands + expected output) | _(commit પછી લખો)_ |

@@ -12,7 +12,8 @@
 //      other          documents without _op: NOT written by the subscriber (for example loaded directly by an
 //                     old ETL sample script). Remove them before testing, they make the counts wrong.
 //  Problems:
-//      not arrived    in the source, not live in bronze      (subscriber still busy? LAG? DLQ?)
+//      not arrived    in the source, not live in bronze      (subscriber still busy? LAG? DLQ: no mapping /
+//                     destination collection missing?)
 //      not deleted    live in bronze, gone from the source   (delete event lost?)
 //      wrong delete   _deleted in bronze, but still in the source
 //
@@ -33,32 +34,30 @@ const KEY = {
   vat_return_coll: "ackNo"
 };
 
-// Collections the connector syncs: SAME list as "pipeline" / "startup.mode.copy.existing.namespace.regex"
-// in kafka-connect/mongo-cdc-db-source.json. Change both together. Empty list [] = every collection.
-const SYNCED = ["customers", "products"];
+// source collection -> bronze_db destination collection.
+// Sources = the list in "pipeline" / "startup.mode.copy.existing.namespace.regex" (kafka-connect/mongo-cdc-db-source.json),
+// destinations = the active NOSQL (MongoDB source) rows of meta.cdc_collection_mapping (PostgreSQL). Keep all three the same.
+const SYNCED = { customers: "customers", products: "products" };
 
 const isUserCollection = (n) => !n.startsWith("system.");
-const isSynced = (n) => SYNCED.length === 0 || SYNCED.includes(n);
-const collections = [...new Set([
-  ...src.getCollectionNames().filter(n => isUserCollection(n) && isSynced(n)),
-  ...brz.getCollectionNames().filter(n => isUserCollection(n) && isSynced(n) && KEY[n])
-])].sort();
-const skipped = src.getCollectionNames().filter(n => isUserCollection(n) && !isSynced(n)).sort();
+const collections = Object.keys(SYNCED).sort();
+const skipped = src.getCollectionNames().filter(n => isUserCollection(n) && !(n in SYNCED)).sort();
+const missingDestinations = collections.map(n => SYNCED[n]).filter(d => !brz.getCollectionNames().includes(d));
 
 const toTime = (ts) => (ts === undefined || ts === null) ? "-" : new Date(Number(ts)).toISOString();
 let problems = 0;
 const deletedRows = [];
 
 print("");
-print("collection          source  bronze =  live + _deleted + other   result");
-print("------------------  ------  ------    ----   --------   -----   ------");
+print("source -> bronze_db                 source  bronze =  live + _deleted + other   result");
+print("----------------------------------  ------  ------    ----   --------   -----   ------");
 collections.forEach(name => {
   const key = KEY[name];
   const sourceIds = new Set(src.getCollection(name).find({}, { _id: 1 }).toArray().map(d => String(d._id)));
 
   const projection = { _id: 1, _op: 1, _deleted: 1, _source_ts: 1 };
   if (key) projection[key] = 1;
-  const bronzeDocs = brz.getCollection(name).find({}, projection).toArray();
+  const bronzeDocs = brz.getCollection(SYNCED[name]).find({}, projection).toArray();
 
   let live = 0, deleted = 0, other = 0, notDeleted = 0, wrongDelete = 0;
   const liveIds = new Set();
@@ -84,12 +83,18 @@ collections.forEach(name => {
   if (other) issues.push(`${other} other`);
   if (issues.length) problems++;
 
-  print(`${name.padEnd(18)}  ${String(sourceIds.size).padStart(6)}  ${String(bronzeDocs.length).padStart(6)} = ` +
+  print(`${(name + " -> " + SYNCED[name]).padEnd(34)}  ${String(sourceIds.size).padStart(6)}  ${String(bronzeDocs.length).padStart(6)} = ` +
         `${String(live).padStart(5)} + ${String(deleted).padStart(8)} + ${String(other).padStart(5)}   ` +
         (issues.length ? "✘ " + issues.join(", ") : "✔"));
 });
 
 print("");
+if (missingDestinations.length) {
+  print(`✘ Destination collection(s) missing in bronze_db: ${missingDestinations.join(", ")}. The subscriber does NOT`);
+  print("  create collections: their messages go to the DLQ. Run sample-data/00_create_bronze_collections.js.");
+  print("");
+  problems++;
+}
 if (skipped.length) {
   print(`Not synced by the connector (not checked): ${skipped.join(", ")}`);
   print("");

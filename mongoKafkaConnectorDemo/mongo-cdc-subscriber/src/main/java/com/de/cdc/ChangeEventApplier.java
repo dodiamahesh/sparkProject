@@ -22,9 +22,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Applies MongoDB change events to the target (bronze) database.
@@ -40,11 +42,22 @@ import java.util.Map;
  * }
  * </pre>
  *
- * Every event is written to the collection with the same name ("ns.coll") in the target database:
+ * Messages from a SQL table use the same format ("ns.coll" = table name, "documentKey._id" = primary key).
+ *
+ * The target collection comes from the mapping table (see CollectionMappings): source "ns.coll" -> destination,
+ * using the rows whose db_type = source.db.type (NOSQL = MongoDB collection, SQL = SQL table).
+ * Before a message is written, two checks are done; if one fails, the message is NOT written and goes to the DLQ:
+ * <pre>
+ *   1. an ACTIVE mapping of this source type exists for the source collection/table (else MappingException)
+ *   2. the destination collection already EXISTS in the target database           (else MappingException)
+ * </pre>
+ * The subscriber never creates a collection: create it yourself (db.createCollection) before you map it.
+ *
+ * Then the event is applied to the destination collection:
  * <pre>
  *   insert / replace / update  ->  replace the whole document (insert it if it is missing)
  *   delete                     ->  keep the document, mark it _deleted: true (soft delete)
- *   drop                       ->  drop the collection (only when apply.drop=true)
+ *   drop                       ->  drop the destination collection (only when apply.drop=true)
  * </pre>
  *
  * After the original fields, every bronze document gets 4 metadata fields, used by Spark (Bronze -> Silver):
@@ -62,15 +75,27 @@ public class ChangeEventApplier {
 
     private static final Logger log = LoggerFactory.getLogger(ChangeEventApplier.class);
 
-    /** A message that could not be read (bad JSON or missing fields). SubscriberApp sends it to the DLQ topic. */
+    /**
+     * A message that could not be applied (bad JSON, missing fields, no mapping, destination collection missing).
+     * SubscriberApp sends it to the DLQ topic.
+     */
     public record FailedMessage(ConsumerRecord<String, String> message, Exception error) { }
+
+    /** No active mapping for the source collection, or the destination collection does not exist. */
+    public static class MappingException extends RuntimeException {
+        public MappingException(String message) {
+            super(message);
+        }
+    }
 
     private final MongoDatabase targetDb;
     private final boolean applyDropEvents;
+    private final CollectionMappings mappings;
 
-    public ChangeEventApplier(MongoDatabase targetDb, boolean applyDropEvents) {
+    public ChangeEventApplier(MongoDatabase targetDb, boolean applyDropEvents, CollectionMappings mappings) {
         this.targetDb = targetDb;
         this.applyDropEvents = applyDropEvents;
+        this.mappings = mappings;
     }
 
     /**
@@ -80,10 +105,17 @@ public class ChangeEventApplier {
      * That is much faster than one database call per message. The bulk write keeps the list order,
      * so several changes to the same document are applied in the order they happened.
      *
-     * @return the messages that could not be read
+     * The mapping table and the list of existing target collections are read once per batch.
+     * If the mapping table cannot be read, this throws and nothing of the batch is applied or committed.
+     *
+     * @return the messages that could not be applied
      */
     public List<FailedMessage> applyAll(ConsumerRecords<String, String> messages) {
-        // collection name -> writes for that collection, in arrival order
+        // source collection/table -> destination collection, and the collections that exist in the target database
+        Map<String, String> activeMappings = mappings.loadActive();
+        Set<String> existingCollections = targetDb.listCollectionNames().into(new HashSet<>());
+
+        // destination collection -> writes for that collection, in arrival order
         Map<String, List<WriteModel<BsonDocument>>> writesByCollection = new LinkedHashMap<>();
         List<FailedMessage> failedMessages = new ArrayList<>();
         // one ingestion time for the whole batch
@@ -94,16 +126,20 @@ public class ChangeEventApplier {
                 continue; // empty message (tombstone): nothing to apply
             }
 
-            // Step 1: read the event. A message we cannot read is set aside; it must not stop the others.
+            // Step 1: read the event and find its destination. A message we cannot apply is set aside;
+            // it must not stop the others.
             String operation;
-            String collection;
+            String destination = null;
             WriteModel<BsonDocument> write;
             try {
                 // parse() turns Extended JSON back into the original types: {"$oid"} -> ObjectId, {"$numberInt"} -> Int32
                 BsonDocument event = BsonDocument.parse(message.value());
                 operation = event.getString("operationType").getValue();
-                collection = getCollectionName(event);
+                String collection = getCollectionName(event);
                 write = buildWrite(operation, event, ingestedAt);
+                if (write != null || operation.equals("drop")) {
+                    destination = resolveDestination(collection, activeMappings, existingCollections);
+                }
             } catch (RuntimeException e) {
                 failedMessages.add(new FailedMessage(message, e));
                 continue;
@@ -111,11 +147,13 @@ public class ChangeEventApplier {
 
             // Step 2: queue the write, or handle events that are not about a single document
             if (write != null) {
-                addWrite(writesByCollection, collection, write);
+                addWrite(writesByCollection, destination, write);
             } else if (operation.equals("drop")) {
                 // save the changes that came before the drop first, then drop
-                saveWrites(collection, writesByCollection.remove(collection));
-                dropCollection(collection);
+                saveWrites(destination, writesByCollection.remove(destination));
+                if (dropCollection(destination)) {
+                    existingCollections.remove(destination); // later events of this batch: destination is gone
+                }
             } else {
                 log.warn("Skipping '{}' event (partition {}, offset {})", operation, message.partition(), message.offset());
             }
@@ -126,6 +164,31 @@ public class ChangeEventApplier {
             saveWrites(entry.getKey(), entry.getValue());
         }
         return failedMessages;
+    }
+
+    /**
+     * Finds the destination collection of a source collection/table:
+     * an active mapping of this subscriber's source type must exist, and the destination collection must already exist.
+     * The subscriber never creates a collection, so it checks this before every write.
+     */
+    private String resolveDestination(String sourceCollection, Map<String, String> activeMappings,
+                                      Set<String> existingCollections) {
+        String dbType = mappings.sourceDbType();
+        if (sourceCollection == null) {
+            throw new MappingException("Event has no collection/table name (ns.coll)");
+        }
+        String destination = activeMappings.get(sourceCollection);
+        if (destination == null) {
+            throw new MappingException("No active " + dbType + " mapping for source '" + sourceCollection + "' in "
+                    + mappings.table() + ". Add a row (source='" + sourceCollection + "', db_type='" + dbType
+                    + "', active=true)");
+        }
+        if (!existingCollections.contains(destination)) {
+            throw new MappingException("Destination collection '" + targetDb.getName() + "." + destination
+                    + "' does not exist (mapped from '" + sourceCollection + "'). The subscriber does not create collections: "
+                    + "run db.getSiblingDB('" + targetDb.getName() + "').createCollection('" + destination + "') first");
+        }
+        return destination;
     }
 
     /** Builds the MongoDB write for one event, or returns null when there is no document to write. */
@@ -261,12 +324,15 @@ public class ChangeEventApplier {
                 collection, writes.size(), result.getMatchedCount(), result.getUpserts().size());
     }
 
-    private void dropCollection(String collection) {
+    /** @return true when the destination collection was dropped */
+    private boolean dropCollection(String collection) {
         if (applyDropEvents) {
             targetDb.getCollection(collection).drop();
-            log.warn("{}: collection dropped, because it was dropped in the source", collection);
-        } else {
-            log.warn("{}: collection was dropped in the source; target kept because apply.drop=false", collection);
+            log.warn("{}: collection dropped, because its source collection was dropped. It is NOT created again: "
+                    + "create it yourself before new events arrive", collection);
+            return true;
         }
+        log.warn("{}: source collection was dropped; target kept because apply.drop=false", collection);
+        return false;
     }
 }

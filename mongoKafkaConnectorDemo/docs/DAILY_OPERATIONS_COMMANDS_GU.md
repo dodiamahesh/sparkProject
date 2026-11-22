@@ -119,6 +119,13 @@ mongosh "mongodb://localhost:27017/?replicaSet=rs0" --quiet --eval "rs.status().
 | `MongoServerSelectionError` / timeout | Service બંધ છે, અથવા હજુ શરૂ થાય છે. 10 સેકન્ડ રાહ જુઓ |
 | `no replset config has been received` | Replica set શરૂ નથી (setup §2.4: `rs.initiate`) |
 
+**PostgreSQL ચાલુ છે?** Subscriber collection mapping (`meta.cdc_collection_mapping`) ત્યાંથી વાંચે છે:
+```powershell
+Get-Service postgresql*
+& "C:\Program Files\PostgreSQL\18\bin\psql.exe" -h localhost -p 5433 -U postgres -d shop_dw -c "SELECT source, destination, db_type, active FROM meta.cdc_collection_mapping ORDER BY 1"
+```
+➡️ Service `Running`, અને mapping rows (જેમ કે `customers | customers | NOSQL | t`). Table ન હોય તો એક વાર: `sample-data\00_cdc_collection_mapping.sql` ([../sample-data/README.md](../sample-data/README.md)).
+
 ### 1.2 Kafka broker (Terminal #1, ખુલ્લું રાખો)
 
 ```powershell
@@ -192,6 +199,9 @@ java -jar target\mongo-cdc-subscriber-1.0.0-jar-with-dependencies.jar src\main\r
 ```
 ➡️ Expected:
 ```
+[main] INFO com.de.cdc.SubscriberApp - Collection mapping from meta.cdc_collection_mapping (source.db.type=NOSQL): 2 active source(s)
+[main] INFO com.de.cdc.SubscriberApp -   customers -> customers
+[main] INFO com.de.cdc.SubscriberApp -   products -> products
 [main] INFO com.de.cdc.SubscriberApp - Reading topic 'sourceMongo_db' and writing to database 'bronze_db'
 ```
 પછી કોઈ change આવે ત્યારે જ log આવે:
@@ -207,6 +217,11 @@ java -jar target\mongo-cdc-subscriber-1.0.0-jar-with-dependencies.jar src\main\r
 | `MongoTimeoutException` | MongoDB બંધ (1.1) |
 | લાંબો સમય `Node -1 disconnected` / `Connection to node ... could not be established` | Kafka broker બંધ (1.2) |
 | `NoSuchFileException: ...subscriber.properties` | ખોટા folder માં છો. `mongo-cdc-subscriber` folder માં જાઓ |
+| `Cannot read the collection mapping table meta.cdc_collection_mapping ...` (start વખતે બંધ થાય) | PostgreSQL બંધ, ખોટો password, DB `shop_dw` નથી, અથવા table નથી: 1.1 નું PostgreSQL check, `sample-data\00_cdc_collection_mapping.sql`, `subscriber.properties` ના `mapping.jdbc.*` |
+| `Not applied (...): No active NOSQL mapping for source 'x'` | Mapping table માં `x` ની active row (`db_type` = subscriber નો `source.db.type`, હાલ `NOSQL`) નથી. Row ઉમેરો / `active = TRUE` કરો (restart જરૂરી નથી). એ message DLQ માં ગયો ([5](#5-dlq-ચકાસવો)) |
+| `Not applied (...): Destination collection 'bronze_db.y' does not exist` | Subscriber collection **બનાવતો નથી**. `db.getSiblingDB('bronze_db').createCollection('y')` અથવા `sample-data\00_create_bronze_collections.js`. એ message DLQ માં ગયો |
+
+> DLQ માં ગયેલા messages ફરી લાવવા (mapping / collection ઠીક કર્યા પછી): subscriber બંધ → [6.4](#64-offsets-reset-replay-bronze-ફરી-બનાવવો) થી offsets reset → subscriber start. Subscriber idempotent હોવાથી બાકીના messages ફરી લખાય તો નુકસાન નથી.
 
 ### 1.6 બધું બરાબર ચાલુ થયું? (Terminal #4)
 

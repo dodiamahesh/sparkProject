@@ -660,6 +660,12 @@ New-Item -ItemType Directory -Force mongo-cdc-subscriber\src\main\resources
             <artifactId>mongodb-driver-sync</artifactId>
             <version>5.1.4</version>
         </dependency>
+        <!-- PostgreSQL JDBC: reads the collection mapping table (meta.cdc_collection_mapping) -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <version>42.7.4</version>
+        </dependency>
         <!-- slf4j-api 2.x must win over the 1.7.x that kafka-clients pulls in -->
         <dependency>
             <groupId>org.slf4j</groupId>
@@ -723,8 +729,21 @@ kafka.dlq.topic=cdc-dlq
 
 # ---- MongoDB ----
 mongo.uri=mongodb://localhost:27017/?replicaSet=rs0
-# Every source collection is written to the collection with the same name in this database
+# Target database. The destination collection of each source collection comes from the mapping table below,
+# and it must ALREADY EXIST here: the subscriber never creates a collection.
 target.database=bronze_db
+
+# ---- Collection mapping (PostgreSQL meta table: source, destination, db_type, active) ----
+# Table script: sample-data\00_cdc_collection_mapping.sql. Read again for every Kafka batch (no restart needed).
+# No active row of this source type, or destination collection missing -> message goes to the DLQ.
+# Type of the source this subscriber reads (the topic above): NOSQL = MongoDB collections, SQL = SQL tables.
+# Only the mapping rows with this db_type are used. A SQL source = own topic + own properties file with source.db.type=SQL.
+source.db.type=NOSQL
+mapping.jdbc.url=jdbc:postgresql://localhost:5433/shop_dw
+mapping.jdbc.user=postgres
+# The environment variable MAPPING_JDBC_PASSWORD wins over this value
+mapping.jdbc.password=root
+mapping.table=meta.cdc_collection_mapping
 
 # Apply "drop collection" events to the target? (false = only log them)
 apply.drop=false
@@ -740,7 +759,10 @@ org.slf4j.simpleLogger.showDateTime=true
 | `kafka.topic` | વાંચવાનો topic (source DB નું નામ) |
 | `kafka.group.id` | Consumer group. Kafka **આ નામે** યાદ રાખે છે કે ક્યાં સુધી વાંચ્યું. એ જ નામે ફરી start કરો તો ત્યાંથી જ આગળ વાંચે |
 | `kafka.dlq.topic` | વાંચી ન શકાય એવા messages અહીં જાય. **એક જ `cdc-dlq` બધા topics / subscribers માટે**; headers `source.topic`, `source.partition`, `source.offset` કહે કે message ક્યાંથી આવ્યો |
-| `target.database` | Destination database. Collection નું નામ source જેવું જ રહે છે (`ns.coll`). Database ન હોય તો MongoDB **આપોઆપ બનાવે** |
+| `target.database` | Destination database. **Destination collection નું નામ mapping table માંથી** આવે છે (`source` → `destination`), અને એ collection **પહેલેથી હોવું જોઈએ**: subscriber collection **બનાવતો નથી** |
+| `source.db.type` | આ subscriber જે source વાંચે છે તેનો type: `NOSQL` = MongoDB collections, `SQL` = SQL tables. Mapping table ની **ફક્ત આ `db_type` વાળી** rows વપરાય. SQL source = પોતાનો topic + પોતાની properties file (`source.db.type=SQL`) |
+| `mapping.jdbc.url` / `.user` / `.password` | PostgreSQL, જ્યાં mapping table છે. Environment variable `MAPPING_JDBC_PASSWORD` હોય તો એ password વપરાય |
+| `mapping.table` | Mapping table (`meta.cdc_collection_mapping`: `source`, `destination`, `db_type`, `active`). Script: `sample-data\00_cdc_collection_mapping.sql`. **દરેક batch** પર ફરી વંચાય, એટલે ફેરફાર માટે restart જરૂરી નથી |
 | `apply.drop` | Source માં આખું collection drop થાય ત્યારે destination માં પણ drop કરવું? સલામતી માટે default `false` (ફક્ત log) |
 | `org.slf4j.*` | Log level. Kafka library ના logs ફક્ત `warn` |
 
@@ -773,9 +795,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Applies MongoDB change events to the target (bronze) database.
@@ -791,11 +815,22 @@ import java.util.Map;
  * }
  * </pre>
  *
- * Every event is written to the collection with the same name ("ns.coll") in the target database:
+ * Messages from a SQL table use the same format ("ns.coll" = table name, "documentKey._id" = primary key).
+ *
+ * The target collection comes from the mapping table (see CollectionMappings): source "ns.coll" -> destination,
+ * using the rows whose db_type = source.db.type (NOSQL = MongoDB collection, SQL = SQL table).
+ * Before a message is written, two checks are done; if one fails, the message is NOT written and goes to the DLQ:
+ * <pre>
+ *   1. an ACTIVE mapping of this source type exists for the source collection/table (else MappingException)
+ *   2. the destination collection already EXISTS in the target database           (else MappingException)
+ * </pre>
+ * The subscriber never creates a collection: create it yourself (db.createCollection) before you map it.
+ *
+ * Then the event is applied to the destination collection:
  * <pre>
  *   insert / replace / update  ->  replace the whole document (insert it if it is missing)
  *   delete                     ->  keep the document, mark it _deleted: true (soft delete)
- *   drop                       ->  drop the collection (only when apply.drop=true)
+ *   drop                       ->  drop the destination collection (only when apply.drop=true)
  * </pre>
  *
  * After the original fields, every bronze document gets 4 metadata fields, used by Spark (Bronze -> Silver):
@@ -813,15 +848,27 @@ public class ChangeEventApplier {
 
     private static final Logger log = LoggerFactory.getLogger(ChangeEventApplier.class);
 
-    /** A message that could not be read (bad JSON or missing fields). SubscriberApp sends it to the DLQ topic. */
+    /**
+     * A message that could not be applied (bad JSON, missing fields, no mapping, destination collection missing).
+     * SubscriberApp sends it to the DLQ topic.
+     */
     public record FailedMessage(ConsumerRecord<String, String> message, Exception error) { }
+
+    /** No active mapping for the source collection, or the destination collection does not exist. */
+    public static class MappingException extends RuntimeException {
+        public MappingException(String message) {
+            super(message);
+        }
+    }
 
     private final MongoDatabase targetDb;
     private final boolean applyDropEvents;
+    private final CollectionMappings mappings;
 
-    public ChangeEventApplier(MongoDatabase targetDb, boolean applyDropEvents) {
+    public ChangeEventApplier(MongoDatabase targetDb, boolean applyDropEvents, CollectionMappings mappings) {
         this.targetDb = targetDb;
         this.applyDropEvents = applyDropEvents;
+        this.mappings = mappings;
     }
 
     /**
@@ -831,10 +878,17 @@ public class ChangeEventApplier {
      * That is much faster than one database call per message. The bulk write keeps the list order,
      * so several changes to the same document are applied in the order they happened.
      *
-     * @return the messages that could not be read
+     * The mapping table and the list of existing target collections are read once per batch.
+     * If the mapping table cannot be read, this throws and nothing of the batch is applied or committed.
+     *
+     * @return the messages that could not be applied
      */
     public List<FailedMessage> applyAll(ConsumerRecords<String, String> messages) {
-        // collection name -> writes for that collection, in arrival order
+        // source collection/table -> destination collection, and the collections that exist in the target database
+        Map<String, String> activeMappings = mappings.loadActive();
+        Set<String> existingCollections = targetDb.listCollectionNames().into(new HashSet<>());
+
+        // destination collection -> writes for that collection, in arrival order
         Map<String, List<WriteModel<BsonDocument>>> writesByCollection = new LinkedHashMap<>();
         List<FailedMessage> failedMessages = new ArrayList<>();
         // one ingestion time for the whole batch
@@ -845,16 +899,20 @@ public class ChangeEventApplier {
                 continue; // empty message (tombstone): nothing to apply
             }
 
-            // Step 1: read the event. A message we cannot read is set aside; it must not stop the others.
+            // Step 1: read the event and find its destination. A message we cannot apply is set aside;
+            // it must not stop the others.
             String operation;
-            String collection;
+            String destination = null;
             WriteModel<BsonDocument> write;
             try {
                 // parse() turns Extended JSON back into the original types: {"$oid"} -> ObjectId, {"$numberInt"} -> Int32
                 BsonDocument event = BsonDocument.parse(message.value());
                 operation = event.getString("operationType").getValue();
-                collection = getCollectionName(event);
+                String collection = getCollectionName(event);
                 write = buildWrite(operation, event, ingestedAt);
+                if (write != null || operation.equals("drop")) {
+                    destination = resolveDestination(collection, activeMappings, existingCollections);
+                }
             } catch (RuntimeException e) {
                 failedMessages.add(new FailedMessage(message, e));
                 continue;
@@ -862,11 +920,13 @@ public class ChangeEventApplier {
 
             // Step 2: queue the write, or handle events that are not about a single document
             if (write != null) {
-                addWrite(writesByCollection, collection, write);
+                addWrite(writesByCollection, destination, write);
             } else if (operation.equals("drop")) {
                 // save the changes that came before the drop first, then drop
-                saveWrites(collection, writesByCollection.remove(collection));
-                dropCollection(collection);
+                saveWrites(destination, writesByCollection.remove(destination));
+                if (dropCollection(destination)) {
+                    existingCollections.remove(destination); // later events of this batch: destination is gone
+                }
             } else {
                 log.warn("Skipping '{}' event (partition {}, offset {})", operation, message.partition(), message.offset());
             }
@@ -877,6 +937,31 @@ public class ChangeEventApplier {
             saveWrites(entry.getKey(), entry.getValue());
         }
         return failedMessages;
+    }
+
+    /**
+     * Finds the destination collection of a source collection/table:
+     * an active mapping of this subscriber's source type must exist, and the destination collection must already exist.
+     * The subscriber never creates a collection, so it checks this before every write.
+     */
+    private String resolveDestination(String sourceCollection, Map<String, String> activeMappings,
+                                      Set<String> existingCollections) {
+        String dbType = mappings.sourceDbType();
+        if (sourceCollection == null) {
+            throw new MappingException("Event has no collection/table name (ns.coll)");
+        }
+        String destination = activeMappings.get(sourceCollection);
+        if (destination == null) {
+            throw new MappingException("No active " + dbType + " mapping for source '" + sourceCollection + "' in "
+                    + mappings.table() + ". Add a row (source='" + sourceCollection + "', db_type='" + dbType
+                    + "', active=true)");
+        }
+        if (!existingCollections.contains(destination)) {
+            throw new MappingException("Destination collection '" + targetDb.getName() + "." + destination
+                    + "' does not exist (mapped from '" + sourceCollection + "'). The subscriber does not create collections: "
+                    + "run db.getSiblingDB('" + targetDb.getName() + "').createCollection('" + destination + "') first");
+        }
+        return destination;
     }
 
     /** Builds the MongoDB write for one event, or returns null when there is no document to write. */
@@ -1012,15 +1097,63 @@ public class ChangeEventApplier {
                 collection, writes.size(), result.getMatchedCount(), result.getUpserts().size());
     }
 
-    private void dropCollection(String collection) {
+    /** @return true when the destination collection was dropped */
+    private boolean dropCollection(String collection) {
         if (applyDropEvents) {
             targetDb.getCollection(collection).drop();
-            log.warn("{}: collection dropped, because it was dropped in the source", collection);
-        } else {
-            log.warn("{}: collection was dropped in the source; target kept because apply.drop=false", collection);
+            log.warn("{}: collection dropped, because its source collection was dropped. It is NOT created again: "
+                    + "create it yourself before new events arrive", collection);
+            return true;
         }
+        log.warn("{}: source collection was dropped; target kept because apply.drop=false", collection);
+        return false;
     }
 }
+```
+
+### 7.4.1 Collection mapping: PostgreSQL table અને `CollectionMappings.java`
+
+Subscriber message લખતા **પહેલાં** બે ચકાસણી કરે છે. એક પણ fail થાય તો message bronze માં **નથી** લખાતો; એ `MappingException` સાથે DLQ (`cdc-dlq`) માં જાય છે, અને બાકીના messages ચાલુ રહે છે:
+
+| # | ચકાસણી | Fail થાય તો DLQ `error` header |
+|---|---|---|
+| 1 | `meta.cdc_collection_mapping` માં source (`ns.coll`) ની **active** row, `db_type` = subscriber નો `source.db.type`, છે? | `No active NOSQL mapping for source 'x' ...` (row નથી / `active = false`) |
+| 2 | Destination collection `bronze_db` માં **પહેલેથી** છે? | `Destination collection 'bronze_db.y' does not exist ... The subscriber does not create collections` |
+
+```sql
+-- sample-data\00_cdc_collection_mapping.sql (ટૂંકમાં)
+CREATE TABLE IF NOT EXISTS meta.cdc_collection_mapping (
+    source VARCHAR(255) NOT NULL, destination VARCHAR(255) NOT NULL,
+    db_type VARCHAR(10) NOT NULL CHECK (db_type IN ('NOSQL', 'SQL')),
+    active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (source, db_type));
+INSERT INTO meta.cdc_collection_mapping (source, destination, db_type, active) VALUES
+    ('customers', 'customers', 'NOSQL', TRUE), ('products', 'products', 'NOSQL', TRUE), ('orders', 'orders', 'NOSQL', FALSE),
+    ('station', 'sql_station', 'SQL', FALSE), ('station_owner', 'sql_station_owner', 'SQL', FALSE)
+ON CONFLICT (source, db_type) DO UPDATE SET destination = EXCLUDED.destination, active = EXCLUDED.active, updated_at = now();
+```
+
+| Column | અર્થ |
+|---|---|
+| `source` | Source **collection** (MongoDB) અથવા **table** (SQL) નું નામ = message નું `ns.coll` |
+| `destination` | `bronze_db` નું collection, જ્યાં લખવું (જેમ કે `products` → `raw_products`, table `station` → `sql_station`) |
+| `db_type` | **Source નો type**: `NOSQL` = MongoDB collection, `SQL` = SQL table. Key = `source` + `db_type`, એટલે એ જ નામનું collection અને table બંને અલગ destination સાથે રાખી શકાય |
+| `active` | `false` = આ source ના events reject (DLQ) |
+
+**SQL tables પણ:** messages નો format એ જ હોવો જોઈએ (`operationType`, `ns.coll` = table નામ, `documentKey._id` = primary key, `fullDocument` = row). એક subscriber એક source system (એક topic) વાંચે છે, અને ફક્ત પોતાના `source.db.type` ની rows વાપરે છે. SQL source માટે: એનો topic, `subscriber.properties` ની copy (`kafka.topic=<sql topic>`, નવો `kafka.group.id`, `source.db.type=SQL`, `kafka.dlq.topic=cdc-dlq`), mapping row `active = TRUE`, અને destination collection `bronze_db` માં બનાવો.
+
+Destination collections બનાવવા: `mongosh "mongodb://localhost:27017/?replicaSet=rs0" sample-data\00_create_bronze_collections.js`
+
+> Mapping table **દરેક Kafka batch** પર એક query થી વંચાય છે (start વખતે પણ, અને ત્યારે બધા mappings log માં દેખાય). PostgreSQL બંધ હોય તો batch apply **નથી** થતો અને commit **નથી** થતો: subscriber error સાથે બંધ થાય, અને restart પછી એ જ messages ફરી આવે (કંઈ ખોવાય નહીં).
+> DLQ માં ગયેલા messages ફરી લાવવા (mapping / collection ઠીક કર્યા પછી): subscriber બંધ → consumer group `--reset-offsets` (DAILY_OPERATIONS §6.4) → start. Subscriber idempotent છે.
+
+```java
+package com.de.cdc;
+// પૂરો code: mongo-cdc-subscriber\src\main\java\com\de\cdc\CollectionMappings.java
+// loadActive(): SELECT source, destination FROM meta.cdc_collection_mapping WHERE active AND UPPER(db_type) = ?
+//               (? = source.db.type: NOSQL or SQL)  -> Map<source, destination>
+// ChangeEventApplier.resolveDestination(): active mapping of source.db.type + destination collection exists, else MappingException
 ```
 
 ### 7.5 `src\main\java\com\de\cdc\SubscriberApp.java`
@@ -1052,6 +1185,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
@@ -1060,8 +1194,9 @@ import static java.nio.charset.StandardCharsets.UTF_8;
  * Entry point of the subscriber. It repeats these 4 steps:
  * <pre>
  *   1. Read a batch of change events from the Kafka topic (for example "sourceMongo_db").
- *   2. Apply them to the target MongoDB database (see ChangeEventApplier).
- *   3. Send the messages that could not be read to the DLQ topic.
+ *   2. Apply them to the target MongoDB database (see ChangeEventApplier). The destination collection
+ *      comes from the PostgreSQL mapping table (see CollectionMappings) and must already exist.
+ *   3. Send the messages that could not be applied (bad message, no mapping, no collection) to the DLQ topic.
  *   4. Tell Kafka that the batch is done (commit the offsets).
  * </pre>
  * Step 4 runs only after step 2 succeeded. If the app crashes, Kafka gives the same messages
@@ -1086,7 +1221,14 @@ public class SubscriberApp {
              KafkaConsumer<String, String> consumer = createConsumer(config);
              KafkaProducer<String, String> dlqProducer = createDlqProducer(config)) {
 
-            ChangeEventApplier applier = new ChangeEventApplier(mongo.getDatabase(targetDbName), applyDrop);
+            // read the mapping table once at start: a wrong JDBC setting stops the app here, not at the first message
+            CollectionMappings mappings = new CollectionMappings(config);
+            Map<String, String> active = mappings.loadActive();
+            log.info("Collection mapping from {} (source.db.type={}): {} active source(s)",
+                    mappings.table(), mappings.sourceDbType(), active.size());
+            active.forEach((source, destination) -> log.info("  {} -> {}", source, destination));
+
+            ChangeEventApplier applier = new ChangeEventApplier(mongo.getDatabase(targetDbName), applyDrop, mappings);
             stopOnCtrlC(consumer);
 
             consumer.subscribe(List.of(topic));
@@ -1102,11 +1244,17 @@ public class SubscriberApp {
                 // 2. Apply the changes to MongoDB
                 List<FailedMessage> failedMessages = applier.applyAll(messages);
 
-                // 3. Send the messages that could not be read to the DLQ topic
+                // 3. Send the messages that could not be applied to the DLQ topic
                 for (FailedMessage failed : failedMessages) {
                     ConsumerRecord<String, String> message = failed.message();
-                    log.error("Could not read message (partition {}, offset {}), sending it to '{}'",
-                            message.partition(), message.offset(), dlqTopic, failed.error());
+                    if (failed.error() instanceof ChangeEventApplier.MappingException) {
+                        // a known configuration problem: the reason is enough, no stack trace
+                        log.error("Not applied (partition {}, offset {}), sending it to '{}': {}",
+                                message.partition(), message.offset(), dlqTopic, failed.error().getMessage());
+                    } else {
+                        log.error("Could not read message (partition {}, offset {}), sending it to '{}'",
+                                message.partition(), message.offset(), dlqTopic, failed.error());
+                    }
                     sendToDlq(dlqProducer, dlqTopic, failed);
                 }
                 dlqProducer.flush();

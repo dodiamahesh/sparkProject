@@ -28,6 +28,8 @@ ETL copies stay in `../../ecommersDataETLPipeline/sample-data/`):
 |---|---|
 | `01_mongo_full_load.js` | **Empties** (`deleteMany`, not `drop`) and loads the pipeline's collections (good + deliberately bad records). |
 | `02_mongo_incremental.js` | UPDATE, INSERT and **HARD DELETE** (rejected records **and** loaded / valid records). The header lists every delete and the expected counts. |
+| `00_cdc_collection_mapping.sql` (this folder) | PostgreSQL table `meta.cdc_collection_mapping` (`source`, `destination`, `db_type`, `active`) + insert rows. The subscriber checks it before every write. |
+| `00_create_bronze_collections.js` (this folder) | Creates the destination collections in `bronze_db` (the subscriber never creates one). |
 | `99_verify_bronze.js` (this folder) | Compares `sourceMongo_db` with `bronze_db` by `_id` and lists every soft-deleted document. |
 
 ## Collections in sourceMongo_db
@@ -63,22 +65,40 @@ Special cases that are tested:
    use bronze_db
    db.getCollectionNames().forEach(c => db.getCollection(c).drop())   // only if nothing else uses bronze_db!
    ```
-2. Topics (Kafka running, `C:\kafka`):
+2. **Collection mapping table** (PostgreSQL, port 5433). The subscriber writes a source collection only when it has an
+   active row of its source type (`db_type`: NOSQL = MongoDB collection, SQL = SQL table) in `meta.cdc_collection_mapping` (`source`, `destination`, `db_type`, `active`); otherwise the
+   message goes to the DLQ. The table is read for every batch, so changes need no restart.
+   ```powershell
+   $psql = "C:\Program Files\PostgreSQL\18\bin\psql.exe"
+   & $psql -h localhost -p 5433 -U postgres -c "CREATE DATABASE shop_dw"      # once; "already exists" is fine
+   & $psql -h localhost -p 5433 -U postgres -d shop_dw -f sample-data\00_cdc_collection_mapping.sql
+   # ➡️ 5 rows: customers, products (NOSQL, t), orders (NOSQL, f), station, station_owner (SQL, f)
+   ```
+3. **Destination collections in bronze_db.** The subscriber NEVER creates a collection (missing destination -> DLQ):
+   ```powershell
+   mongosh "mongodb://localhost:27017/?replicaSet=rs0" sample-data\00_create_bronze_collections.js
+   # ➡️ created bronze_db.customers, created bronze_db.products
+   ```
+   Other destination name (for example `products` -> `raw_products`): change the row in the mapping table, add the name
+   to `DESTINATIONS` in `00_create_bronze_collections.js` (and to `SYNCED` in `99_verify_bronze.js`), run it again.
+4. Topics (Kafka running, `C:\kafka`):
    ```powershell
    .\bin\windows\kafka-topics.bat --bootstrap-server localhost:9092 --create --topic sourceMongo_db --partitions 3 --replication-factor 1
    .\bin\windows\kafka-topics.bat --bootstrap-server localhost:9092 --create --topic cdc-dlq --partitions 1 --replication-factor 1
    ```
-3. Connector (Kafka Connect running):
+5. Connector (Kafka Connect running):
    ```powershell
    cd D:\ClaudeProjects\dataEngineeringProjects\sparkProject\mongoKafkaConnectorDemo\kafka-connect
    .\register-connectors.ps1
    # ➡️ mongo-cdc-db-source            connector=RUNNING  tasks=RUNNING
    ```
-4. Subscriber (own terminal, keep it open). Rebuild once after the DB rename (the properties are inside the jar):
+6. Subscriber (own terminal, keep it open). Rebuild after every code / properties change (the properties are inside the jar):
    ```powershell
    cd D:\ClaudeProjects\dataEngineeringProjects\sparkProject\mongoKafkaConnectorDemo\mongo-cdc-subscriber
    mvn -q clean package
    java -jar target\mongo-cdc-subscriber-1.0.0-jar-with-dependencies.jar
+   # ➡️ Collection mapping from meta.cdc_collection_mapping (source.db.type=NOSQL): 2 active source(s)
+   # ➡️   customers -> customers / products -> products
    # ➡️ Reading topic 'sourceMongo_db' and writing to database 'bronze_db'
    ```
 

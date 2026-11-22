@@ -24,6 +24,12 @@
             <artifactId>mongodb-driver-sync</artifactId>
             <version>5.1.4</version>
         </dependency>
+        <!-- PostgreSQL JDBC: reads the collection mapping table (meta.cdc_collection_mapping) -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <version>42.7.4</version>
+        </dependency>
         <!-- slf4j-api 2.x must win over the 1.7.x that kafka-clients pulls in -->
         <dependency>
             <groupId>org.slf4j</groupId>

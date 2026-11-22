@@ -22,6 +22,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
@@ -30,8 +31,9 @@ import static java.nio.charset.StandardCharsets.UTF_8;
  * Entry point of the subscriber. It repeats these 4 steps:
  * <pre>
  *   1. Read a batch of change events from the Kafka topic (for example "sourceMongo_db").
- *   2. Apply them to the target MongoDB database (see ChangeEventApplier).
- *   3. Send the messages that could not be read to the DLQ topic.
+ *   2. Apply them to the target MongoDB database (see ChangeEventApplier). The destination collection
+ *      comes from the PostgreSQL mapping table (see CollectionMappings) and must already exist.
+ *   3. Send the messages that could not be applied (bad message, no mapping, no collection) to the DLQ topic.
  *   4. Tell Kafka that the batch is done (commit the offsets).
  * </pre>
  * Step 4 runs only after step 2 succeeded. If the app crashes, Kafka gives the same messages
@@ -56,7 +58,14 @@ public class SubscriberApp {
              KafkaConsumer<String, String> consumer = createConsumer(config);
              KafkaProducer<String, String> dlqProducer = createDlqProducer(config)) {
 
-            ChangeEventApplier applier = new ChangeEventApplier(mongo.getDatabase(targetDbName), applyDrop);
+            // read the mapping table once at start: a wrong JDBC setting stops the app here, not at the first message
+            CollectionMappings mappings = new CollectionMappings(config);
+            Map<String, String> active = mappings.loadActive();
+            log.info("Collection mapping from {} (source.db.type={}): {} active source(s)",
+                    mappings.table(), mappings.sourceDbType(), active.size());
+            active.forEach((source, destination) -> log.info("  {} -> {}", source, destination));
+
+            ChangeEventApplier applier = new ChangeEventApplier(mongo.getDatabase(targetDbName), applyDrop, mappings);
             stopOnCtrlC(consumer);
 
             consumer.subscribe(List.of(topic));
@@ -72,11 +81,17 @@ public class SubscriberApp {
                 // 2. Apply the changes to MongoDB
                 List<FailedMessage> failedMessages = applier.applyAll(messages);
 
-                // 3. Send the messages that could not be read to the DLQ topic
+                // 3. Send the messages that could not be applied to the DLQ topic
                 for (FailedMessage failed : failedMessages) {
                     ConsumerRecord<String, String> message = failed.message();
-                    log.error("Could not read message (partition {}, offset {}), sending it to '{}'",
-                            message.partition(), message.offset(), dlqTopic, failed.error());
+                    if (failed.error() instanceof ChangeEventApplier.MappingException) {
+                        // a known configuration problem: the reason is enough, no stack trace
+                        log.error("Not applied (partition {}, offset {}), sending it to '{}': {}",
+                                message.partition(), message.offset(), dlqTopic, failed.error().getMessage());
+                    } else {
+                        log.error("Could not read message (partition {}, offset {}), sending it to '{}'",
+                                message.partition(), message.offset(), dlqTopic, failed.error());
+                    }
                     sendToDlq(dlqProducer, dlqTopic, failed);
                 }
                 dlqProducer.flush();
