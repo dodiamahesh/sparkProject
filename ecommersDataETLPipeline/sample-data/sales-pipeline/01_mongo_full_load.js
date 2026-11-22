@@ -4,7 +4,7 @@
 //  Run:   mongosh "mongodb://localhost:27017" sample-data/sales-pipeline/01_mongo_full_load.js
 //  Then:  POST http://localhost:8080/api/etl/pipelines/sales-pipeline/run   (first run: no watermark yet, reads everything)
 //
-//  Database: shopdb (default MONGO_DATABASE). Data = design document "Job-2: Multiple Collections",
+//  Database: bronze_db (default MONGO_DATABASE). Data = design document "Job-2: Multiple Collections",
 //  taken from "../sparkJavaMongoConnectorAirflowLinageTheory/sample_data/01_mongo_full_load_data.js" (only the 4
 //  collections of this job). Timestamps are BSON Dates written in IST (+05:30), MongoDB stores UTC.
 //
@@ -19,7 +19,7 @@
 //      dim_customer 20, fact_sales 30 (total 249,500), fact_payment 20
 //      status: SUCCESS_WITH_FAILED (valid rows loaded, the rejected ones are in meta.meta_rejected_record)
 // =============================================================================
-const DB_NAME = "shopdb";
+const DB_NAME = "bronze_db";
 db = db.getSiblingDB(DB_NAME);
 
 // ---------- helpers ----------

@@ -15,7 +15,7 @@ spring:
     mongodb:
       # BRONZE layer: MongoDB (raw source collections)
       uri: ${MONGO_URI:mongodb://localhost:27017}
-      database: ${MONGO_DATABASE:shopdb}
+      database: ${MONGO_DATABASE:bronze_db}
 
 etl:
   spark:

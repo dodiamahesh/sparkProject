@@ -4,7 +4,7 @@
 //  Run:   mongosh "mongodb://localhost:27017" sample-data/vat-return-pipeline/01_mongo_full_load.js
 //  Then:  POST http://localhost:8080/api/etl/pipelines/vat-return-pipeline/run   (first run: no watermark yet, reads everything)
 //
-//  Database: shopdb (default MONGO_DATABASE; the collection name does not clash with any other job).
+//  Database: bronze_db (default MONGO_DATABASE; the collection name does not clash with any other job).
 //  Collection: vat_return_coll = one document per FILED monthly VAT return (same shape as the GRA source document).
 //
 //  ⚠️ updatedAt (top level, BSON Date) is NOT in the original source document. The incremental watermark needs it:
@@ -21,7 +21,7 @@
 //      dim_taxpayer 6, dim_tax_period 3 (Aug, Sep, Oct 2026), fact_vat_return 14
 //      status: SUCCESS_WITH_FAILED (valid rows loaded, the rejected ones are in meta.meta_rejected_record)
 // =============================================================================
-const DB_NAME = "shopdb";
+const DB_NAME = "bronze_db";
 db = db.getSiblingDB(DB_NAME);
 const COLL = "vat_return_coll";
 db.getCollection(COLL).drop();

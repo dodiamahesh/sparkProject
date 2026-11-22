@@ -7,7 +7,7 @@
 //  Run:   mongosh "mongodb://localhost:27017" sample-data/ecommerce-fulfillment-pipeline/01_mongo_full_load.js
 //  Then:  POST http://localhost:8080/api/etl/pipelines/ecommerce-fulfillment-pipeline/run   (first run: no watermark yet, reads everything)
 //
-//  Database: shopdb (default MONGO_DATABASE).
+//  Database: bronze_db (default MONGO_DATABASE).
 //      ecom_warehouses -> dim_warehouse, ecom_carriers -> dim_carrier,
 //      ecom_shipments  -> fact_shipment (order, warehouse, carrier must exist; customer_key taken from fact_order)
 //
@@ -19,7 +19,7 @@
 //      (4 bad of 15 = 26.7%: the reject gate of this source allows at most 30%)
 //      status: SUCCESS_WITH_FAILED (valid rows loaded, the rejected ones are in meta.meta_rejected_record)
 // =============================================================================
-const DB_NAME = "shopdb";
+const DB_NAME = "bronze_db";
 db = db.getSiblingDB(DB_NAME);
 
 // updatedAt = the INCREMENTAL WATERMARK field: it must be a BSON Date (IST time written here, MongoDB stores UTC)

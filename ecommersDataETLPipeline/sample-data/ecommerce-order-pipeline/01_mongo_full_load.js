@@ -4,7 +4,7 @@
 //  Run:   mongosh "mongodb://localhost:27017" sample-data/ecommerce-order-pipeline/01_mongo_full_load.js
 //  Then:  POST http://localhost:8080/api/etl/pipelines/ecommerce-order-pipeline/run   (first run: no watermark yet, reads everything)
 //
-//  Database: shopdb (default MONGO_DATABASE). Collections ecom_* do not clash with the sales job.
+//  Database: bronze_db (default MONGO_DATABASE). Collections ecom_* do not clash with the sales job.
 //
 //  SNOWFLAKE: ecom_categories -> dim_category <- ecom_products -> dim_product (category must exist)
 //             ecom_customers  -> dim_ecom_customer
@@ -19,7 +19,7 @@
 //      ecom_order_items  read 15 | valid 12| rejected 3 (ORPHAN OIT-000013 product, ORPHAN OIT-000014 order, CORRUPT OIT-000015 qty)
 //      status: SUCCESS_WITH_FAILED (valid rows loaded, the rejected ones are in meta.meta_rejected_record)
 // =============================================================================
-const DB_NAME = "shopdb";
+const DB_NAME = "bronze_db";
 db = db.getSiblingDB(DB_NAME);
 
 // updatedAt = the INCREMENTAL WATERMARK field: it must be a BSON Date (IST time written here, MongoDB stores UTC)

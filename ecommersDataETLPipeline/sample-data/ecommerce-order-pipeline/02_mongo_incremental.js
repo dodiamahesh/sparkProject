@@ -20,7 +20,7 @@
 //      ecom_order_items  read 3 (OIT-000016/17 new, OIT-000018 VALIDATION: discount > quantity * unitPrice)
 //      status: SUCCESS_WITH_FAILED (OIT-000018 rejected)
 // =============================================================================
-const DB_NAME = "shopdb";
+const DB_NAME = "bronze_db";
 db = db.getSiblingDB(DB_NAME);
 
 const NOW = new Date();   // every change is stamped with the current time -> newer than the last watermark

@@ -19,7 +19,7 @@
 //                      + SHP-00008 soft-deleted (fact_shipment row is_deleted = TRUE)
 //      status: SUCCESS (nothing rejected)
 // =============================================================================
-const DB_NAME = "shopdb";
+const DB_NAME = "bronze_db";
 db = db.getSiblingDB(DB_NAME);
 
 const NOW = new Date();   // every change is stamped with the current time -> newer than the last watermark

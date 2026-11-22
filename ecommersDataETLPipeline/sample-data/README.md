@@ -79,13 +79,13 @@ direct (`vat-return-pipeline`, inside its all-or-nothing transaction). The `03` 
 |---|---|---|---|
 | `payment-pipeline` | `bankdb` | payments | `silver` star |
 | `transaction-pipeline` | `bankdb` | customers, accounts, merchants, transactions | `silver` star |
-| `ecommerce-order-pipeline` | `shopdb` | ecom_categories, ecom_products, ecom_customers, ecom_orders, ecom_order_items | `silver` snowflake |
-| `ecommerce-fulfillment-pipeline` | `shopdb` | ecom_warehouses, ecom_carriers, ecom_shipments | `silver` star (needs `silver.fact_order`) |
-| `sales-pipeline` (Job-2) | `shopdb` | products, customers, orders, payments | `curated` star |
-| `vat-return-pipeline` | `shopdb` | vat_return_coll | `silver` star, loaded WITHOUT staging (design: `vat-return-pipeline/vat-return-pipeline.md`) |
+| `ecommerce-order-pipeline` | `bronze_db` | ecom_categories, ecom_products, ecom_customers, ecom_orders, ecom_order_items | `silver` snowflake |
+| `ecommerce-fulfillment-pipeline` | `bronze_db` | ecom_warehouses, ecom_carriers, ecom_shipments | `silver` star (needs `silver.fact_order`) |
+| `sales-pipeline` (Job-2) | `bronze_db` | products, customers, orders, payments | `curated` star |
+| `vat-return-pipeline` | `bronze_db` | vat_return_coll | `silver` star, loaded WITHOUT staging (design: `vat-return-pipeline/vat-return-pipeline.md`) |
 
 **Why two Mongo databases?** `payments` and `customers` exist in both the banking and the sales examples with a
-different shape. The app reads ONE database (`MONGO_DATABASE`, default `shopdb`). For the banking jobs start it with
+different shape. The app reads ONE database (`MONGO_DATABASE`, default `bronze_db`). For the banking jobs start it with
 `$env:MONGO_DATABASE="bankdb"`.
 
 ## Run order (PowerShell, local)

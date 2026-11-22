@@ -24,7 +24,7 @@
 //      -> dim_taxpayer 7, dim_tax_period 3, fact_vat_return 17 (14 + 3 new; 2 updated in place; 1 is_deleted)
 //      status: SUCCESS_WITH_FAILED (120000000623 rejected)
 // =============================================================================
-const DB_NAME = "shopdb";
+const DB_NAME = "bronze_db";
 db = db.getSiblingDB(DB_NAME);
 const COLL = "vat_return_coll";
 const coll = db.getCollection(COLL);

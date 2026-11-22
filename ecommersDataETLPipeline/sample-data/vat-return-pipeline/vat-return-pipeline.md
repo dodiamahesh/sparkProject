@@ -6,7 +6,7 @@ This job writes **directly into the silver tables: no `etl_staging.stg_*` tables
 | | |
 |---|---|
 | Pipeline name | `vat-return-pipeline` → `POST /api/etl/pipelines/vat-return-pipeline/run` |
-| Source | MongoDB `shopdb.vat_return_coll` (default `MONGO_DATABASE`; the name clashes with no other job) |
+| Source | MongoDB `bronze_db.vat_return_coll` (default `MONGO_DATABASE`; the name clashes with no other job) |
 | Target | `silver`: 6 dimensions + shared `silver.dim_date` + 1 fact |
 | Model | **Star schema** |
 | Load | Incremental by `updatedAt` watermark, one transaction for the whole run (all-or-nothing) |

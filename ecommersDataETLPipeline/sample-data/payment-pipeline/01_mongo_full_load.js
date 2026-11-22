@@ -4,7 +4,7 @@
 //  Run:   mongosh "mongodb://localhost:27017" sample-data/payment-pipeline/01_mongo_full_load.js
 //  Then:  POST http://localhost:8080/api/etl/pipelines/payment-pipeline/run   (first run: no watermark yet, reads everything)
 //
-//  Database: bankdb (banking examples). The collection "payments" also exists in shopdb with the
+//  Database: bankdb (banking examples). The collection "payments" also exists in bronze_db with the
 //  SALES shape, so the banking jobs use their own database. Start the app for this job with
 //      $env:MONGO_DATABASE="bankdb"
 //

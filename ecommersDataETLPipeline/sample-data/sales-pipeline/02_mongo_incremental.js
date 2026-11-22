@@ -24,7 +24,7 @@
 //      Old order O1003 keeps the Mumbai version of C003 (point-in-time lookup).
 //      status: SUCCESS (nothing rejected)
 // =============================================================================
-const DB_NAME = "shopdb";
+const DB_NAME = "bronze_db";
 db = db.getSiblingDB(DB_NAME);
 
 const ist = (s) => new Date(s.replace(" ", "T") + ":00+05:30");
