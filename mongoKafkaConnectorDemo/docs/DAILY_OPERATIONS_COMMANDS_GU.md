@@ -1047,5 +1047,5 @@ cd C:\kafka
 | Kafka broker ને Connect પહેલાં બંધ કરવું | Connect offsets save ન કરી શકે | Stop ક્રમ (2) |
 | Subscriber ચાલુ રાખીને offsets reset | Kafka ના પાડે | પહેલાં subscriber બંધ (6.4) |
 | JSON file delete કરીને માની લેવું કે connector બંધ થયો | Config Connect ના topic માં છે | `.\register-connectors.ps1 delete <name>` |
-| `deletedConnectorOld\` ની files register કરવી | Data બે વાર / બે જગ્યાએ | ફક્ત `kafka-connect\mongo-cdc-db-source.json` |
+| એક જ source DB માટે બીજો connector register કરવો | Data બે વાર / બે જગ્યાએ | ફક્ત `kafka-connect\mongo-cdc-db-source.json` |
 | એક જ consumer group ના 3 થી વધુ subscribers | Partitions 3 જ છે, વધારાના ખાલી બેસે | Instances ≤ partitions |

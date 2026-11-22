@@ -38,10 +38,7 @@ mongoKafkaConnectorDemo\
 │   └── CDC_TOOL_COMPARISON_GU.md               ← Debezium vs MongoDB connector: કેમ આ tool પસંદ કર્યું
 ├── kafka-connect\
 │   ├── mongo-cdc-db-source.json                ← ✅ source connector: sourceMongo_db → topic sourceMongo_db
-│   ├── register-connectors.ps1                 ← connector register / status / delete script
-│   └── deletedConnectorOld\                    ← ❌ જૂના connectors (ફક્ત reference, register ન કરવા)
-│       ├── mongo-cdc-source.json
-│       └── mongo-cdc-sink-bronze.json
+│   └── register-connectors.ps1                 ← connector register / status / delete script
 └── mongo-cdc-subscriber\                       ← Java consumer (અલગ Maven project)
     ├── pom.xml
     └── src\main\
@@ -298,7 +295,7 @@ java -jar target\mongo-cdc-subscriber-1.0.0-jar-with-dependencies.jar
 **⚠️ ક્યારેય ન કરો** (પૂરી list §13):
 - Windows પર **Kafka topic delete** ન કરો (broker crash થાય).
 - Connector JSON file delete કરવાથી connector બંધ **નથી** થતો. `.\register-connectors.ps1 delete <name>` વાપરો.
-- `deletedConnectorOld\` ની files **register ન કરો** (data બે વાર / બે જગ્યાએ જશે).
+- એક જ source DB માટે **બે connectors** register ન કરો (data બે વાર / બે જગ્યાએ જશે). `status` માં ફક્ત `mongo-cdc-db-source`.
 - Subscriber ચાલુ હોય ત્યારે `mvn clean package` ન કરો (jar lock).
 
 ---
@@ -325,6 +322,7 @@ java -jar target\mongo-cdc-subscriber-1.0.0-jar-with-dependencies.jar
 
 | તારીખ | ફેરફાર | Commit |
 |---|---|---|
+| 2026-11-23 | `kafka-connect\deletedConnectorOld\` (જૂના sink + `de_source_mongo` source connectors, વપરાતા નહોતા) કાઢ્યું. જોઈએ તો: `git show dbd3ab1:mongoKafkaConnectorDemo/kafka-connect/deletedConnectorOld/mongo-cdc-source.json` | _(commit પછી લખો)_ |
 | 2026-11-23 | **Duplicate check (A + C)** ([design](docs/DUPLICATE_CHECK_DESIGN_GU.md)): rule table `meta.cdc_duplicate_rule` (source + fields, બધા સરખા = duplicate), rejected records → `meta.meta_duplicate_record`. A = લખતા પહેલાં query, C = partial unique index `cdc_dup_rule` + E11000 loop. નવું: `MetaDatabase`, `DuplicateRules`, `DuplicateDetector`, `DuplicateRecordStore`, `PendingWrite`, test `DuplicateCheckIT` (`mvn test`), `sample-data\00_cdc_duplicate_rule.sql` (18 rules), `sample-data\<pipeline>\03_bronze_unique_indexes.js` + `lib_unique_index.js`; `99_verify_bronze.js` માં `duplicates` column | _(commit પછી લખો)_ |
 | 2026-11-22 | Mapping માં **SQL tables** પણ: `db_type` = **source** નો type (`NOSQL` = MongoDB collection, `SQL` = SQL table), destination હંમેશા `bronze_db` collection. Subscriber setting `source.db.type` (default `NOSQL`) પ્રમાણે ફક્ત એ type ની rows વાપરે. Sample rows: `station`, `station_owner` (SQL, inactive) | _(commit પછી લખો)_ |
 | 2026-11-22 | Subscriber: **collection mapping** PostgreSQL `meta.cdc_collection_mapping` થી (source → destination, `db_type`, `active`; દરેક batch પર વંચાય). Active `NOSQL` mapping નથી, અથવા destination collection `bronze_db` માં નથી → `MappingException`, message DLQ માં. Subscriber હવે collection **બનાવતો નથી**. નવું: `CollectionMappings.java`, PostgreSQL JDBC dependency, `mapping.*` properties, `sample-data\00_cdc_collection_mapping.sql`, `00_create_bronze_collections.js`; `99_verify_bronze.js` માં `SYNCED` = source → destination | _(commit પછી લખો)_ |
