@@ -2,9 +2,9 @@
 
 > MongoDB Kafka Connector (source) અને પોતાના Java consumer (`mongo-cdc-subscriber`) નું **બધું એક જ folder માં**: config, code, documents અને start/stop steps.
 >
-> **Flow:** `de_source_mongo` (MongoDB) → **MongoDB Source Connector** (Kafka Connect) → Kafka topic **`de_source_mongo`** → **`mongo-cdc-subscriber`** (Java) → `de_bronze` (MongoDB) → Spark (Bronze → Silver, root project માં)
+> **Flow:** `sourceMongo_db` (MongoDB) → **MongoDB Source Connector** (Kafka Connect) → Kafka topic **`sourceMongo_db`** → **`mongo-cdc-subscriber`** (Java) → `bronze_db` (MongoDB) → ETL (`ecommersDataETLPipeline`, default `MONGO_DATABASE=bronze_db`)
 >
-> **બીજો flow (transaction DB, soft delete test):** `sourceMongo_db` → connector **`mongo-cdc-sourcemongo-source`** → topic **`sourceMongo_db`** → `mongo-cdc-subscriber` (`subscriber-sourcemongo.properties`) → `bronze_db`. Source માં **hard delete** = bronze માં **soft delete** (`_deleted: true`). Test data અને steps: **[sample-data/README.md](sample-data/README.md)**
+> `sourceMongo_db` = **transaction (source) DB**. Source માં **hard delete** = bronze માં **soft delete** (`_deleted: true`). Test data અને steps: **[sample-data/README.md](sample-data/README.md)**
 >
 > આ README = **quick reference**. દરેક step ની પૂરી વિગત (કેમ, શું output આવે, error આવે તો શું કરવું): **[docs/MONGO_CDC_COMPLETE_SETUP_GU.md](docs/MONGO_CDC_COMPLETE_SETUP_GU.md)**. નીચે `(§3.5)` જેવું લખ્યું હોય એ એ document નો વિભાગ છે.
 
@@ -31,13 +31,13 @@
 mongoKafkaConnectorDemo\
 ├── README.md                                   ← આ file (quick start + change log)
 ├── docs\
+│   ├── DAILY_OPERATIONS_COMMANDS_GU.md         ← રોજનો start/stop + Kafka topics/messages/DLQ/groups ના commands
 │   ├── MONGO_CDC_COMPLETE_SETUP_GU.md          ← આખો setup: install → config → code → test → operations
 │   ├── MONGO_SOURCE_CONNECTOR_CONFIG_REFERENCE_GU.md ← connector ની દરેક config key નો અર્થ
 │   ├── CDC_EXAMPLE_ORDERS_COMPARISON_GU.md     ← insert/update/replace/delete: source vs Kafka vs bronze
 │   └── CDC_TOOL_COMPARISON_GU.md               ← Debezium vs MongoDB connector: કેમ આ tool પસંદ કર્યું
 ├── kafka-connect\
-│   ├── mongo-cdc-db-source.json                ← ✅ source connector: de_source_mongo → topic de_source_mongo
-│   ├── mongo-cdc-sourcemongo-source.json       ← ✅ source connector: sourceMongo_db → topic sourceMongo_db
+│   ├── mongo-cdc-db-source.json                ← ✅ source connector: sourceMongo_db → topic sourceMongo_db
 │   ├── register-connectors.ps1                 ← connector register / status / delete script
 │   └── deletedConnectorOld\                    ← ❌ જૂના connectors (ફક્ત reference, register ન કરવા)
 │       ├── mongo-cdc-source.json
@@ -49,8 +49,7 @@ mongoKafkaConnectorDemo\
         │   ├── SubscriberApp.java              ← Kafka loop: read → apply → DLQ → commit
         │   └── ChangeEventApplier.java         ← change event → MongoDB write (upsert / soft delete)
         └── resources\
-            ├── subscriber.properties           ← Kafka, MongoDB, target DB settings (de_source_mongo → de_bronze)
-            └── subscriber-sourcemongo.properties ← બીજો flow: topic sourceMongo_db → bronze_db
+            └── subscriber.properties           ← Kafka, MongoDB, target DB settings (topic sourceMongo_db → bronze_db)
 └── sample-data\                                ← sourceMongo_db માટે test data (6 pipelines)
     ├── README.md                               ← hard delete → soft delete test: steps + expected counts
     ├── 99_verify_bronze.js                     ← sourceMongo_db vs bronze_db સરખામણી
@@ -74,6 +73,7 @@ C:\Program Files\MongoDB\Server\<version>\bin\mongod.cfg ← replica set rs0 (§
 
 | જરૂર | Document |
 |---|---|
+| રોજનો start / stop, topics, messages, DLQ, consumer groups, connectors જોવાના commands (expected output સાથે) | [DAILY_OPERATIONS_COMMANDS_GU.md](docs/DAILY_OPERATIONS_COMMANDS_GU.md) |
 | નવી machine પર શરૂઆતથી setup / કોઈ step ની પૂરી વિગત | [MONGO_CDC_COMPLETE_SETUP_GU.md](docs/MONGO_CDC_COMPLETE_SETUP_GU.md) |
 | Connector JSON ની કોઈ key બદલવી છે, એની અસર શું? | [MONGO_SOURCE_CONNECTOR_CONFIG_REFERENCE_GU.md](docs/MONGO_SOURCE_CONNECTOR_CONFIG_REFERENCE_GU.md) |
 | એક document Kafka અને bronze માં કેવો દેખાય? | [CDC_EXAMPLE_ORDERS_COMPARISON_GU.md](docs/CDC_EXAMPLE_ORDERS_COMPARISON_GU.md) |
@@ -87,14 +87,12 @@ C:\Program Files\MongoDB\Server\<version>\bin\mongod.cfg ← replica set rs0 (§
 | વસ્તુ | Value |
 |---|---|
 | MongoDB URI | `mongodb://localhost:27017/?replicaSet=rs0` |
-| Source DB → Bronze DB | `de_source_mongo` → `de_bronze` |
+| Source DB → Bronze DB | `sourceMongo_db` → `bronze_db` |
 | Kafka broker | `localhost:9092` (controller `9093`) |
 | Kafka Connect REST | `http://localhost:8083` |
-| CDC topic / DLQ topic | `de_source_mongo` (3 partitions) / `de_source_mongo.dlq` |
+| CDC topic / DLQ topic | `sourceMongo_db` (3 partitions) / `cdc-dlq` |
 | Source connector નામ | `mongo-cdc-db-source` |
 | Subscriber consumer group | `mongo-cdc-subscriber` |
-| **બીજો flow:** Source DB → Bronze DB | `sourceMongo_db` → `bronze_db` |
-| **બીજો flow:** connector / topic / DLQ / group | `mongo-cdc-sourcemongo-source` / `sourceMongo_db` / `sourceMongo_db.dlq` / `mongo-cdc-subscriber-sourcemongo` |
 | Versions | JDK 17, Maven 3.9.11, MongoDB 8.x, Kafka 4.3.1, MongoDB Kafka Connector 3.1.2 |
 
 ---
@@ -124,8 +122,8 @@ C:\Program Files\MongoDB\Server\<version>\bin\mongod.cfg ← replica set rs0 (§
 **Step 12: Topics (ફક્ત પહેલી વાર, Kafka ચાલુ હોય ત્યારે):**
 ```powershell
 cd C:\kafka
-.\bin\windows\kafka-topics.bat --bootstrap-server localhost:9092 --create --topic de_source_mongo --partitions 3 --replication-factor 1
-.\bin\windows\kafka-topics.bat --bootstrap-server localhost:9092 --create --topic de_source_mongo.dlq --partitions 1 --replication-factor 1
+.\bin\windows\kafka-topics.bat --bootstrap-server localhost:9092 --create --topic sourceMongo_db --partitions 3 --replication-factor 1
+.\bin\windows\kafka-topics.bat --bootstrap-server localhost:9092 --create --topic cdc-dlq --partitions 1 --replication-factor 1
 ```
 
 **Step 13: Connector register (ફક્ત પહેલી વાર, અથવા JSON બદલ્યા પછી):**
@@ -186,15 +184,14 @@ cd D:\ClaudeProjects\dataEngineeringProjects\sparkProject\mongoKafkaConnectorDem
 .\register-connectors.ps1 status
 ```
 ➡️ `mongo-cdc-db-source connector=RUNNING  tasks=RUNNING`
-➡️ `mongo-cdc-sourcemongo-source connector=RUNNING  tasks=RUNNING` (બીજો flow register કર્યો હોય તો)
-> ફક્ત **આ બે** connectors દેખાવા જોઈએ. બીજો (જૂનો) દેખાય તો [Section 9](#9-ઝડપી-troubleshooting).
+> ફક્ત **આ એક જ** connector દેખાવો જોઈએ. બીજો (જૂનો) દેખાય તો [Section 9](#9-ઝડપી-troubleshooting).
 
 ### 5.5 Subscriber (Terminal #3, ખુલ્લું રાખો)
 ```powershell
 cd D:\ClaudeProjects\dataEngineeringProjects\sparkProject\mongoKafkaConnectorDemo\mongo-cdc-subscriber
 java -jar target\mongo-cdc-subscriber-1.0.0-jar-with-dependencies.jar
 ```
-➡️ `Reading topic 'de_source_mongo' and writing to database 'de_bronze'`
+➡️ `Reading topic 'sourceMongo_db' and writing to database 'bronze_db'`
 
 `subscriber.properties` બદલ્યા પછી ફરી build ન કરવો હોય તો:
 ```powershell
@@ -213,16 +210,16 @@ cd C:\kafka
 
 **(b) એક નાનો live test (mongosh):**
 ```javascript
-use de_source_mongo
+use sourceMongo_db
 db.student.insertOne({ studentId: 999, name: "Readme Test", marks: 50 })
 
-use de_bronze
+use bronze_db
 db.student.find({ studentId: 999 })     // _op: "insert", _deleted: false, _source_ts, _ingested_at
 ```
 
 **(c) Source અને bronze counts સરખા?**
 ```javascript
-const s = db.getSiblingDB("de_source_mongo"), t = db.getSiblingDB("de_bronze");
+const s = db.getSiblingDB("sourceMongo_db"), t = db.getSiblingDB("bronze_db");
 s.getCollectionNames().forEach(c => print(c, "source=" + s[c].countDocuments(),
     "bronze_live=" + t[c].countDocuments({ _deleted: false })));
 ```
@@ -230,7 +227,7 @@ s.getCollectionNames().forEach(c => print(c, "source=" + s[c].countDocuments(),
 **(d) DLQ ખાલી?**
 ```powershell
 cd C:\kafka
-.\bin\windows\kafka-console-consumer.bat --bootstrap-server localhost:9092 --topic de_source_mongo.dlq --from-beginning --timeout-ms 5000 --formatter-property print.headers=true
+.\bin\windows\kafka-console-consumer.bat --bootstrap-server localhost:9092 --topic cdc-dlq --from-beginning --timeout-ms 5000 --formatter-property print.headers=true
 ```
 ➡️ `Processed a total of 0 messages`
 
@@ -258,8 +255,36 @@ cd C:\kafka
 | `subscriber.properties` | Subscriber બંધ → properties path આપીને run (5.5) અથવા rebuild | §7.3 |
 | Bronze ફરી શરૂઆતથી બનાવવું (replay) | Subscriber બંધ → bronze collections drop → consumer group `--reset-offsets --to-earliest` → subscriber start | §12.1 |
 | Connector નો `copy_existing` ફરી ચલાવવો | જૂનો connector `delete` → **નવા નામે** JSON + script માં `$names` → register | §12.5 |
-| બીજો source DB ઉમેરવો | નવો topic + નવી connector JSON + નવી properties file / consumer group | §12.3 |
+| બીજો source DB ઉમેરવો | નવો topic + નવી connector JSON + નવી properties file / consumer group. **DLQ નવો નહીં**: `kafka.dlq.topic=cdc-dlq` | §12.3 |
+| **Sync થતા collections બદલવા** (હાલ `customers`, `products`) | `mongo-cdc-db-source.json` માં `pipeline` + `startup.mode.copy.existing.namespace.regex` બંનેમાં નામ ઉમેરો/કાઢો. નવા collection નો જૂનો data જોઈએ તો `offset.partition.name` બદલો (`-v3`, ...). પછી `.\register-connectors.ps1`. `sample-data\99_verify_bronze.js` નું `SYNCED` પણ બદલો | §6.1 |
+| એક DLQ (`cdc-dlq`) બનાવવો / જૂના DLQ topics દૂર કરવા | [DAILY_OPERATIONS §5.3, §5.4](docs/DAILY_OPERATIONS_COMMANDS_GU.md#53-cdc-dlq-બનાવવો-ફક્ત-એક-વાર) | |
 | Kafka crash (`AccessDeniedException`) | પહેલાં `*-delete` folders દૂર કરો, ન ચાલે તો reset | §12.6 |
+| **જૂના setup (`de_source_mongo` → `de_bronze`) થી નવા DB નામ પર જવું** (ફક્ત એક વાર) | નીચે [8.1](#81-જૂના-db-નામ-થી-sourcemongo_db--bronze_db-પર-જવું-એક-વાર) | |
+
+### 8.1 જૂના DB નામ થી `sourceMongo_db` → `bronze_db` પર જવું (એક વાર)
+
+જેણે પહેલાં `de_source_mongo` → `de_bronze` વાળો connector register કર્યો હોય તેના માટે. Kafka + Connect ચાલુ, subscriber **બંધ**:
+```powershell
+# 1) નવા topics
+cd C:\kafka
+.\bin\windows\kafka-topics.bat --bootstrap-server localhost:9092 --create --topic sourceMongo_db --partitions 3 --replication-factor 1
+.\bin\windows\kafka-topics.bat --bootstrap-server localhost:9092 --create --topic cdc-dlq --partitions 1 --replication-factor 1
+
+# 2) Connector update: એ જ નામ, નવો database. "offset.partition.name" નવું હોવાથી connector નવેસરથી
+#    શરૂ કરે છે: sourceMongo_db ના હાલના documents copy_existing થી આવે, પછી live changes.
+cd D:\ClaudeProjects\dataEngineeringProjects\sparkProject\mongoKafkaConnectorDemo\kafka-connect
+.\register-connectors.ps1
+# ➡️ applied mongo-cdc-db-source / mongo-cdc-db-source connector=RUNNING  tasks=RUNNING
+
+# 3) Subscriber rebuild (properties jar ની અંદર છે) અને start
+cd ..\mongo-cdc-subscriber
+mvn -q clean package
+java -jar target\mongo-cdc-subscriber-1.0.0-jar-with-dependencies.jar
+# ➡️ Reading topic 'sourceMongo_db' and writing to database 'bronze_db'
+```
+- Consumer group `mongo-cdc-subscriber` એ જ રહે છે. નવા topic `sourceMongo_db` માટે એનો કોઈ offset નથી, એટલે subscriber એ topic **શરૂઆતથી** વાંચે છે.
+- જૂનો topic `de_source_mongo` અને DB `de_source_mongo` / `de_bronze` જેમ છે તેમ રહે છે. Topic **delete ન કરો** (Windows). Root Spark project (`src\main\resources\application.properties`: `pipeline.bronze-database=de_bronze`) હજુ `de_bronze` વાંચે છે.
+- `bronze_db` માં જૂના ETL sample scripts એ સીધા load કરેલા documents (`_op` વગરના) હોય તો પહેલાં drop કરો ([sample-data/README.md](sample-data/README.md)).
 
 **⚠️ ક્યારેય ન કરો** (પૂરી list §13):
 - Windows પર **Kafka topic delete** ન કરો (broker crash થાય).
@@ -291,7 +316,11 @@ cd C:\kafka
 
 | તારીખ | ફેરફાર | Commit |
 |---|---|---|
-| 2026-11-22 | બીજો CDC flow `sourceMongo_db` → `bronze_db`: નવો connector JSON, `subscriber-sourcemongo.properties`, `register-connectors.ps1` માં બંને connectors (`apply NAME` પણ). `sample-data\`: DB `sourceMongo_db`, banking collections `bank_*`, 02 scripts માં soft delete ની જગ્યાએ **hard delete**, 01 માં `drop` ની જગ્યાએ `deleteMany`, `99_verify_bronze.js`; `.sql` files કાઢી | _(commit પછી લખો)_ |
+| 2026-11-22 | Connector હવે **ફક્ત `customers`, `products`** sync કરે છે (`pipeline` + `startup.mode.copy.existing.namespace.regex`), `offset.partition.name` → `sourceMongo_db-v2` (આ 2 નો existing data ફરી copy થાય). `99_verify_bronze.js` માં `SYNCED` list | _(commit પછી લખો)_ |
+| 2026-11-22 | **એક જ DLQ `cdc-dlq`** બધા CDC topics માટે (`subscriber.properties`). Subscriber DLQ message માં નવા headers `source.topic`, `source.partition`, `source.offset`. Docs: DLQ filter commands, જૂના DLQ topics દૂર કરવાના steps (DAILY_OPERATIONS §5.3–5.4) | _(commit પછી લખો)_ |
+| 2026-11-22 | `docs\DAILY_OPERATIONS_COMMANDS_GU.md`: રોજનો start/stop, topics, messages, DLQ, consumer groups, Connect REST, logs, health check (commands + expected output) | _(commit પછી લખો)_ |
+| 2026-11-22 | **Source DB `de_source_mongo` → `sourceMongo_db`, bronze DB `de_bronze` → `bronze_db`** (topic `sourceMongo_db`, DLQ `sourceMongo_db.dlq`). `mongo-cdc-db-source.json` માં `database` + `offset.partition.name`, `subscriber.properties`, Java comments, બધા docs. Migration: [8.1](#81-જૂના-db-નામ-થી-sourcemongo_db--bronze_db-પર-જવું-એક-વાર) | _(commit પછી લખો)_ |
+| 2026-11-22 | `register-connectors.ps1 apply NAME`. `sample-data\`: DB `sourceMongo_db`, banking collections `bank_*`, 02 scripts માં soft delete ની જગ્યાએ **hard delete**, 01 માં `drop` ની જગ્યાએ `deleteMany`, `99_verify_bronze.js`; `.sql` files કાઢી | _(commit પછી લખો)_ |
 | 2026-11-21 | `kafka-connect\`, `mongo-cdc-subscriber\` અને 4 CDC documents ને root/`docs` માંથી આ folder માં **move** કર્યા. Docs ના paths/links અને બીજા docs ની links update કરી. આ README બનાવ્યું | _(commit પછી લખો)_ |
 | 2026-10-29 | Setup guide અને docs માં સુધારા | `d5899bc` |
 | 2026-10-28 | Setup guide (`MONGO_CDC_COMPLETE_SETUP_GU.md`) લખ્યો, subscriber માં metadata fields + soft delete | `cb16d8f`, `bd199b6` |

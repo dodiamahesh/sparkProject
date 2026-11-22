@@ -26,7 +26,7 @@
 
 | Source | હવે | પહેલાં (વિભાગ 7) |
 |---|---|---|
-| MongoDB | **MongoDB Kafka Connector (source)** + `RegexRouter` → એક જ topic `de_source_mongo` | Debezium MongoDB connector, collection દીઠ topic |
+| MongoDB | **MongoDB Kafka Connector (source)** + `RegexRouter` → એક જ topic `sourceMongo_db` | Debezium MongoDB connector, collection દીઠ topic |
 | MySQL | ❌ **CDC બંધ**. Bronze ના જૂના `mysql_*` collections જેમ છે તેમ વપરાય છે | Debezium MySQL connector |
 | Bronze માં લખવું | **પોતાનો Java subscriber** (`mongo-cdc-subscriber`) | MongoDB Kafka Connector (sink) |
 

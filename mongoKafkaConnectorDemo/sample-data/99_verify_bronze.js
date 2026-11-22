@@ -33,11 +33,17 @@ const KEY = {
   vat_return_coll: "ackNo"
 };
 
+// Collections the connector syncs: SAME list as "pipeline" / "startup.mode.copy.existing.namespace.regex"
+// in kafka-connect/mongo-cdc-db-source.json. Change both together. Empty list [] = every collection.
+const SYNCED = ["customers", "products"];
+
 const isUserCollection = (n) => !n.startsWith("system.");
+const isSynced = (n) => SYNCED.length === 0 || SYNCED.includes(n);
 const collections = [...new Set([
-  ...src.getCollectionNames().filter(isUserCollection),
-  ...brz.getCollectionNames().filter(n => isUserCollection(n) && KEY[n])
+  ...src.getCollectionNames().filter(n => isUserCollection(n) && isSynced(n)),
+  ...brz.getCollectionNames().filter(n => isUserCollection(n) && isSynced(n) && KEY[n])
 ])].sort();
+const skipped = src.getCollectionNames().filter(n => isUserCollection(n) && !isSynced(n)).sort();
 
 const toTime = (ts) => (ts === undefined || ts === null) ? "-" : new Date(Number(ts)).toISOString();
 let problems = 0;
@@ -84,6 +90,10 @@ collections.forEach(name => {
 });
 
 print("");
+if (skipped.length) {
+  print(`Not synced by the connector (not checked): ${skipped.join(", ")}`);
+  print("");
+}
 if (deletedRows.length === 0) {
   print("No soft-deleted documents in bronze_db yet (run a 02 script: it HARD deletes records in sourceMongo_db).");
 } else {
@@ -94,5 +104,5 @@ if (deletedRows.length === 0) {
 print("");
 print(problems === 0
   ? "✔ bronze_db matches sourceMongo_db: every live document exists in the source, every hard delete is a soft delete"
-  : `✘ ${problems} collection(s) do not match. Subscriber running? LAG = 0? Anything in the DLQ topic sourceMongo_db.dlq?` +
+  : `✘ ${problems} collection(s) do not match. Subscriber running? LAG = 0? Anything in the DLQ topic cdc-dlq?` +
     (collections.length ? "" : " (no collections found: run a 01 script first)"));

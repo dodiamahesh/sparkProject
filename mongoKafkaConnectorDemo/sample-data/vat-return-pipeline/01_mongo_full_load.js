@@ -4,8 +4,8 @@
 //  Run:   mongosh "mongodb://localhost:27017/?replicaSet=rs0" sample-data/vat-return-pipeline/01_mongo_full_load.js
 //  Check: mongosh "mongodb://localhost:27017/?replicaSet=rs0" sample-data/99_verify_bronze.js
 //
-//  CDC flow: sourceMongo_db (this script writes here) -> connector "mongo-cdc-sourcemongo-source"
-//            -> Kafka topic "sourceMongo_db" -> mongo-cdc-subscriber (subscriber-sourcemongo.properties) -> bronze_db
+//  CDC flow: sourceMongo_db (this script writes here) -> connector "mongo-cdc-db-source"
+//            -> Kafka topic "sourceMongo_db" -> mongo-cdc-subscriber -> bronze_db
 //  Collection: vat_return_coll = one document per FILED monthly VAT return (same shape as the GRA source document).
 //
 //  ⚠️ updatedAt (top level, BSON Date) is NOT in the original source document. The ETL watermark needs it:

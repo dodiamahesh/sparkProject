@@ -53,7 +53,7 @@
 | `connector.class` | `com.mongodb.kafka.connect.MongoSourceConnector` | `...MongoSinkConnector` (ઉલટી દિશા) | MongoDB → Kafka |
 | `tasks.max` | `1` | `1`, `2`, ... (`0` ન ચાલે) | Mongo source connector **હંમેશા 1 task** વાપરે છે ([2.3](#23-tasksmax)) |
 | `connection.uri` | `mongodb://localhost:27017/?replicaSet=rs0` | કોઈ પણ MongoDB connection string | Local replica set `rs0` |
-| `database` | `de_source_mongo` | `""` (આખું cluster), કોઈ પણ DB નામ | ફક્ત source database |
+| `database` | `sourceMongo_db` | `""` (આખું cluster), કોઈ પણ DB નામ | ફક્ત source database |
 | `topic.prefix` | `cdc` | કોઈ પણ text, `""` | RegexRouter ઓળખી શકે એવું temporary નામ |
 | `startup.mode` | `copy_existing` | `latest`, `timestamp`, `copy_existing` | પહેલી વાર હાલનો data પણ લાવવો |
 | `change.stream.full.document` | `updateLookup` | `default`, `updateLookup`, `whenAvailable`, `required` | Update વખતે આખો document જોઈએ |
@@ -150,7 +150,7 @@ URI માં ઉમેરી શકાય એવા મહત્વના optio
 | Value | અર્થ |
 |---|---|
 | `""` (default) | **આખું cluster**: બધા databases ના બધા collections (system databases સિવાય) |
-| `de_source_mongo` ✅ | ફક્ત આ database ના બધા collections. નવું collection બને તો એ પણ આપોઆપ |
+| `sourceMongo_db` ✅ | ફક્ત આ database ના બધા collections. નવું collection બને તો એ પણ આપોઆપ |
 
 ### 4.2 `collection`
 | Value | અર્થ |
@@ -163,8 +163,8 @@ URI માં ઉમેરી શકાય એવા મહત્વના optio
 | `database` | `collection` | શું watch થાય |
 |---|---|---|
 | `""` | `""` | આખું cluster |
-| `de_source_mongo` | `""` | એક database ✅ |
-| `de_source_mongo` | `student` | એક collection |
+| `sourceMongo_db` | `""` | એક database ✅ |
+| `sourceMongo_db` | `student` | એક collection |
 | `""` | `student` | ❌ ખોટું (database જરૂરી) |
 
 ---
@@ -172,27 +172,27 @@ URI માં ઉમેરી શકાય એવા મહત્વના optio
 ## 5. Topic નું નામ
 
 **Default નિયમ:** `<topic.prefix><separator><database><separator><collection><separator><topic.suffix>`
-ઉદાહરણ: prefix `cdc`, separator `.` → `cdc.de_source_mongo.student`. ખાલી ભાગ છોડી દેવાય છે.
+ઉદાહરણ: prefix `cdc`, separator `.` → `cdc.sourceMongo_db.student`. ખાલી ભાગ છોડી દેવાય છે.
 
 ### 5.1 `topic.prefix`
-| Value | Topic નું નામ (`de_source_mongo.student` માટે) |
+| Value | Topic નું નામ (`sourceMongo_db.student` માટે) |
 |---|---|
-| `""` (default) | `de_source_mongo.student` |
-| `cdc` ✅ | `cdc.de_source_mongo.student` (પછી RegexRouter એને `de_source_mongo` કરે છે) |
-| `prod` | `prod.de_source_mongo.student` |
+| `""` (default) | `sourceMongo_db.student` |
+| `cdc` ✅ | `cdc.sourceMongo_db.student` (પછી RegexRouter એને `sourceMongo_db` કરે છે) |
+| `prod` | `prod.sourceMongo_db.student` |
 
 ### 5.2 `topic.suffix`
 | Value | ઉદાહરણ |
 |---|---|
 | `""` (default) ✅ | – |
-| `v1` | `cdc.de_source_mongo.student.v1` |
+| `v1` | `cdc.sourceMongo_db.student.v1` |
 
 ### 5.3 `topic.separator`
 | Value | ઉદાહરણ |
 |---|---|
-| `.` (default) ✅ | `cdc.de_source_mongo.student` |
-| `_` | `cdc_de_source_mongo_student` |
-| `-` | `cdc-de_source_mongo-student` |
+| `.` (default) ✅ | `cdc.sourceMongo_db.student` |
+| `_` | `cdc_sourceMongo_db_student` |
+| `-` | `cdc-sourceMongo_db-student` |
 
 > ⚠️ Separator બદલો તો `transforms.dbTopic.regex` પણ બદલવો પડે, કારણ કે regex `.` પર આધાર રાખે છે.
 
@@ -205,7 +205,7 @@ URI માં ઉમેરી શકાય એવા મહત્વના optio
 
 ઉદાહરણ:
 ```json
-"topic.namespace.map": "{\"de_source_mongo.student\": \"students\", \"de_source_mongo\": \"school\", \"*\": \"others\"}"
+"topic.namespace.map": "{\"sourceMongo_db.student\": \"students\", \"sourceMongo_db\": \"school\", \"*\": \"others\"}"
 ```
 | Key પ્રકાર | અર્થ |
 |---|---|
@@ -351,7 +351,7 @@ URI માં ઉમેરી શકાય એવા મહત્વના optio
 ### 7.3 `copy_existing` ની sub-settings
 | Key | Default | હેતુ |
 |---|---|---|
-| `startup.mode.copy.existing.namespace.regex` | `""` (બધા) | કયા collections copy કરવા, regex થી. દા.ત. `de_source_mongo\\.(student\|ordes)` |
+| `startup.mode.copy.existing.namespace.regex` | `""` (બધા) | કયા collections copy કરવા, regex થી. દા.ત. `sourceMongo_db\\.(student\|ordes)` |
 | `startup.mode.copy.existing.pipeline` | `[]` | Copy વખતે documents filter કરવા. દા.ત. `[{"$match": {"status": "ACTIVE"}}]` |
 | `startup.mode.copy.existing.max.threads` | CPU cores ની સંખ્યા | એક સાથે કેટલા collections copy થાય |
 | `startup.mode.copy.existing.queue.size` | `16000` | Copy કરેલા documents નો memory queue |
@@ -453,16 +453,16 @@ Converter ના settings: `key.converter.<setting>` / `value.converter.<setting
 
 | Original topic | Regex match? | નવો topic |
 |---|---|---|
-| `cdc.de_source_mongo.student` | ✅ | `de_source_mongo` |
-| `cdc.de_source_mongo.ordes` | ✅ | `de_source_mongo` |
+| `cdc.sourceMongo_db.student` | ✅ | `sourceMongo_db` |
+| `cdc.sourceMongo_db.ordes` | ✅ | `sourceMongo_db` |
 | `other.topic` | ❌ | `other.topic` (બદલાય નહીં) |
 
 **બીજા replacement ઉદાહરણો:**
 
-| `replacement` | પરિણામ (`cdc.de_source_mongo.student`) |
+| `replacement` | પરિણામ (`cdc.sourceMongo_db.student`) |
 |---|---|
-| `$1` ✅ | `de_source_mongo` |
-| `$1.cdc` | `de_source_mongo.cdc` |
+| `$1` ✅ | `sourceMongo_db` |
+| `$1.cdc` | `sourceMongo_db.cdc` |
 | `all_changes` | `all_changes` (બધા databases પણ એક જ topic માં) |
 
 > JSON માં backslash બે વાર લખવો પડે: `\\.` = regex નો `\.` (literal dot).
@@ -517,7 +517,7 @@ Converter ના settings: `key.converter.<setting>` / `value.converter.<setting
 | `mongo.errors.log.enable` | `false` / `true` | એ errors log કરવા |
 | `errors.deadletterqueue.topic.name` | `""` (default) / topic નામ | ફેરવી ન શકાયેલા documents આ DLQ topic માં (`mongo.errors.tolerance=all` સાથે) |
 
-> આપણો subscriber નો DLQ (`de_source_mongo.dlq`) **અલગ** છે. એ consumer બાજુનો છે, connector નો નહીં.
+> આપણો subscriber નો DLQ (`cdc-dlq`) **અલગ** છે. એ consumer બાજુનો છે, connector નો નહીં.
 
 ### 11.3 Heartbeat
 | Key | Default | અર્થ |
@@ -602,9 +602,9 @@ Connector નો Kafka producer કેવી રીતે લખે, એ બદ�
 | `output.json.formatter` | `ExtendedJson` | `SimplifiedJson`: `_id` string બને, એટલે bronze માં જૂના ObjectId documents સાથે match નહીં થાય (duplicates). `DefaultJson`: Int32/Double ની ચોક્કસ type માહિતી ખોવાય |
 | `output.format.value` | `json` | `bson`/`schema`: value JSON text નહીં રહે → subscriber નું `BsonDocument.parse()` fail |
 | `value.converter` | `StringConverter` | `JsonConverter`: JSON ફરી string માં wrap થાય → parse fail |
-| `transforms.dbTopic.*` | હાલનું | Topic નું નામ બદલાય → subscriber ના `kafka.topic` (`de_source_mongo`) માં કંઈ નહીં આવે |
-| `topic.prefix` / `topic.separator` | `cdc` / `.` | Regex match નહીં થાય → `cdc.de_source_mongo.<coll>` જેવા **ઘણા topics** બનશે |
-| `database` | `de_source_mongo` | `""`: બીજા databases ના events પણ આવશે, અને RegexRouter દરેક DB નો **અલગ topic** બનાવશે |
+| `transforms.dbTopic.*` | હાલનું | Topic નું નામ બદલાય → subscriber ના `kafka.topic` (`sourceMongo_db`) માં કંઈ નહીં આવે |
+| `topic.prefix` / `topic.separator` | `cdc` / `.` | Regex match નહીં થાય → `cdc.sourceMongo_db.<coll>` જેવા **ઘણા topics** બનશે |
+| `database` | `sourceMongo_db` | `""`: બીજા databases ના events પણ આવશે, અને RegexRouter દરેક DB નો **અલગ topic** બનાવશે |
 | `change.stream.full.document` | `updateLookup` (ભલામણ) | `default`: ચાલશે (subscriber `$set/$unset` કરે છે), પણ bronze માં update પછી આખો document replace નહીં થાય |
 
 ---

@@ -5,7 +5,7 @@
 > નવી Windows machine પર **શરૂઆતથી અંત સુધી** બધું (tools install, configuration, code, test) **ફક્ત આ એક file** થી કરી શકાય.
 >
 > **ટૂંકમાં:**
-> `de_source_mongo` (બધા collections) → **MongoDB Source Connector** → Kafka topic **`de_source_mongo`** (એક જ topic) → **પોતાનો Java subscriber** → `de_bronze` (એ જ collection નામ, એ જ data types, + 4 metadata fields, soft delete) → Spark (Bronze → Silver)
+> `sourceMongo_db` (બધા collections) → **MongoDB Source Connector** → Kafka topic **`sourceMongo_db`** (એક જ topic) → **પોતાનો Java subscriber** → `bronze_db` (એ જ collection નામ, એ જ data types, + 4 metadata fields, soft delete) → ETL (`ecommersDataETLPipeline`, `bronze_db` વાંચે)
 
 ---
 
@@ -38,7 +38,7 @@
 ```
  ┌──────────────────────────── MongoDB (Windows service, replica set rs0, :27017) ───────────────────────────┐
  │                                                                                                             │
- │   de_source_mongo                                                       de_bronze                           │
+ │   sourceMongo_db                                                       bronze_db                           │
  │   ├── weather_observations ─┐                                           ├── weather_observations  ◄──┐      │
  │   ├── student ──────────────┤                                           ├── student               ◄──┤      │
  │   └── (કોઈ પણ નવું collection)┤                                          └── (આપોઆપ બને)            ◄──┤      │
@@ -51,8 +51,8 @@
         └──────────────────┬─────────────────────┘                                                     │
                            ▼                                                                          │
         ┌──── Kafka broker (KRaft, :9092) ───────────────────────┐                                     │
-        │  topic: de_source_mongo        (3 partitions)          │                                     │
-        │  topic: de_source_mongo.dlq    (ખરાબ messages)          │                                     │
+        │  topic: sourceMongo_db        (3 partitions)          │                                     │
+        │  topic: cdc-dlq    (ખરાબ messages)          │                                     │
         └──────────────────┬─────────────────────────────────────┘                                     │
                            ▼                                                                          │
         ┌──── mongo-cdc-subscriber (Java app, consumer group: mongo-cdc-subscriber) ──────────────────┐ │
@@ -79,13 +79,13 @@
 |---|---|
 | MongoDB connection string | `mongodb://localhost:27017/?replicaSet=rs0` |
 | MongoDB replica set | `rs0` |
-| Source database | `de_source_mongo` |
-| Destination (bronze) database | `de_bronze` |
+| Source database | `sourceMongo_db` |
+| Destination (bronze) database | `bronze_db` |
 | Kafka broker | `localhost:9092` (controller: `localhost:9093`) |
 | Kafka Connect REST API | `http://localhost:8083` |
 | Kafka Connect worker group | `de-connect-cluster` |
-| Main CDC topic | `de_source_mongo` (3 partitions) |
-| DLQ topic | `de_source_mongo.dlq` (1 partition) |
+| Main CDC topic | `sourceMongo_db` (3 partitions) |
+| DLQ topic | `cdc-dlq` (1 partition) |
 | Source connector | `mongo-cdc-db-source` |
 | Subscriber consumer group | `mongo-cdc-subscriber` |
 | Connect ના internal topics | `connect-configs`, `connect-offsets`, `connect-status` |
@@ -296,13 +296,14 @@ MongoDB માં database અને collection **હાથે બનાવવ�
 mongosh "mongodb://localhost:27017/?replicaSet=rs0"
 ```
 ```javascript
-use de_source_mongo
+use sourceMongo_db
 db.weather_observations.insertOne({ empId: 101, name: "Ravi Kumar", department: "Data Engineering", salary: 75000 })
 db.student.insertOne({ studentId: 1, name: "Dhanasvi Dodia", course: "Computer Science", marks: 98 })
 show collections
 ```
 
-> `de_bronze` database બનાવવાની **જરૂર નથી**. Subscriber પહેલો document લખશે ત્યારે એ આપોઆપ બનશે.
+> `sourceMongo_db` = transaction (source) DB. 6 pipelines નો તૈયાર test data (insert / update / **hard delete**): [../sample-data/README.md](../sample-data/README.md).
+> `bronze_db` database બનાવવાની **જરૂર નથી**. Subscriber પહેલો document લખશે ત્યારે એ આપોઆપ બનશે.
 
 ---
 
@@ -472,12 +473,12 @@ Topics **પહેલેથી** બનાવો, જેથી partitions ની
 cd C:\kafka
 
 # Main CDC topic: source database નું નામ
-.\bin\windows\kafka-topics.bat --bootstrap-server localhost:9092 --create --topic de_source_mongo --partitions 3 --replication-factor 1
+.\bin\windows\kafka-topics.bat --bootstrap-server localhost:9092 --create --topic sourceMongo_db --partitions 3 --replication-factor 1
 
-# DLQ: subscriber વાંચી ન શકે એવા messages
-.\bin\windows\kafka-topics.bat --bootstrap-server localhost:9092 --create --topic de_source_mongo.dlq --partitions 1 --replication-factor 1
+# DLQ: subscriber વાંચી ન શકે એવા messages. એક જ DLQ બધા CDC topics માટે (નવા topic માટે નવો DLQ નહીં)
+.\bin\windows\kafka-topics.bat --bootstrap-server localhost:9092 --create --topic cdc-dlq --partitions 1 --replication-factor 1
 
-.\bin\windows\kafka-topics.bat --bootstrap-server localhost:9092 --describe --topic de_source_mongo
+.\bin\windows\kafka-topics.bat --bootstrap-server localhost:9092 --describe --topic sourceMongo_db
 ```
 ➡️ `PartitionCount: 3`
 
@@ -503,9 +504,12 @@ New-Item -ItemType Directory -Force D:\ClaudeProjects\dataEngineeringProjects\sp
   "connector.class": "com.mongodb.kafka.connect.MongoSourceConnector",
   "tasks.max": "1",
   "connection.uri": "mongodb://localhost:27017/?replicaSet=rs0",
-  "database": "de_source_mongo",
+  "database": "sourceMongo_db",
+  "offset.partition.name": "sourceMongo_db-v2",
   "topic.prefix": "cdc",
   "startup.mode": "copy_existing",
+  "startup.mode.copy.existing.namespace.regex": "^sourceMongo_db\\.(customers|products)$",
+  "pipeline": "[{\"$match\": {\"ns.coll\": {\"$in\": [\"customers\", \"products\"]}}}]",
   "change.stream.full.document": "updateLookup",
   "publish.full.document.only": "false",
   "output.format.key": "json",
@@ -522,9 +526,12 @@ New-Item -ItemType Directory -Force D:\ClaudeProjects\dataEngineeringProjects\sp
 
 | Setting | અર્થ |
 |---|---|
-| `database` (`collection` વગર) | આ database ના **બધા collections** watch થાય. નવું collection બને તો એ પણ આપોઆપ |
-| `topic.prefix: cdc` | Connector પહેલાં `cdc.de_source_mongo.<collection>` નામ બનાવે... |
-| `transforms.dbTopic` (RegexRouter) | ...અને આ transform એને બદલીને ફક્ત **`de_source_mongo`** કરે (regex નો `$1` = database નામ). એટલે **બધા collections એક જ topic** માં. આ ફેરફાર Kafka માં લખતા **પહેલાં** થાય છે, એટલે `cdc.*` નામનો કોઈ topic બનતો નથી |
+| `database` (`collection` વગર) | આ database નો change stream વંચાય. **કયા collections** આગળ જાય તે `pipeline` નક્કી કરે છે (નીચે) |
+| `pipeline` (`$match` `ns.coll` `$in`) | **ફક્ત આ collections** (હાલ `customers`, `products`) ના events topic માં જાય. Copy વખતે પણ આ filter લાગે છે. List ખાલી કરો (key કાઢો) તો આખો database |
+| `startup.mode.copy.existing.namespace.regex` | `copy_existing` વખતે **ફક્ત આ collections** વંચાય (બાકીના collections scan જ ન થાય). `pipeline` ની list સાથે **હંમેશા સરખી** રાખો |
+| `offset.partition.name: sourceMongo_db-v2` | Connector ના offsets (resume token) આ નામે સચવાય. `copy_existing` **ફક્ત offsets ન હોય ત્યારે** ચાલે છે. એટલે **list માં નવું collection ઉમેરો ત્યારે આ નામ બદલો** (`-v3`, `-v4`, ...), નહીં તો નવા collection નો જૂનો data **નહીં** આવે, ફક્ત નવા changes. નામ બદલવાથી list ના બધા collections ફરી copy થાય (subscriber idempotent, duplicates નહીં) |
+| `topic.prefix: cdc` | Connector પહેલાં `cdc.sourceMongo_db.<collection>` નામ બનાવે... |
+| `transforms.dbTopic` (RegexRouter) | ...અને આ transform એને બદલીને ફક્ત **`sourceMongo_db`** કરે (regex નો `$1` = database નામ). એટલે **બધા collections એક જ topic** માં. આ ફેરફાર Kafka માં લખતા **પહેલાં** થાય છે, એટલે `cdc.*` નામનો કોઈ topic બનતો નથી |
 | `startup.mode: copy_existing` | **પહેલી વાર** હાલના બધા documents ને `insert` events તરીકે મોકલે, પછી live changes |
 | `change.stream.full.document: updateLookup` | Update event સાથે document ની **આખી નવી copy** (`fullDocument`) પણ આવે |
 | `publish.full.document.only: false` | **આખો change event** મોકલે: `operationType`, `ns`, `documentKey`, `fullDocument`... **Delete events પણ** આવે |
@@ -540,6 +547,7 @@ Folder ની બધી connector JSON files ને Connect માં register �
 # Manage Kafka Connect connectors from the JSON files in this folder.
 # Usage:
 #   .\register-connectors.ps1              -> create/update all connectors (mongo-cdc-db-source)
+#   .\register-connectors.ps1 apply NAME   -> create/update only this connector (NAME.json)
 #   .\register-connectors.ps1 status       -> show connector + task state
 #   .\register-connectors.ps1 delete NAME  -> delete one connector (its offsets stay in Kafka)
 param(
@@ -548,20 +556,22 @@ param(
 )
 
 $connect = "http://localhost:8083"
-$names = "mongo-cdc-db-source"
+# sourceMongo_db (transaction DB) -> topic sourceMongo_db
+$names = @("mongo-cdc-db-source")
 
 function Show-Status {
     foreach ($n in (Invoke-RestMethod "$connect/connectors")) {
         $s = Invoke-RestMethod "$connect/connectors/$n/status"
         $tasks = ($s.tasks | ForEach-Object { $_.state }) -join ","
-        "{0,-14} connector={1,-8} tasks={2}" -f $n, $s.connector.state, $tasks
+        "{0,-30} connector={1,-8} tasks={2}" -f $n, $s.connector.state, $tasks
         foreach ($t in $s.tasks) { if ($t.state -eq "FAILED") { "   ERROR: " + ($t.trace -split "`n")[0] } }
     }
 }
 
 switch ($Action) {
     "apply" {
-        foreach ($n in $names) {
+        $selected = if ($Name) { @($Name) } else { $names }
+        foreach ($n in $selected) {
             $file = Join-Path $PSScriptRoot "$n.json"
             # PUT .../config creates the connector or updates it if it already exists
             Invoke-RestMethod -Method Put -Uri "$connect/connectors/$n/config" -ContentType "application/json" -InFile $file | Out-Null
@@ -597,7 +607,7 @@ mongo-cdc-db-source connector=RUNNING  tasks=RUNNING
 ### 6.4 Topic માં messages ચકાસો
 ```powershell
 cd C:\kafka
-.\bin\windows\kafka-console-consumer.bat --bootstrap-server localhost:9092 --topic de_source_mongo --from-beginning --formatter-property print.key=true --formatter-property print.partition=true
+.\bin\windows\kafka-console-consumer.bat --bootstrap-server localhost:9092 --topic sourceMongo_db --from-beginning --formatter-property print.key=true --formatter-property print.partition=true
 ```
 ➡️ `copy_existing` ને કારણે બંને collections (`weather_observations`, `student`) ના documents **એક જ topic** માં `"operationType": "insert"` સાથે દેખાય. Message નું પૂરું structure [Section 9](#9-example-એક-document-ની-આખી-સફર-3-json-સરખામણી) માં છે.
 
@@ -706,14 +716,15 @@ New-Item -ItemType Directory -Force mongo-cdc-subscriber\src\main\resources
 ```properties
 # ---- Kafka ----
 kafka.bootstrap.servers=localhost:9092
-kafka.topic=de_source_mongo
+kafka.topic=sourceMongo_db
 kafka.group.id=mongo-cdc-subscriber
-kafka.dlq.topic=de_source_mongo.dlq
+# ONE DLQ topic for all CDC topics / subscribers (header "source.topic" = where the message came from)
+kafka.dlq.topic=cdc-dlq
 
 # ---- MongoDB ----
 mongo.uri=mongodb://localhost:27017/?replicaSet=rs0
 # Every source collection is written to the collection with the same name in this database
-target.database=de_bronze
+target.database=bronze_db
 
 # Apply "drop collection" events to the target? (false = only log them)
 apply.drop=false
@@ -728,7 +739,7 @@ org.slf4j.simpleLogger.showDateTime=true
 |---|---|
 | `kafka.topic` | વાંચવાનો topic (source DB નું નામ) |
 | `kafka.group.id` | Consumer group. Kafka **આ નામે** યાદ રાખે છે કે ક્યાં સુધી વાંચ્યું. એ જ નામે ફરી start કરો તો ત્યાંથી જ આગળ વાંચે |
-| `kafka.dlq.topic` | વાંચી ન શકાય એવા messages અહીં જાય |
+| `kafka.dlq.topic` | વાંચી ન શકાય એવા messages અહીં જાય. **એક જ `cdc-dlq` બધા topics / subscribers માટે**; headers `source.topic`, `source.partition`, `source.offset` કહે કે message ક્યાંથી આવ્યો |
 | `target.database` | Destination database. Collection નું નામ source જેવું જ રહે છે (`ns.coll`). Database ન હોય તો MongoDB **આપોઆપ બનાવે** |
 | `apply.drop` | Source માં આખું collection drop થાય ત્યારે destination માં પણ drop કરવું? સલામતી માટે default `false` (ફક્ત log) |
 | `org.slf4j.*` | Log level. Kafka library ના logs ફક્ત `warn` |
@@ -774,7 +785,7 @@ import java.util.Map;
  * {
  *   "operationType": "update",
  *   "wallTime":     { "$date": { "$numberLong": "1793128500123" } },
- *   "ns":           { "db": "de_source_mongo", "coll": "student" },
+ *   "ns":           { "db": "sourceMongo_db", "coll": "student" },
  *   "documentKey":  { "_id": { "$oid": "6ae0e6da..." } },
  *   "fullDocument": { "_id": { "$oid": "6ae0e6da..." }, "name": "Dhanasvi", "marks": { "$numberInt": "98" } }
  * }
@@ -1048,7 +1059,7 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 /**
  * Entry point of the subscriber. It repeats these 4 steps:
  * <pre>
- *   1. Read a batch of change events from the Kafka topic (for example "de_source_mongo").
+ *   1. Read a batch of change events from the Kafka topic (for example "sourceMongo_db").
  *   2. Apply them to the target MongoDB database (see ChangeEventApplier).
  *   3. Send the messages that could not be read to the DLQ topic.
  *   4. Tell Kafka that the batch is done (commit the offsets).
@@ -1163,7 +1174,10 @@ public class SubscriberApp {
         return new KafkaProducer<>(settings);
     }
 
-    /** Copies the bad message to the DLQ topic, with two headers: the error, and where the message came from. */
+    /**
+     * Copies the bad message to the DLQ topic, with headers: the error, and where the message came from.
+     * One DLQ topic is shared by all CDC topics, so "source.topic" tells which topic the message belongs to.
+     */
     private static void sendToDlq(KafkaProducer<String, String> producer, String dlqTopic, FailedMessage failed) {
         ConsumerRecord<String, String> original = failed.message();
         String source = original.topic() + "-" + original.partition() + "-" + original.offset();
@@ -1171,6 +1185,9 @@ public class SubscriberApp {
         ProducerRecord<String, String> copy = new ProducerRecord<>(dlqTopic, original.key(), original.value());
         copy.headers().add("error", String.valueOf(failed.error()).getBytes(UTF_8));
         copy.headers().add("source", source.getBytes(UTF_8));
+        copy.headers().add("source.topic", original.topic().getBytes(UTF_8));
+        copy.headers().add("source.partition", String.valueOf(original.partition()).getBytes(UTF_8));
+        copy.headers().add("source.offset", String.valueOf(original.offset()).getBytes(UTF_8));
         producer.send(copy);
     }
 
@@ -1303,7 +1320,7 @@ java -jar target\mongo-cdc-subscriber-1.0.0-jar-with-dependencies.jar src\main\r
 
 ➡️ Logs:
 ```
-[main] INFO com.de.cdc.SubscriberApp - Reading topic 'de_source_mongo' and writing to database 'de_bronze'
+[main] INFO com.de.cdc.SubscriberApp - Reading topic 'sourceMongo_db' and writing to database 'bronze_db'
 [main] INFO com.de.cdc.ChangeEventApplier - weather_observations: 1 writes (matched=0, inserted=1)
 [main] INFO com.de.cdc.ChangeEventApplier - student: 1 writes (matched=0, inserted=1)
 ```
@@ -1329,7 +1346,7 @@ cd C:\kafka
 ### 9.1 Source માં નવો document insert કર્યો
 
 ```javascript
-use de_source_mongo
+use sourceMongo_db
 db.weather_observations.insertOne({ empId: 103, name: "Jayadip Dodia", department: "Admin", salary: 85000 })
 ```
 
@@ -1341,9 +1358,9 @@ db.weather_observations.insertOne({ empId: 103, name: "Jayadip Dodia", departmen
 
 <table>
 <tr>
-<th>① Source<br><code>de_source_mongo.weather_observations</code></th>
-<th>② Kafka message<br>topic <code>de_source_mongo</code></th>
-<th>③ Destination<br><code>de_bronze.weather_observations</code></th>
+<th>① Source<br><code>sourceMongo_db.weather_observations</code></th>
+<th>② Kafka message<br>topic <code>sourceMongo_db</code></th>
+<th>③ Destination<br><code>bronze_db.weather_observations</code></th>
 </tr>
 <tr>
 <td valign="top">
@@ -1362,7 +1379,7 @@ db.weather_observations.insertOne({ empId: 103, name: "Jayadip Dodia", departmen
 <td valign="top">
 <pre>
 {
-  "topic": "de_source_mongo",
+  "topic": "sourceMongo_db",
   "partition": 0,
   "offset": 5,
   "timestamp": 1793128452151,
@@ -1391,7 +1408,7 @@ db.weather_observations.insertOne({ empId: 103, name: "Jayadip Dodia", departmen
       "salary": { "$numberInt": "85000" }
     },
     "ns": {
-      "db": "de_source_mongo",
+      "db": "sourceMongo_db",
       "coll": "weather_observations"
     },
     "documentKey": {
@@ -1427,18 +1444,18 @@ db.weather_observations.insertOne({ empId: 103, name: "Jayadip Dodia", departmen
 
 | Property | ક્યાં | ઉદાહરણ | અર્થ | Bronze માં? |
 |---|---|---|---|---|
-| `topic` | ② Kafka metadata | `de_source_mongo` | Message કયા topic માં છે. RegexRouter એ `cdc.de_source_mongo.weather_observations` ને બદલીને આ કર્યું | ❌ |
+| `topic` | ② Kafka metadata | `sourceMongo_db` | Message કયા topic માં છે. RegexRouter એ `cdc.sourceMongo_db.weather_observations` ને બદલીને આ કર્યું | ❌ |
 | `partition` | ② Kafka metadata | `0` | Topic ના 3 partitions માંથી કયો. Key ના hash પરથી નક્કી થાય | ❌ |
 | `offset` | ② Kafka metadata | `5` | Partition માં message નો ક્રમ નંબર. Subscriber આના વડે યાદ રાખે છે કે ક્યાં સુધી વાંચ્યું | ❌ |
 | `timestamp` | ② Kafka metadata | `1793128452151` | Kafka માં message લખાયો તે સમય (epoch millis, `CreateTime`) | ❌ |
-| `headers` | ② Kafka metadata | `[]` | વધારાની માહિતી. અહીં ખાલી. DLQ messages માં `error` અને `source` headers હોય છે | ❌ |
+| `headers` | ② Kafka metadata | `[]` | વધારાની માહિતી. અહીં ખાલી. DLQ messages માં `error`, `source`, `source.topic`, `source.partition`, `source.offset` headers હોય છે | ❌ |
 | `key._id` | ② key | `{"$oid": "6ae0..."}` | Document નો `_id`. **એક જ document ના બધા changes એક જ partition માં** જાય, એટલે ક્રમ સચવાય | ❌ |
 | `value._id._data` | ② value | `"826AE0F8..."` | **Resume token**. Change stream માં આ event ની જગ્યા. Connector restart થાય ત્યારે અહીંથી આગળ વાંચે (`connect-offsets` topic માં સચવાય) | ❌ |
 | `operationType` | ② value | `"insert"` | શું થયું: `insert` / `update` / `replace` / `delete` / `drop` / `rename` / `dropDatabase` / `invalidate`. **Subscriber આ જોઈને write નક્કી કરે** | ✅ `_op` તરીકે |
 | `clusterTime` | ② value | `{"$timestamp": {"t": ..., "i": 1}}` | MongoDB oplog નો સમય: `t` = seconds, `i` = એ second માં ક્રમ. `copy_existing` વાળા events માં **નથી હોતું** | ❌ |
 | `wallTime` | ② value | `{"$date": ...}` | Change થયો તે ઘડિયાળનો સમય. `copy_existing` વાળા events માં **નથી હોતું** (એમનો `_id` = `{"_id": ..., "copyingData": true}`) | ✅ `_source_ts` તરીકે |
 | `fullDocument` | ② value | આખો document | Change **પછીનો** આખો document. Insert, replace અને update (`updateLookup`) માં હોય. Delete માં **ન હોય**. **Subscriber આ જ bronze માં લખે છે** | ✅ **આ જ document** |
-| `ns.db` | ② value | `"de_source_mongo"` | Source database | ❌ |
+| `ns.db` | ② value | `"sourceMongo_db"` | Source database | ❌ |
 | `ns.coll` | ② value | `"weather_observations"` | Source collection. **Subscriber આ જ નામના collection માં લખે છે** | ✅ collection નું નામ |
 | `documentKey._id` | ② value | `{"$oid": "6ae0..."}` | બદલાયેલા document નો `_id`. **Subscriber આના વડે document શોધે છે** (`matchById`) | ✅ `_id` તરીકે |
 
@@ -1471,7 +1488,7 @@ db.weather_observations.insertOne({ empId: 103, name: "Jayadip Dodia", departmen
     "department": "Admin",
     "salary": { "$numberInt": "90000" }
   },
-  "ns": { "db": "de_source_mongo", "coll": "weather_observations" },
+  "ns": { "db": "sourceMongo_db", "coll": "weather_observations" },
   "documentKey": { "_id": { "$oid": "6ae0f804641f36c74b6506e8" } },
   "updateDescription": {
     "updatedFields": { "salary": { "$numberInt": "90000" } },
@@ -1495,7 +1512,7 @@ db.weather_observations.insertOne({ empId: 103, name: "Jayadip Dodia", departmen
   "operationType": "delete",
   "clusterTime": { "$timestamp": { "t": 1793128600, "i": 1 } },
   "wallTime": { "$date": { "$numberLong": "1793128600456" } },
-  "ns": { "db": "de_source_mongo", "coll": "weather_observations" },
+  "ns": { "db": "sourceMongo_db", "coll": "weather_observations" },
   "documentKey": { "_id": { "$oid": "6ae0f804641f36c74b6506e8" } }
 }
 ```
@@ -1515,45 +1532,45 @@ Kafka (#1), Connect (#2) અને subscriber (#3) ચાલુ રાખીન�
 
 ### 10.1 Insert
 ```javascript
-use de_source_mongo
+use sourceMongo_db
 db.student.insertOne({ studentId: 2, name: "Test Student", course: "Maths", marks: 70 })
 
-use de_bronze
+use bronze_db
 db.student.find({ studentId: 2 })
 ```
 ➡️ Document દેખાય. Compass માં types ચકાસો: `_id` = **ObjectId**, `marks` = **Int32**. છેલ્લે `_op: "insert"`, `_deleted: false`, `_source_ts`, `_ingested_at`.
 
 ### 10.2 Update
 ```javascript
-use de_source_mongo
+use sourceMongo_db
 db.student.updateOne({ studentId: 2 }, { $set: { marks: 85 }, $unset: { course: "" } })
 ```
-➡️ `de_bronze.student` માં `marks: 85`, `course` field નથી, `_op: "update"`, અને **document એક જ** છે.
+➡️ `bronze_db.student` માં `marks: 85`, `course` field નથી, `_op: "update"`, અને **document એક જ** છે.
 
 ### 10.3 Replace
 Compass માં document edit કરીને save કરો. ➡️ Subscriber log: `matched=1`, અને destination માં ફેરફાર દેખાય.
 
 ### 10.4 Delete
 ```javascript
-use de_source_mongo
+use sourceMongo_db
 db.student.deleteOne({ studentId: 2 })
 ```
-➡️ `de_bronze.student` માં document **રહે છે**, પણ `_deleted: true` અને `_op: "delete"` થાય (soft delete). Log: `matched=1`.
+➡️ `bronze_db.student` માં document **રહે છે**, પણ `_deleted: true` અને `_op: "delete"` થાય (soft delete). Log: `matched=1`.
 ```javascript
-use de_bronze
+use bronze_db
 db.student.find({ studentId: 2 }, { _op: 1, _deleted: 1 })
 ```
 
 ### 10.5 નવું collection
 ```javascript
-use de_source_mongo
+use sourceMongo_db
 db.course.insertOne({ code: "CS101", title: "Intro to CS" })
 ```
-➡️ **કોઈ config બદલ્યા વગર** `de_bronze.course` આપોઆપ બને અને document આવે.
+➡️ **કોઈ config બદલ્યા વગર** `bronze_db.course` આપોઆપ બને અને document આવે.
 
 ### 10.6 Counts સરખાવો
 ```javascript
-const s = db.getSiblingDB("de_source_mongo"), t = db.getSiblingDB("de_bronze");
+const s = db.getSiblingDB("sourceMongo_db"), t = db.getSiblingDB("bronze_db");
 s.getCollectionNames().forEach(c => print(c, "source=" + s[c].countDocuments(),
     "bronze_live=" + t[c].countDocuments({ _deleted: false }), "bronze_all=" + t[c].countDocuments()));
 ```
@@ -1562,13 +1579,15 @@ s.getCollectionNames().forEach(c => print(c, "source=" + s[c].countDocuments(),
 ### 10.7 DLQ ખાલી છે?
 ```powershell
 cd C:\kafka
-.\bin\windows\kafka-console-consumer.bat --bootstrap-server localhost:9092 --topic de_source_mongo.dlq --from-beginning --timeout-ms 5000 --formatter-property print.headers=true
+.\bin\windows\kafka-console-consumer.bat --bootstrap-server localhost:9092 --topic cdc-dlq --from-beginning --timeout-ms 5000 --formatter-property print.headers=true
 ```
 ➡️ `Processed a total of 0 messages`
 
 ---
 
 ## 11. રોજનો Start / Stop ક્રમ
+
+> દરેક step ના પૂરા commands, expected output અને Kafka ચકાસણીના commands (topics, messages, DLQ, consumer groups): **[DAILY_OPERATIONS_COMMANDS_GU.md](DAILY_OPERATIONS_COMMANDS_GU.md)**
 
 ### 11.1 Start (આ ક્રમમાં)
 ```
@@ -1599,14 +1618,14 @@ Retention બંધ (`log.retention.ms=-1`) હોવાથી topic માં *
 1. Subscriber બંધ કરો (`Ctrl + C`). Consumer group **inactive** હોવો જરૂરી છે.
 2. Subscriber એ બનાવેલા bronze collections drop કરો (source ના collections જેવા જ નામ):
    ```javascript
-   const s = db.getSiblingDB("de_source_mongo"), b = db.getSiblingDB("de_bronze");
-   s.getCollectionNames().forEach(c => { b[c].drop(); print("dropped de_bronze." + c); });
+   const s = db.getSiblingDB("sourceMongo_db"), b = db.getSiblingDB("bronze_db");
+   s.getCollectionNames().forEach(c => { b[c].drop(); print("dropped bronze_db." + c); });
    ```
-   > ⚠️ **`db.dropDatabase()` ન કરો.** `de_bronze` માં જૂના pipeline ના `mysql_station` અને `mysql_station_owner` collections પણ છે, જે Spark હજુ વાંચે છે અને **ફરી બનાવી શકાતા નથી** (MySQL CDC બંધ છે).
+   > ⚠️ **`db.dropDatabase()` ન કરો.** ફક્ત source માં હોય એવા collections જ drop કરો. `bronze_db` ETL (`ecommersDataETLPipeline`) પણ વાંચે છે; એમાં બીજા collections હોય તો એ રહેવા દો. (જૂના `de_bronze` ના `mysql_station` / `mysql_station_owner` collections ને આ ફેરફારથી કોઈ અસર નથી.)
 3. Consumer group ને topic ની શરૂઆત પર લઈ જાઓ:
    ```powershell
    cd C:\kafka
-   .\bin\windows\kafka-consumer-groups.bat --bootstrap-server localhost:9092 --group mongo-cdc-subscriber --topic de_source_mongo --reset-offsets --to-earliest --execute
+   .\bin\windows\kafka-consumer-groups.bat --bootstrap-server localhost:9092 --group mongo-cdc-subscriber --topic sourceMongo_db --reset-offsets --to-earliest --execute
    ```
 4. Subscriber ફરી start કરો.
 
@@ -1618,10 +1637,10 @@ Replay પછી બધા documents ને નવો `_ingested_at` મળે �
 
 ### 12.3 બીજો source database ઉમેરવો (જેમ કે `de_source_crm`)
 
-1. Topic બનાવો: `de_source_crm` (3 partitions) અને `de_source_crm.dlq`.
+1. Topic બનાવો: `de_source_crm` (3 partitions). **નવો DLQ નહીં**: બધા topics એક જ `cdc-dlq` વાપરે છે.
 2. `kafka-connect\mongo-cdc-crm-source.json`: Step 6.1 ની copy, ફક્ત `"database": "de_source_crm"`.
 3. `register-connectors.ps1` માં: `$names = "mongo-cdc-db-source", "mongo-cdc-crm-source"` અને register.
-4. Subscriber: `subscriber.properties` ની copy (`crm-subscriber.properties`) બનાવો, જેમાં `kafka.topic=de_source_crm`, `kafka.group.id=mongo-cdc-crm-subscriber`, `kafka.dlq.topic=de_source_crm.dlq`. પછી:
+4. Subscriber: `subscriber.properties` ની copy (`crm-subscriber.properties`) બનાવો, જેમાં `kafka.topic=de_source_crm`, `kafka.group.id=mongo-cdc-crm-subscriber`, `kafka.dlq.topic=cdc-dlq` (એ જ shared DLQ; header `source.topic` થી અલગ પડે). પછી:
    ```powershell
    java -jar target\mongo-cdc-subscriber-1.0.0-jar-with-dependencies.jar crm-subscriber.properties
    ```
@@ -1640,6 +1659,8 @@ Connector offsets **connector ના નામ** પ્રમાણે સચવ
 Subscriber idempotent હોવાથી ફરી આવેલા documents duplicate નહીં બને.
 
 ### 12.6 Kafka reset: બધું નવેસરથી
+
+> દરેક step (કયું terminal ચાલુ/બંધ, commands, expected output, topics કયા ક્રમમાં બનાવવા) ની પૂરી વિગત: **[DAILY_OPERATIONS_COMMANDS_GU.md §10](DAILY_OPERATIONS_COMMANDS_GU.md#10-kafka-reset-બધું-નવેસરથી)**
 
 Broker crash થાય (`AccessDeniedException`, *"all log dirs ... have failed"*) અને restart થી પણ ન ચાલે ત્યારે:
 
@@ -1699,7 +1720,7 @@ Get-ChildItem C:\kafka-data\kraft-combined-logs -Directory | Where-Object Name -
 | `Invoke-RestMethod ... \| Select-Object` ખાલી line | PowerShell 5.1 નો array behavior | Call ને `( )` માં મૂકો |
 | `running scripts is disabled on this system` | PowerShell execution policy | `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` |
 | Connector `RUNNING` પણ topic ખાલી | Source માં change નથી, અને `copy_existing` જૂના નામે પહેલેથી થઈ ગયું | Source માં insert કરો, અથવા 12.5 |
-| `cdc.de_source_mongo.*` જેવા topics બન્યા | RegexRouter (`transforms.dbTopic.*`) ખૂટે છે કે ખોટો | Step 6.1. JSON માં `\\.` (બે backslash) |
+| `cdc.sourceMongo_db.*` જેવા topics બન્યા | RegexRouter (`transforms.dbTopic.*`) ખૂટે છે કે ખોટો | Step 6.1. JSON માં `\\.` (બે backslash) |
 | Destination માં data **બે databases માં** જાય છે, કે બે વાર | જૂનો connector (sink/source) હજુ ચાલે છે | `.\register-connectors.ps1 status`, વધારાના connectors `delete` (Section 13) |
 | Destination માં `_id` string અને numbers `Long` | Formatter `ExtendedJson` નથી, અથવા વચ્ચે sink connector/`JsonConverter` વપરાય છે | Step 6.1 મુજબ `ExtendedJson` + `StringConverter`, અને sink connector નહીં |
 | Source માં delete કર્યું, bronze માં document હજુ દેખાય છે | **આ અપેક્ષિત છે (soft delete).** Document રહે છે અને `_deleted: true` થાય છે ([7.7](#77-bronze-document-નું-format-metadata-fields)) | `_deleted` ચકાસો. એ `false` જ રહે તો: `publish.full.document.only=true` (delete events આવતા જ નથી), અથવા subscriber બંધ છે. Step 6.1 મુજબ `false` રાખો |
@@ -1746,7 +1767,7 @@ Get-ChildItem C:\kafka-data\kraft-combined-logs -Directory | Where-Object Name -
 - [ ] Connect ચાલુ, `MongoSourceConnector` દેખાય (4.3, 4.4)
 
 **Pipeline**
-- [ ] Topics: `de_source_mongo` (3 partitions), `de_source_mongo.dlq` (5)
+- [ ] Topics: `sourceMongo_db` (3 partitions), `cdc-dlq` (5)
 - [ ] `mongo-cdc-db-source.json` + `register-connectors.ps1`, connector `RUNNING` (6)
 - [ ] Topic માં events, અને `cdc.*` topic નથી (6.4)
 - [ ] Subscriber project: pom, properties, 2 Java files (7)

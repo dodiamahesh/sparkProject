@@ -34,7 +34,7 @@ import java.util.Map;
  * {
  *   "operationType": "update",
  *   "wallTime":     { "$date": { "$numberLong": "1793128500123" } },
- *   "ns":           { "db": "de_source_mongo", "coll": "student" },
+ *   "ns":           { "db": "sourceMongo_db", "coll": "student" },
  *   "documentKey":  { "_id": { "$oid": "6ae0e6da..." } },
  *   "fullDocument": { "_id": { "$oid": "6ae0e6da..." }, "name": "Dhanasvi", "marks": { "$numberInt": "98" } }
  * }

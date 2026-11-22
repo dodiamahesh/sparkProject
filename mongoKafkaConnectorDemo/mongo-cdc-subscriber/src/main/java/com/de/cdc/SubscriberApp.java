@@ -29,7 +29,7 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 /**
  * Entry point of the subscriber. It repeats these 4 steps:
  * <pre>
- *   1. Read a batch of change events from the Kafka topic (for example "de_source_mongo").
+ *   1. Read a batch of change events from the Kafka topic (for example "sourceMongo_db").
  *   2. Apply them to the target MongoDB database (see ChangeEventApplier).
  *   3. Send the messages that could not be read to the DLQ topic.
  *   4. Tell Kafka that the batch is done (commit the offsets).
@@ -144,7 +144,10 @@ public class SubscriberApp {
         return new KafkaProducer<>(settings);
     }
 
-    /** Copies the bad message to the DLQ topic, with two headers: the error, and where the message came from. */
+    /**
+     * Copies the bad message to the DLQ topic, with headers: the error, and where the message came from.
+     * One DLQ topic is shared by all CDC topics, so "source.topic" tells which topic the message belongs to.
+     */
     private static void sendToDlq(KafkaProducer<String, String> producer, String dlqTopic, FailedMessage failed) {
         ConsumerRecord<String, String> original = failed.message();
         String source = original.topic() + "-" + original.partition() + "-" + original.offset();
@@ -152,6 +155,9 @@ public class SubscriberApp {
         ProducerRecord<String, String> copy = new ProducerRecord<>(dlqTopic, original.key(), original.value());
         copy.headers().add("error", String.valueOf(failed.error()).getBytes(UTF_8));
         copy.headers().add("source", source.getBytes(UTF_8));
+        copy.headers().add("source.topic", original.topic().getBytes(UTF_8));
+        copy.headers().add("source.partition", String.valueOf(original.partition()).getBytes(UTF_8));
+        copy.headers().add("source.offset", String.valueOf(original.offset()).getBytes(UTF_8));
         producer.send(copy);
     }
 

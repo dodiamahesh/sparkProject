@@ -4,9 +4,16 @@
 **hard deletes** documents there. Nothing reads it directly; every change travels through CDC:
 
 ```
-sourceMongo_db  --(MongoDB source connector "mongo-cdc-sourcemongo-source")-->  Kafka topic "sourceMongo_db"
-                --(mongo-cdc-subscriber + subscriber-sourcemongo.properties)-->  bronze_db (same collection names)
+sourceMongo_db  --(MongoDB source connector "mongo-cdc-db-source")-->  Kafka topic "sourceMongo_db"
+                --(mongo-cdc-subscriber)-------------------------->  bronze_db (same collection names)
 ```
+
+> ⚠️ **Only the collections in the connector list are synced.** Now: `customers`, `products` (sales-pipeline), see
+> `pipeline` in `../kafka-connect/mongo-cdc-db-source.json`. The other scripts still load `sourceMongo_db`, but those
+> collections do NOT reach Kafka / bronze_db, and `99_verify_bronze.js` lists them as "Not synced". To sync more, add the
+> collection to `pipeline` + `startup.mode.copy.existing.namespace.regex`, bump `offset.partition.name` (`-v3`, ...)
+> so its existing data is copied, register the connector, and add it to `SYNCED` in `99_verify_bronze.js`.
+> With `customers` + `products`, the sales 02 script gives 1 soft delete in bronze: `customers` C020.
 
 | Change in `sourceMongo_db` | Result in `bronze_db` (same `_id`) |
 |---|---|
@@ -59,18 +66,19 @@ Special cases that are tested:
 2. Topics (Kafka running, `C:\kafka`):
    ```powershell
    .\bin\windows\kafka-topics.bat --bootstrap-server localhost:9092 --create --topic sourceMongo_db --partitions 3 --replication-factor 1
-   .\bin\windows\kafka-topics.bat --bootstrap-server localhost:9092 --create --topic sourceMongo_db.dlq --partitions 1 --replication-factor 1
+   .\bin\windows\kafka-topics.bat --bootstrap-server localhost:9092 --create --topic cdc-dlq --partitions 1 --replication-factor 1
    ```
 3. Connector (Kafka Connect running):
    ```powershell
    cd D:\ClaudeProjects\dataEngineeringProjects\sparkProject\mongoKafkaConnectorDemo\kafka-connect
-   .\register-connectors.ps1 apply mongo-cdc-sourcemongo-source
-   # ➡️ mongo-cdc-sourcemongo-source   connector=RUNNING  tasks=RUNNING
+   .\register-connectors.ps1
+   # ➡️ mongo-cdc-db-source            connector=RUNNING  tasks=RUNNING
    ```
-4. Subscriber for this flow (own terminal, keep it open; the `de_source_mongo` subscriber can run next to it):
+4. Subscriber (own terminal, keep it open). Rebuild once after the DB rename (the properties are inside the jar):
    ```powershell
    cd D:\ClaudeProjects\dataEngineeringProjects\sparkProject\mongoKafkaConnectorDemo\mongo-cdc-subscriber
-   java -jar target\mongo-cdc-subscriber-1.0.0-jar-with-dependencies.jar src\main\resources\subscriber-sourcemongo.properties
+   mvn -q clean package
+   java -jar target\mongo-cdc-subscriber-1.0.0-jar-with-dependencies.jar
    # ➡️ Reading topic 'sourceMongo_db' and writing to database 'bronze_db'
    ```
 
@@ -84,7 +92,7 @@ $uri = "mongodb://localhost:27017/?replicaSet=rs0"
     mongosh $uri --quiet "sample-data\$_-pipeline\01_mongo_full_load.js" }
 
 # 2) Wait until LAG = 0, then check: every collection ✔, 0 soft-deleted
-C:\kafka\bin\windows\kafka-consumer-groups.bat --bootstrap-server localhost:9092 --describe --group mongo-cdc-subscriber-sourcemongo
+C:\kafka\bin\windows\kafka-consumer-groups.bat --bootstrap-server localhost:9092 --describe --group mongo-cdc-subscriber
 mongosh $uri --quiet sample-data\99_verify_bronze.js
 
 # 3) Changes with HARD deletes (ecommerce-order 02 before ecommerce-fulfillment 02: SHP-00013 needs ORD-00011)

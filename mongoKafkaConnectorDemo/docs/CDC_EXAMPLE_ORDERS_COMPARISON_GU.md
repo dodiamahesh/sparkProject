@@ -31,7 +31,7 @@
 | 3 | 2026-10-28 23:52:00 | Document replace (`status: "DELIVERED"`, `amount: 2299`, નવો email) | `replace` | 1 / 5 |
 | 4 | 2026-10-28 23:53:36 | Document delete | `delete` | 1 / 6 |
 
-- Database: `de_source_mongo`, collection: **`orders`**
+- Database: `sourceMongo_db`, collection: **`orders`**
 - Document `_id`: `ObjectId("6ae23bcbbde98f5b55239830")`
 - ચારેય messages **એક જ partition (1)** માં, offsets **3 → 4 → 5 → 6** ના ક્રમમાં છે, કારણ કે ચારેયનો key એ જ `_id` છે ✅
 - સમય દરેક message ના `wallTime` પરથી લીધો છે.
@@ -74,7 +74,7 @@ Key: `{"_id": {"$oid": "6ae23bcbbde98f5b55239830"}}`
       "address": { "city": "Ahmedabad", "state": "Gujarat", "pin": "380015" }
     }
   },
-  "ns": { "db": "de_source_mongo", "coll": "orders" },
+  "ns": { "db": "sourceMongo_db", "coll": "orders" },
   "documentKey": { "_id": { "$oid": "6ae23bcbbde98f5b55239830" } }
 }
 ```
@@ -139,7 +139,7 @@ db.orders.updateOne(
   "operationType": "update",
   "clusterTime": { "$timestamp": { "t": 1793211507, "i": 1 } },
   "wallTime": { "$date": { "$numberLong": "1793211507427" } },
-  "ns": { "db": "de_source_mongo", "coll": "orders" },
+  "ns": { "db": "sourceMongo_db", "coll": "orders" },
   "documentKey": { "_id": { "$oid": "6ae23bcbbde98f5b55239830" } },
   "updateDescription": {
     "updatedFields": { "status": "SHIPPED", "buyer.address.city": "Surat" },
@@ -232,7 +232,7 @@ db.orders.updateOne(
       "address": { "city": "Ahmedabad", "state": "Gujarat", "pin": "380015" }
     }
   },
-  "ns": { "db": "de_source_mongo", "coll": "orders" },
+  "ns": { "db": "sourceMongo_db", "coll": "orders" },
   "documentKey": { "_id": { "$oid": "6ae23bcbbde98f5b55239830" } }
 }
 ```
@@ -275,7 +275,7 @@ db.orders.updateOne(
   "operationType": "delete",
   "clusterTime": { "$timestamp": { "t": 1793211816, "i": 1 } },
   "wallTime": { "$date": { "$numberLong": "1793211816458" } },
-  "ns": { "db": "de_source_mongo", "coll": "orders" },
+  "ns": { "db": "sourceMongo_db", "coll": "orders" },
   "documentKey": { "_id": { "$oid": "6ae23bcbbde98f5b55239830" } }
 }
 ```
@@ -284,8 +284,8 @@ db.orders.updateOne(
 ### Source અને Destination (✔️ ચકાસેલું)
 | | Documents |
 |---|---|
-| `de_source_mongo.orders` | **0** |
-| `de_bronze.orders` | **0**: document **નીકળી ગયો** (hard delete) |
+| `sourceMongo_db.orders` | **0** |
+| `bronze_db.orders` | **0**: document **નીકળી ગયો** (hard delete) |
 
 ---
 
@@ -330,7 +330,7 @@ Project માં નવો code છે, પણ **jar ફરી build કરી�
 | પુરાવો | પરિણામ | અર્થ |
 |---|---|---|
 | Consumer group, partition 1 | `CURRENT-OFFSET = 7`, `LAG = 0` | Offset 4 (update) સહિત બધા messages process થયા |
-| DLQ (`de_source_mongo.dlq`) | હજુ **3** messages (જૂના test ના) | Update message **DLQ માં નથી ગયો**, એટલે parse સફળ થયો |
+| DLQ (`cdc-dlq`) | હજુ **3** messages (જૂના test ના) | Update message **DLQ માં નથી ગયો**, એટલે parse સફળ થયો |
 | Subscriber process | PID 9892, 00:41 થી સતત ચાલુ | MongoDB write fail થાય તો subscriber **બંધ થઈ જાય** છે. એ બંધ નથી થયો, એટલે write સફળ થયો |
 | પછીના messages | Replace અને delete બંને destination માં દેખાયા | Subscriber partition ના ક્રમમાં લાગુ કરે છે. Offset 4 છોડીને 5 અને 6 લાગુ થાય તે શક્ય નથી |
 
@@ -364,7 +364,7 @@ Silver layer માં `amount` ને એક જ type (જેમ કે `DECIMA
 
 ## 8. નવા subscriber સાથે destination કેવું દેખાવું જોઈએ
 
-નવો subscriber (metadata + soft delete) ચલાવો, તો દરેક step પછી `de_bronze.orders` આવો દેખાશે. `_source_ts` = દરેક message નો `wallTime` (ખરી values). `_ingested_at` = subscriber એ લખ્યો તે સમય (ઉદાહરણ value, તમારા run માં અલગ).
+નવો subscriber (metadata + soft delete) ચલાવો, તો દરેક step પછી `bronze_db.orders` આવો દેખાશે. `_source_ts` = દરેક message નો `wallTime` (ખરી values). `_ingested_at` = subscriber એ લખ્યો તે સમય (ઉદાહરણ value, તમારા run માં અલગ).
 
 | Step | `status` | `amount` | `city` | `email` | `_op` | `_deleted` | `_source_ts` |
 |---|---|---|---|---|---|---|---|
@@ -410,13 +410,13 @@ Silver layer માં `amount` ને એક જ type (જેમ કે `DECIMA
    ```
 3. **જૂના (metadata વગરના) bronze collections drop કરો** (`mongosh`). `mysql_*` ને અડવું નહીં:
    ```javascript
-   const b = db.getSiblingDB("de_bronze");
-   ["orders", "weather_observations", "student", "ordes"].forEach(c => { b[c].drop(); print("dropped de_bronze." + c); });
+   const b = db.getSiblingDB("bronze_db");
+   ["orders", "weather_observations", "student", "ordes"].forEach(c => { b[c].drop(); print("dropped bronze_db." + c); });
    ```
 4. **Consumer group શરૂઆત પર લઈ જાઓ:**
    ```powershell
    cd C:\kafka
-   .\bin\windows\kafka-consumer-groups.bat --bootstrap-server localhost:9092 --group mongo-cdc-subscriber --topic de_source_mongo --reset-offsets --to-earliest --execute
+   .\bin\windows\kafka-consumer-groups.bat --bootstrap-server localhost:9092 --group mongo-cdc-subscriber --topic sourceMongo_db --reset-offsets --to-earliest --execute
    ```
 5. **Subscriber ફરી start કરો:**
    ```powershell
@@ -425,7 +425,7 @@ Silver layer માં `amount` ને એક જ type (જેમ કે `DECIMA
    ```
 6. **ચકાસો:** Topic ના ચારેય `orders` messages ફરી લાગુ થશે, અને છેલ્લે document soft-deleted સ્થિતિમાં હશે (વિભાગ 8 નું JSON):
    ```javascript
-   db.getSiblingDB("de_bronze").orders.find({}, { status: 1, amount: 1, _op: 1, _deleted: 1, _source_ts: 1 })
+   db.getSiblingDB("bronze_db").orders.find({}, { status: 1, amount: 1, _op: 1, _deleted: 1, _source_ts: 1 })
    ```
    ➡️ `status: "DELIVERED"`, `amount: 2299`, `_op: "delete"`, `_deleted: true`, `_source_ts: 1793211816458`
 
