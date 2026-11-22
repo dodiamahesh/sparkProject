@@ -3,6 +3,7 @@ package com.de.cdc;
 import com.de.cdc.ChangeEventApplier.FailedMessage;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
+import com.mongodb.client.MongoDatabase;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
@@ -33,6 +34,7 @@ import static java.nio.charset.StandardCharsets.UTF_8;
  *   1. Read a batch of change events from the Kafka topic (for example "sourceMongo_db").
  *   2. Apply them to the target MongoDB database (see ChangeEventApplier). The destination collection
  *      comes from the PostgreSQL mapping table (see CollectionMappings) and must already exist.
+ *      Duplicates (rule in meta.cdc_duplicate_rule) are not written; they go to meta.meta_duplicate_record.
  *   3. Send the messages that could not be applied (bad message, no mapping, no collection) to the DLQ topic.
  *   4. Tell Kafka that the batch is done (commit the offsets).
  * </pre>
@@ -58,14 +60,27 @@ public class SubscriberApp {
              KafkaConsumer<String, String> consumer = createConsumer(config);
              KafkaProducer<String, String> dlqProducer = createDlqProducer(config)) {
 
-            // read the mapping table once at start: a wrong JDBC setting stops the app here, not at the first message
-            CollectionMappings mappings = new CollectionMappings(config);
+            // read the meta tables once at start: a wrong JDBC setting stops the app here, not at the first message
+            MetaDatabase metaDb = new MetaDatabase(config);
+            CollectionMappings mappings = new CollectionMappings(config, metaDb);
             Map<String, String> active = mappings.loadActive();
             log.info("Collection mapping from {} (source.db.type={}): {} active source(s)",
                     mappings.table(), mappings.sourceDbType(), active.size());
             active.forEach((source, destination) -> log.info("  {} -> {}", source, destination));
 
-            ChangeEventApplier applier = new ChangeEventApplier(mongo.getDatabase(targetDbName), applyDrop, mappings);
+            DuplicateRules duplicateRules = new DuplicateRules(config, metaDb);
+            DuplicateRecordStore duplicateStore = new DuplicateRecordStore(config, metaDb);
+            Map<String, List<String>> rules = duplicateRules.loadActive();
+            log.info("Duplicate rules from {}: {} active rule(s), rejected records go to {}",
+                    duplicateRules.table(), rules.size(), duplicateStore.table());
+            rules.forEach((source, fields) -> log.info("  {} -> {}", source, fields));
+            MongoDatabase targetDb = mongo.getDatabase(targetDbName);
+            DuplicateRules.checkIndexes(targetDb, active, rules);
+
+            DuplicateDetector detector = new DuplicateDetector(
+                    Long.parseLong(config.getProperty("duplicate.slow.query.ms", "200")));
+            ChangeEventApplier applier = new ChangeEventApplier(targetDb, applyDrop, mappings,
+                    duplicateRules, duplicateStore, detector);
             stopOnCtrlC(consumer);
 
             consumer.subscribe(List.of(topic));

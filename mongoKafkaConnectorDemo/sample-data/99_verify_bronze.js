@@ -12,8 +12,12 @@
 //      other          documents without _op: NOT written by the subscriber (for example loaded directly by an
 //                     old ETL sample script). Remove them before testing, they make the counts wrong.
 //  Problems:
-//      not arrived    in the source, not live in bronze      (subscriber still busy? LAG? DLQ: no mapping /
-//                     destination collection missing?)
+//      not arrived    in the source, not live in bronze, and not a duplicate (subscriber still busy? LAG?
+//                     DLQ: no mapping / destination collection missing?)
+//  Not a problem:
+//      duplicates     in the source, not in bronze, because a live bronze document with another _id has the same
+//                     rule values (DUP_RULES below = meta.cdc_duplicate_rule): the subscriber stored them in
+//                     PostgreSQL meta.meta_duplicate_record. So: source = live + duplicates.
 //      not deleted    live in bronze, gone from the source   (delete event lost?)
 //      wrong delete   _deleted in bronze, but still in the source
 //
@@ -39,6 +43,16 @@ const KEY = {
 // destinations = the active NOSQL (MongoDB source) rows of meta.cdc_collection_mapping (PostgreSQL). Keep all three the same.
 const SYNCED = { customers: "customers", products: "products" };
 
+// Duplicate rules: SAME fields as meta.cdc_duplicate_rule (sample-data/00_cdc_duplicate_rule.sql)
+const DUP_RULES = { customers: ["customer_code"], products: ["product_code"] };
+
+// value at a dot path ("address.pincode"); numbers compare by value (5 == 5.0), like the subscriber
+const valueAt = (doc, path) => path.split(".").reduce((o, k) => (o === null || o === undefined) ? undefined : o[k], doc);
+const ruleKey = (doc, fields) => {
+  const values = fields.map(f => valueAt(doc, f));
+  return values.some(v => v === undefined) ? null : JSON.stringify(values.map(v => (typeof v === "object" && v !== null && "toNumber" in v) ? v.toNumber() : v));
+};
+
 const isUserCollection = (n) => !n.startsWith("system.");
 const collections = Object.keys(SYNCED).sort();
 const skipped = src.getCollectionNames().filter(n => isUserCollection(n) && !(n in SYNCED)).sort();
@@ -49,8 +63,8 @@ let problems = 0;
 const deletedRows = [];
 
 print("");
-print("source -> bronze_db                 source  bronze =  live + _deleted + other   result");
-print("----------------------------------  ------  ------    ----   --------   -----   ------");
+print("source -> bronze_db                 source  bronze =  live + _deleted + other  duplicates  result");
+print("----------------------------------  ------  ------    ----   --------   -----  ----------  ------");
 collections.forEach(name => {
   const key = KEY[name];
   const sourceIds = new Set(src.getCollection(name).find({}, { _id: 1 }).toArray().map(d => String(d._id)));
@@ -74,7 +88,18 @@ collections.forEach(name => {
       if (!sourceIds.has(id)) notDeleted++;
     }
   });
-  const notArrived = [...sourceIds].filter(id => !liveIds.has(id)).length;
+  // source documents not live in bronze: a duplicate (same rule values as a live bronze document) or not arrived
+  const missingIds = [...sourceIds].filter(id => !liveIds.has(id));
+  const fields = DUP_RULES[name];
+  let duplicates = 0;
+  if (fields && missingIds.length) {
+    const liveKeys = new Set();
+    brz.getCollection(SYNCED[name]).find({ _deleted: false }).forEach(d => { const k = ruleKey(d, fields); if (k) liveKeys.add(k); });
+    src.getCollection(name).find().forEach(d => {
+      if (!liveIds.has(String(d._id)) && liveKeys.has(ruleKey(d, fields))) duplicates++;
+    });
+  }
+  const notArrived = missingIds.length - duplicates;
 
   const issues = [];
   if (notArrived) issues.push(`${notArrived} not arrived`);
@@ -84,7 +109,8 @@ collections.forEach(name => {
   if (issues.length) problems++;
 
   print(`${(name + " -> " + SYNCED[name]).padEnd(34)}  ${String(sourceIds.size).padStart(6)}  ${String(bronzeDocs.length).padStart(6)} = ` +
-        `${String(live).padStart(5)} + ${String(deleted).padStart(8)} + ${String(other).padStart(5)}   ` +
+        `${String(live).padStart(5)} + ${String(deleted).padStart(8)} + ${String(other).padStart(5)}  ` +
+        `${String(duplicates).padStart(10)}  ` +
         (issues.length ? "✘ " + issues.join(", ") : "✔"));
 });
 

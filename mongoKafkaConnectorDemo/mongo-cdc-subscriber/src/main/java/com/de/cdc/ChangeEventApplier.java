@@ -1,6 +1,10 @@
 package com.de.cdc;
 
+import com.de.cdc.DuplicateRecordStore.DuplicateRecord;
+import com.mongodb.MongoBulkWriteException;
+import com.mongodb.bulk.BulkWriteError;
 import com.mongodb.bulk.BulkWriteResult;
+import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.model.BulkWriteOptions;
 import com.mongodb.client.model.Filters;
@@ -53,6 +57,14 @@ import java.util.Set;
  * </pre>
  * The subscriber never creates a collection: create it yourself (db.createCollection) before you map it.
  *
+ * Duplicate check (only for sources with an active rule in meta.cdc_duplicate_rule, see DuplicateDetector):
+ * <pre>
+ *   A  before writing: a new record whose rule values belong to a live bronze document (another _id)
+ *      is not written                                                   -> meta.meta_duplicate_record
+ *   C  while writing: the partial unique index "cdc_dup_rule" rejects a write (E11000)
+ *      -> that write is not applied, the writes after it are sent again -> meta.meta_duplicate_record
+ * </pre>
+ *
  * Then the event is applied to the destination collection:
  * <pre>
  *   insert / replace / update  ->  replace the whole document (insert it if it is missing)
@@ -91,11 +103,19 @@ public class ChangeEventApplier {
     private final MongoDatabase targetDb;
     private final boolean applyDropEvents;
     private final CollectionMappings mappings;
+    private final DuplicateRules duplicateRules;
+    private final DuplicateRecordStore duplicateStore;
+    private final DuplicateDetector duplicateDetector;
 
-    public ChangeEventApplier(MongoDatabase targetDb, boolean applyDropEvents, CollectionMappings mappings) {
+    public ChangeEventApplier(MongoDatabase targetDb, boolean applyDropEvents, CollectionMappings mappings,
+                              DuplicateRules duplicateRules, DuplicateRecordStore duplicateStore,
+                              DuplicateDetector duplicateDetector) {
         this.targetDb = targetDb;
         this.applyDropEvents = applyDropEvents;
         this.mappings = mappings;
+        this.duplicateRules = duplicateRules;
+        this.duplicateStore = duplicateStore;
+        this.duplicateDetector = duplicateDetector;
     }
 
     /**
@@ -105,18 +125,22 @@ public class ChangeEventApplier {
      * That is much faster than one database call per message. The bulk write keeps the list order,
      * so several changes to the same document are applied in the order they happened.
      *
-     * The mapping table and the list of existing target collections are read once per batch.
-     * If the mapping table cannot be read, this throws and nothing of the batch is applied or committed.
+     * The mapping table, the duplicate rules and the list of existing target collections are read once per batch.
+     * If a meta table cannot be read or the duplicate records cannot be saved, this throws and the batch is
+     * not committed: it comes again after a restart (all writes are idempotent).
      *
      * @return the messages that could not be applied
      */
     public List<FailedMessage> applyAll(ConsumerRecords<String, String> messages) {
         // source collection/table -> destination collection, and the collections that exist in the target database
         Map<String, String> activeMappings = mappings.loadActive();
+        // source collection/table -> fields of its duplicate rule
+        Map<String, List<String>> rules = duplicateRules.loadActive();
         Set<String> existingCollections = targetDb.listCollectionNames().into(new HashSet<>());
 
         // destination collection -> writes for that collection, in arrival order
-        Map<String, List<WriteModel<BsonDocument>>> writesByCollection = new LinkedHashMap<>();
+        Map<String, List<PendingWrite>> writesByCollection = new LinkedHashMap<>();
+        List<DuplicateRecord> duplicates = new ArrayList<>();
         List<FailedMessage> failedMessages = new ArrayList<>();
         // one ingestion time for the whole batch
         long ingestedAt = System.currentTimeMillis();
@@ -130,15 +154,19 @@ public class ChangeEventApplier {
             // it must not stop the others.
             String operation;
             String destination = null;
-            WriteModel<BsonDocument> write;
+            PendingWrite pending = null;
             try {
                 // parse() turns Extended JSON back into the original types: {"$oid"} -> ObjectId, {"$numberInt"} -> Int32
                 BsonDocument event = BsonDocument.parse(message.value());
                 operation = event.getString("operationType").getValue();
                 String collection = getCollectionName(event);
-                write = buildWrite(operation, event, ingestedAt);
+                WriteModel<BsonDocument> write = buildWrite(operation, event, ingestedAt);
                 if (write != null || operation.equals("drop")) {
                     destination = resolveDestination(collection, activeMappings, existingCollections);
+                }
+                if (write != null) {
+                    pending = new PendingWrite(message, collection, operation,
+                            event.getDocument("documentKey").get("_id"), newDocument(operation, event), write);
                 }
             } catch (RuntimeException e) {
                 failedMessages.add(new FailedMessage(message, e));
@@ -146,11 +174,11 @@ public class ChangeEventApplier {
             }
 
             // Step 2: queue the write, or handle events that are not about a single document
-            if (write != null) {
-                addWrite(writesByCollection, destination, write);
+            if (pending != null) {
+                writesByCollection.computeIfAbsent(destination, d -> new ArrayList<>()).add(pending);
             } else if (operation.equals("drop")) {
                 // save the changes that came before the drop first, then drop
-                saveWrites(destination, writesByCollection.remove(destination));
+                flush(destination, writesByCollection.remove(destination), rules, duplicates);
                 if (dropCollection(destination)) {
                     existingCollections.remove(destination); // later events of this batch: destination is gone
                 }
@@ -159,11 +187,65 @@ public class ChangeEventApplier {
             }
         }
 
-        // Step 3: save everything that was queued
-        for (Map.Entry<String, List<WriteModel<BsonDocument>>> entry : writesByCollection.entrySet()) {
-            saveWrites(entry.getKey(), entry.getValue());
+        // Step 3: duplicate check + save everything that was queued
+        for (Map.Entry<String, List<PendingWrite>> entry : writesByCollection.entrySet()) {
+            flush(entry.getKey(), entry.getValue(), rules, duplicates);
         }
+
+        // Step 4: the rejected duplicates -> PostgreSQL (before the Kafka commit, so none is lost)
+        duplicateStore.save(duplicates);
         return failedMessages;
+    }
+
+    /**
+     * Duplicate check (A) of one destination, then the bulk write with the unique index safety net (C).
+     * The rejected records are added to {@code duplicates}.
+     */
+    private void flush(String destination, List<PendingWrite> writes, Map<String, List<String>> rules,
+                       List<DuplicateRecord> duplicates) {
+        if (writes == null || writes.isEmpty()) {
+            return;
+        }
+        MongoCollection<BsonDocument> collection = targetDb.getCollection(destination, BsonDocument.class);
+        String dbType = mappings.sourceDbType();
+
+        DuplicateDetector.Result checked = duplicateDetector.filter(collection, writes, rules,
+                (source, recordIds) -> duplicateStore.findStored(source, dbType, recordIds));
+        report(destination, checked.duplicates(), "rule check", dbType, duplicates);
+        if (!checked.droppedDeletes().isEmpty()) {
+            log.info("{}: {} delete(s) of rejected duplicate record(s) skipped (they are only in {})",
+                    destination, checked.droppedDeletes().size(), duplicateStore.table());
+        }
+
+        List<PendingWrite> rejectedByIndex = saveWrites(collection, checked.keep());
+        report(destination, rejectedByIndex, "unique index " + DuplicateRules.INDEX_NAME, dbType, duplicates);
+    }
+
+    /** Logs the rejected records (at most 10 lines) and adds them to the list for meta.meta_duplicate_record. */
+    private void report(String destination, List<PendingWrite> rejected, String foundBy, String dbType,
+                        List<DuplicateRecord> duplicates) {
+        if (rejected.isEmpty()) {
+            return;
+        }
+        log.info("{}: {} duplicate record(s) not written (found by {}), stored in {}",
+                destination, rejected.size(), foundBy, duplicateStore.table());
+        for (int i = 0; i < rejected.size(); i++) {
+            PendingWrite write = rejected.get(i);
+            String recordId = DuplicateDetector.recordId(write.id());
+            if (i < 10) {
+                log.info("  duplicate: {} {} ({})", write.source(), recordId, write.operation());
+            }
+            duplicates.add(new DuplicateRecord(recordId, write.source(), DuplicateDetector.payloadJson(write), dbType));
+        }
+    }
+
+    /** The new full document of the event (insert, replace, update with fullDocument), else null. */
+    private static BsonDocument newDocument(String operation, BsonDocument event) {
+        if (operation.equals("delete")) {
+            return null;
+        }
+        BsonValue fullDocument = event.get("fullDocument");
+        return fullDocument != null && fullDocument.isDocument() ? fullDocument.asDocument() : null;
     }
 
     /**
@@ -302,26 +384,54 @@ public class ChangeEventApplier {
         return namespace.getString("coll").getValue();
     }
 
-    private static void addWrite(Map<String, List<WriteModel<BsonDocument>>> writesByCollection,
-                                 String collection, WriteModel<BsonDocument> write) {
-        List<WriteModel<BsonDocument>> writes = writesByCollection.get(collection);
-        if (writes == null) {
-            writes = new ArrayList<>();
-            writesByCollection.put(collection, writes);
+    /**
+     * Saves the writes with as few calls as possible. ordered = apply them in list order and stop at the first error,
+     * so several changes of one document keep their order.
+     *
+     * Option C: when the unique index of the duplicate rule rejects a write (E11000 on index "cdc_dup_rule"),
+     * the writes before it are already applied; that write is set aside as a duplicate and the writes after it
+     * are sent again. Any other error is thrown (the batch is then not committed).
+     *
+     * @return the writes rejected by the unique index
+     */
+    private List<PendingWrite> saveWrites(MongoCollection<BsonDocument> collection, List<PendingWrite> writes) {
+        List<PendingWrite> rejected = new ArrayList<>();
+        if (writes.isEmpty()) {
+            return rejected;
         }
-        writes.add(write);
+        int matched = 0;
+        int inserted = 0;
+        int start = 0;
+        while (start < writes.size()) {
+            List<PendingWrite> part = writes.subList(start, writes.size());
+            List<WriteModel<BsonDocument>> models = new ArrayList<>(part.size());
+            part.forEach(write -> models.add(write.write()));
+            try {
+                BulkWriteResult result = collection.bulkWrite(models, new BulkWriteOptions().ordered(true));
+                matched += result.getMatchedCount();
+                inserted += result.getUpserts().size();
+                break;
+            } catch (MongoBulkWriteException e) {
+                BulkWriteError error = e.getWriteErrors().get(0);
+                if (!isDuplicateRuleViolation(error)) {
+                    throw e;
+                }
+                matched += e.getWriteResult().getMatchedCount();
+                inserted += e.getWriteResult().getUpserts().size();
+                rejected.add(part.get(error.getIndex()));
+                start += error.getIndex() + 1;
+            }
+        }
+        log.info("{}: {} writes (matched={}, inserted={}{})", collection.getNamespace().getCollectionName(),
+                writes.size() - rejected.size(), matched, inserted,
+                rejected.isEmpty() ? "" : ", rejected by unique index=" + rejected.size());
+        return rejected;
     }
 
-    /** Saves the writes in one call. ordered = apply them in list order and stop at the first error. */
-    private void saveWrites(String collection, List<WriteModel<BsonDocument>> writes) {
-        if (writes == null || writes.isEmpty()) {
-            return;
-        }
-        BulkWriteResult result = targetDb.getCollection(collection, BsonDocument.class)
-                .bulkWrite(writes, new BulkWriteOptions().ordered(true));
-
-        log.info("{}: {} writes (matched={}, inserted={})",
-                collection, writes.size(), result.getMatchedCount(), result.getUpserts().size());
+    /** E11000 duplicate key on the duplicate rule index (not on _id or another index). */
+    private static boolean isDuplicateRuleViolation(BulkWriteError error) {
+        return error.getCode() == 11000 && error.getMessage() != null
+                && error.getMessage().contains(DuplicateRules.INDEX_NAME);
     }
 
     /** @return true when the destination collection was dropped */

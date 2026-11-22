@@ -41,10 +41,29 @@
             <artifactId>slf4j-simple</artifactId>
             <version>2.0.13</version>
         </dependency>
+        <!-- tests only (not in the jar): DuplicateCheckIT runs against a local MongoDB + PostgreSQL -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>5.10.2</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
         <plugins>
+            <!-- JUnit 5 tests. DuplicateCheckIT needs local MongoDB + PostgreSQL; it is skipped when they are not running -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.2.5</version>
+                <configuration>
+                    <includes>
+                        <include>**/*Test.java</include>
+                        <include>**/*IT.java</include>
+                    </includes>
+                </configuration>
+            </plugin>
             <!-- One runnable jar with all dependencies -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>

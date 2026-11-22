@@ -47,16 +47,20 @@ mongoKafkaConnectorDemo\
     └── src\main\
         ├── java\com\de\cdc\
         │   ├── SubscriberApp.java              ← Kafka loop: read → apply → DLQ → commit
-        │   ├── ChangeEventApplier.java         ← change event → mapping check → MongoDB write (upsert / soft delete)
-        │   └── CollectionMappings.java         ← PostgreSQL meta.cdc_collection_mapping (source → destination) વાંચે
+        │   ├── ChangeEventApplier.java         ← change event → mapping check → duplicate check → MongoDB write
+        │   ├── CollectionMappings.java         ← PostgreSQL meta.cdc_collection_mapping (source → destination) વાંચે
+        │   ├── DuplicateRules.java / DuplicateDetector.java / DuplicateRecordStore.java ← duplicate check (A + C)
+        │   └── MetaDatabase.java, PendingWrite.java
         └── resources\
             └── subscriber.properties           ← Kafka, MongoDB, target DB settings (topic sourceMongo_db → bronze_db)
 └── sample-data\                                ← sourceMongo_db માટે test data (6 pipelines)
     ├── README.md                               ← hard delete → soft delete test: steps + expected counts
     ├── 00_cdc_collection_mapping.sql           ← PostgreSQL mapping table + insert rows
+    ├── 00_cdc_duplicate_rule.sql               ← duplicate rule table (18 rules) + meta_duplicate_record table
+    ├── lib_unique_index.js                     ← 03_bronze_unique_indexes.js નો shared helper
     ├── 00_create_bronze_collections.js         ← bronze_db ના destination collections બનાવે
     ├── 99_verify_bronze.js                     ← sourceMongo_db vs bronze_db સરખામણી
-    └── <pipeline>\01_mongo_full_load.js, 02_mongo_incremental.js
+    └── <pipeline>\01_mongo_full_load.js, 02_mongo_incremental.js, 03_bronze_unique_indexes.js
 ```
 
 Project ની બહાર (machine પર) રહેતી વસ્તુઓ:
@@ -77,6 +81,7 @@ C:\Program Files\MongoDB\Server\<version>\bin\mongod.cfg ← replica set rs0 (§
 | જરૂર | Document |
 |---|---|
 | રોજનો start / stop, topics, messages, DLQ, consumer groups, connectors જોવાના commands (expected output સાથે) | [DAILY_OPERATIONS_COMMANDS_GU.md](docs/DAILY_OPERATIONS_COMMANDS_GU.md) |
+| Duplicate check નો design (rules, A + C, મુશ્કેલીઓ અને ઉકેલ) | [DUPLICATE_CHECK_DESIGN_GU.md](docs/DUPLICATE_CHECK_DESIGN_GU.md) / English: [DUPLICATE_CHECK_DESIGN_EN.md](docs/DUPLICATE_CHECK_DESIGN_EN.md) |
 | નવી machine પર શરૂઆતથી setup / કોઈ step ની પૂરી વિગત | [MONGO_CDC_COMPLETE_SETUP_GU.md](docs/MONGO_CDC_COMPLETE_SETUP_GU.md) |
 | Connector JSON ની કોઈ key બદલવી છે, એની અસર શું? | [MONGO_SOURCE_CONNECTOR_CONFIG_REFERENCE_GU.md](docs/MONGO_SOURCE_CONNECTOR_CONFIG_REFERENCE_GU.md) |
 | એક document Kafka અને bronze માં કેવો દેખાય? | [CDC_EXAMPLE_ORDERS_COMPARISON_GU.md](docs/CDC_EXAMPLE_ORDERS_COMPARISON_GU.md) |
@@ -320,6 +325,7 @@ java -jar target\mongo-cdc-subscriber-1.0.0-jar-with-dependencies.jar
 
 | તારીખ | ફેરફાર | Commit |
 |---|---|---|
+| 2026-11-23 | **Duplicate check (A + C)** ([design](docs/DUPLICATE_CHECK_DESIGN_GU.md)): rule table `meta.cdc_duplicate_rule` (source + fields, બધા સરખા = duplicate), rejected records → `meta.meta_duplicate_record`. A = લખતા પહેલાં query, C = partial unique index `cdc_dup_rule` + E11000 loop. નવું: `MetaDatabase`, `DuplicateRules`, `DuplicateDetector`, `DuplicateRecordStore`, `PendingWrite`, test `DuplicateCheckIT` (`mvn test`), `sample-data\00_cdc_duplicate_rule.sql` (18 rules), `sample-data\<pipeline>\03_bronze_unique_indexes.js` + `lib_unique_index.js`; `99_verify_bronze.js` માં `duplicates` column | _(commit પછી લખો)_ |
 | 2026-11-22 | Mapping માં **SQL tables** પણ: `db_type` = **source** નો type (`NOSQL` = MongoDB collection, `SQL` = SQL table), destination હંમેશા `bronze_db` collection. Subscriber setting `source.db.type` (default `NOSQL`) પ્રમાણે ફક્ત એ type ની rows વાપરે. Sample rows: `station`, `station_owner` (SQL, inactive) | _(commit પછી લખો)_ |
 | 2026-11-22 | Subscriber: **collection mapping** PostgreSQL `meta.cdc_collection_mapping` થી (source → destination, `db_type`, `active`; દરેક batch પર વંચાય). Active `NOSQL` mapping નથી, અથવા destination collection `bronze_db` માં નથી → `MappingException`, message DLQ માં. Subscriber હવે collection **બનાવતો નથી**. નવું: `CollectionMappings.java`, PostgreSQL JDBC dependency, `mapping.*` properties, `sample-data\00_cdc_collection_mapping.sql`, `00_create_bronze_collections.js`; `99_verify_bronze.js` માં `SYNCED` = source → destination | _(commit પછી લખો)_ |
 | 2026-11-22 | Connector હવે **ફક્ત `customers`, `products`** sync કરે છે (`pipeline` + `startup.mode.copy.existing.namespace.regex`), `offset.partition.name` → `sourceMongo_db-v2` (આ 2 નો existing data ફરી copy થાય). `99_verify_bronze.js` માં `SYNCED` list | _(commit પછી લખો)_ |

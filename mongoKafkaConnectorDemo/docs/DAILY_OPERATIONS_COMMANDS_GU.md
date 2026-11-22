@@ -202,11 +202,16 @@ java -jar target\mongo-cdc-subscriber-1.0.0-jar-with-dependencies.jar src\main\r
 [main] INFO com.de.cdc.SubscriberApp - Collection mapping from meta.cdc_collection_mapping (source.db.type=NOSQL): 2 active source(s)
 [main] INFO com.de.cdc.SubscriberApp -   customers -> customers
 [main] INFO com.de.cdc.SubscriberApp -   products -> products
+[main] INFO com.de.cdc.SubscriberApp - Duplicate rules from meta.cdc_duplicate_rule: 18 active rule(s), rejected records go to meta.meta_duplicate_record
+[main] INFO com.de.cdc.SubscriberApp -   products -> [product_code]
+...
 [main] INFO com.de.cdc.SubscriberApp - Reading topic 'sourceMongo_db' and writing to database 'bronze_db'
 ```
 પછી કોઈ change આવે ત્યારે જ log આવે:
 ```
 [main] INFO com.de.cdc.ChangeEventApplier - bank_payments: 3 writes (matched=3, inserted=0)
+[main] INFO com.de.cdc.ChangeEventApplier - products: 1 duplicate record(s) not written (found by rule check), stored in meta.meta_duplicate_record
+[main] INFO com.de.cdc.ChangeEventApplier -   duplicate: products {"$oid": "6b03..."} (insert)
 ```
 > `matched` = bronze માં પહેલેથી હતા (update / soft delete), `inserted` = નવા બન્યા. કંઈ નવું ન હોય તો **કોઈ log નહીં**, એ સામાન્ય છે.
 > ⚠️ `Reading topic 'de_source_mongo' ... 'de_bronze'` દેખાય તો jar જૂનો છે (properties jar ની અંદર છે): subscriber બંધ → `mvn -q clean package` → ફરી start.
@@ -220,6 +225,9 @@ java -jar target\mongo-cdc-subscriber-1.0.0-jar-with-dependencies.jar src\main\r
 | `Cannot read the collection mapping table meta.cdc_collection_mapping ...` (start વખતે બંધ થાય) | PostgreSQL બંધ, ખોટો password, DB `shop_dw` નથી, અથવા table નથી: 1.1 નું PostgreSQL check, `sample-data\00_cdc_collection_mapping.sql`, `subscriber.properties` ના `mapping.jdbc.*` |
 | `Not applied (...): No active NOSQL mapping for source 'x'` | Mapping table માં `x` ની active row (`db_type` = subscriber નો `source.db.type`, હાલ `NOSQL`) નથી. Row ઉમેરો / `active = TRUE` કરો (restart જરૂરી નથી). એ message DLQ માં ગયો ([5](#5-dlq-ચકાસવો)) |
 | `Not applied (...): Destination collection 'bronze_db.y' does not exist` | Subscriber collection **બનાવતો નથી**. `db.getSiblingDB('bronze_db').createCollection('y')` અથવા `sample-data\00_create_bronze_collections.js`. એ message DLQ માં ગયો |
+| `Cannot read the duplicate rule table meta.cdc_duplicate_rule ...` | Table નથી: `sample-data\00_cdc_duplicate_rule.sql` ચલાવો |
+| `WARN ... no unique index 'cdc_dup_rule' (option C) for rule [...]` | Index નથી. Query check (A) ચાલુ જ છે. Index: `sample-data\<pipeline>\03_bronze_unique_indexes.js` ([8.5](#85-duplicates-જોવા)) |
+| `WARN ... index 'cdc_dup_rule' [...] does not match the rule [...]` | Rule બદલ્યો પણ index જૂનો. Pipeline નો `03_bronze_unique_indexes.js` નવા fields સાથે ફરી ચલાવો |
 
 > DLQ માં ગયેલા messages ફરી લાવવા (mapping / collection ઠીક કર્યા પછી): subscriber બંધ → [6.4](#64-offsets-reset-replay-bronze-ફરી-બનાવવો) થી offsets reset → subscriber start. Subscriber idempotent હોવાથી બાકીના messages ફરી લખાય તો નુકસાન નથી.
 
@@ -736,6 +744,27 @@ db.bank_payments.find({ _deleted: true }, { paymentId: 1, status: 1, _op: 1, _so
 use bronze_db
 db.bank_payments.find({ _ingested_at: { $gt: Date.now() - 10 * 60 * 1000 } }, { _op: 1, _deleted: 1, _ingested_at: 1 })
 ```
+
+### 8.5 Duplicates જોવા
+
+Design: [DUPLICATE_CHECK_DESIGN_GU.md](DUPLICATE_CHECK_DESIGN_GU.md). Rule ના **બધા** fields એક live bronze document જેવા હોય એવો નવો record bronze માં **નથી** જતો; એ PostgreSQL `meta.meta_duplicate_record` માં જાય છે.
+
+```powershell
+$psql = "C:\Program Files\PostgreSQL\18\bin\psql.exe"
+# rules
+& $psql -h localhost -p 5433 -U postgres -d shop_dw -c "SELECT source, fields, active FROM meta.cdc_duplicate_rule WHERE db_type = 'NOSQL' ORDER BY 1"
+# કયા collection માં કેટલા duplicates
+& $psql -h localhost -p 5433 -U postgres -d shop_dw -c "SELECT data_store_name, count(*) FROM meta.meta_duplicate_record GROUP BY 1 ORDER BY 1"
+# એક collection ના duplicates, payload ના field સાથે
+& $psql -h localhost -p 5433 -U postgres -d shop_dw -c "SELECT id_pk, record_id, object_payload->>'product_code' AS product_code FROM meta.meta_duplicate_record WHERE data_store_name = 'products'"
+```
+➡️ Sales 01 script પછી (rules `product_code`, `customer_code`): `customers | 1`, `products | 1` (C005, P003).
+
+**Rule બદલવો** (જેમ કે customers: `customer_code,email`):
+1. `UPDATE meta.cdc_duplicate_rule SET fields = 'customer_code,email' WHERE source = 'customers' AND db_type = 'NOSQL';` (આગલા batch થી લાગુ)
+2. `sample-data\sales-pipeline\03_bronze_unique_indexes.js` માં એ જ fields, પછી ચલાવો: `mongosh "mongodb://localhost:27017/?replicaSet=rs0" sample-data\sales-pipeline\03_bronze_unique_indexes.js`
+   ➡️ `dropped customers: old index on customer_code` અને `created customers: customer_code, email`. `BLOCKED` = bronze માં પહેલેથી duplicates (listed): સાફ કરીને ફરી ચલાવો.
+3. `sample-data\99_verify_bronze.js` નું `DUP_RULES` પણ બદલો.
 
 ---
 

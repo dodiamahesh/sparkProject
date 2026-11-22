@@ -14,6 +14,9 @@ sourceMongo_db  --(MongoDB source connector "mongo-cdc-db-source")-->  Kafka top
 > collection to `pipeline` + `startup.mode.copy.existing.namespace.regex`, bump `offset.partition.name` (`-v3`, ...)
 > so its existing data is copied, register the connector, and add it to `SYNCED` in `99_verify_bronze.js`.
 > With `customers` + `products`, the sales 02 script gives 1 soft delete in bronze: `customers` C020.
+> **Duplicate check** (rules `customer_code`, `product_code`): the sales 01 script has 2 deliberate duplicates, P003 and
+> C005 (the older copy comes second). Expected on an empty bronze: `products` 23 live + 1 duplicate, `customers` 22 live +
+> 1 duplicate, and 2 rows in `meta.meta_duplicate_record` (`99_verify_bronze.js` shows them in the column `duplicates`).
 
 | Change in `sourceMongo_db` | Result in `bronze_db` (same `_id`) |
 |---|---|
@@ -21,14 +24,17 @@ sourceMongo_db  --(MongoDB source connector "mongo-cdc-db-source")-->  Kafka top
 | update / replace | whole document replaced, `_op: "update"` / `"replace"` |
 | **HARD delete** (`deleteOne` / `deleteMany`) | document **kept** with its last values, `_op: "delete"`, **`_deleted: true`** (soft delete) |
 
-Every folder = one pipeline, with 2 MongoDB scripts (the PostgreSQL `03_*.sql` files were removed; the original
+Every folder = one pipeline, with 3 MongoDB scripts (the old PostgreSQL `03_*.sql` files were removed; the original
 ETL copies stay in `../../ecommersDataETLPipeline/sample-data/`):
 
 | File | What it does |
 |---|---|
 | `01_mongo_full_load.js` | **Empties** (`deleteMany`, not `drop`) and loads the pipeline's collections (good + deliberately bad records). |
 | `02_mongo_incremental.js` | UPDATE, INSERT and **HARD DELETE** (rejected records **and** loaded / valid records). The header lists every delete and the expected counts. |
+| `03_bronze_unique_indexes.js` | Duplicate check, option C: partial unique index `cdc_dup_rule` on the rule fields of each bronze collection of the pipeline. Same fields as `00_cdc_duplicate_rule.sql`. |
 | `00_cdc_collection_mapping.sql` (this folder) | PostgreSQL table `meta.cdc_collection_mapping` (`source`, `destination`, `db_type`, `active`) + insert rows. The subscriber checks it before every write. |
+| `00_cdc_duplicate_rule.sql` (this folder) | PostgreSQL tables `meta.cdc_duplicate_rule` (`source`, `db_type`, `fields`, `active`) + 18 rules, and `meta.meta_duplicate_record` (`id_pk`, `record_id`, `data_store_name`, `object_payload`, `db_type`). |
+| `lib_unique_index.js` (this folder) | Shared helper of the `03_bronze_unique_indexes.js` scripts (not run alone). |
 | `00_create_bronze_collections.js` (this folder) | Creates the destination collections in `bronze_db` (the subscriber never creates one). |
 | `99_verify_bronze.js` (this folder) | Compares `sourceMongo_db` with `bronze_db` by `_id` and lists every soft-deleted document. |
 
@@ -81,24 +87,39 @@ Special cases that are tested:
    ```
    Other destination name (for example `products` -> `raw_products`): change the row in the mapping table, add the name
    to `DESTINATIONS` in `00_create_bronze_collections.js` (and to `SYNCED` in `99_verify_bronze.js`), run it again.
-4. Topics (Kafka running, `C:\kafka`):
+4. **Duplicate check** (design: `../docs/DUPLICATE_CHECK_DESIGN_EN.md`). Rule table + duplicate record table, then the
+   unique indexes (option C) of every pipeline. A new record with the same rule values as a live bronze document is not
+   written; it goes to `meta.meta_duplicate_record`.
+   ```powershell
+   & $psql -h localhost -p 5433 -U postgres -d shop_dw -f sample-data\00_cdc_duplicate_rule.sql
+   # ➡️ 18 rules (one business key per sample collection, for example products | NOSQL | product_code | t)
+   "sales","payment","transaction","ecommerce-order","ecommerce-fulfillment","vat-return" | ForEach-Object {
+       mongosh "mongodb://localhost:27017/?replicaSet=rs0" --quiet "sample-data\$_-pipeline\03_bronze_unique_indexes.js" }
+   # ➡️ created / ok per existing collection, "skip" for collections that do not exist in bronze_db
+   ```
+   `BLOCKED` = bronze_db already has duplicates for that rule (listed with their `_id`): the index is not created and
+   nothing is deleted. Clean them (you decide which document stays), then run the script again. The query check works
+   without the index. **Rule change:** update `meta.cdc_duplicate_rule` AND the fields in the pipeline's
+   `03_bronze_unique_indexes.js` (and `DUP_RULES` in `99_verify_bronze.js`), then run the script again.
+5. Topics (Kafka running, `C:\kafka`):
    ```powershell
    .\bin\windows\kafka-topics.bat --bootstrap-server localhost:9092 --create --topic sourceMongo_db --partitions 3 --replication-factor 1
    .\bin\windows\kafka-topics.bat --bootstrap-server localhost:9092 --create --topic cdc-dlq --partitions 1 --replication-factor 1
    ```
-5. Connector (Kafka Connect running):
+6. Connector (Kafka Connect running):
    ```powershell
    cd D:\ClaudeProjects\dataEngineeringProjects\sparkProject\mongoKafkaConnectorDemo\kafka-connect
    .\register-connectors.ps1
    # ➡️ mongo-cdc-db-source            connector=RUNNING  tasks=RUNNING
    ```
-6. Subscriber (own terminal, keep it open). Rebuild after every code / properties change (the properties are inside the jar):
+7. Subscriber (own terminal, keep it open). Rebuild after every code / properties change (the properties are inside the jar):
    ```powershell
    cd D:\ClaudeProjects\dataEngineeringProjects\sparkProject\mongoKafkaConnectorDemo\mongo-cdc-subscriber
    mvn -q clean package
    java -jar target\mongo-cdc-subscriber-1.0.0-jar-with-dependencies.jar
    # ➡️ Collection mapping from meta.cdc_collection_mapping (source.db.type=NOSQL): 2 active source(s)
    # ➡️   customers -> customers / products -> products
+   # ➡️ Duplicate rules from meta.cdc_duplicate_rule: 18 active rule(s), rejected records go to meta.meta_duplicate_record
    # ➡️ Reading topic 'sourceMongo_db' and writing to database 'bronze_db'
    ```
 
