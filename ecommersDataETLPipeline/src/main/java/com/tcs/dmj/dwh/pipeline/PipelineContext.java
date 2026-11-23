@@ -1,6 +1,7 @@
 package com.tcs.dmj.dwh.pipeline;
 
 import com.tcs.dmj.dwh.connector.source.SourceBatch;
+import com.tcs.dmj.dwh.domain.MetaAsset;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 import org.apache.spark.storage.StorageLevel;
@@ -9,6 +10,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -19,7 +21,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public class PipelineContext {
 
-    private final long jobRunId;
+    private final long pipelineRunId;
     private final String pipelineName;
     private final Instant windowEnd;
     private final boolean directLoad;
@@ -28,16 +30,17 @@ public class PipelineContext {
     private final List<Dataset<Row>> cachedDatasets = new ArrayList<>();
     private final AtomicInteger stagingTableCounter = new AtomicInteger();
     private final Set<String> deletesApplied = ConcurrentHashMap.newKeySet();
+    private final Map<String, LineageEdge> lineage = new ConcurrentHashMap<>();
 
-    public PipelineContext(long jobRunId, String pipelineName, Instant windowEnd, boolean directLoad) {
-        this.jobRunId = jobRunId;
+    public PipelineContext(long pipelineRunId, String pipelineName, Instant windowEnd, boolean directLoad) {
+        this.pipelineRunId = pipelineRunId;
         this.pipelineName = pipelineName;
         this.windowEnd = windowEnd;
         this.directLoad = directLoad;
     }
 
-    public long jobRunId() {
-        return jobRunId;
+    public long pipelineRunId() {
+        return pipelineRunId;
     }
 
     public String pipelineName() {
@@ -51,7 +54,7 @@ public class PipelineContext {
 
     /**
      * true = the pipeline writes straight into its tables (no staging) and the whole run is ONE transaction:
-     * every table, the rejected records and the watermarks are committed together, or nothing at all.
+     * every table, the rejected records and last_run_time are committed together, or nothing at all.
      */
     public boolean directLoad() {
         return directLoad;
@@ -61,7 +64,7 @@ public class PipelineContext {
         return metrics;
     }
 
-    /** Every source processed in this run. Used at the end to save rejects and move the watermarks. */
+    /** Every source processed in this run. Used at the end to save rejects and move last_run_time. */
     public void addSourceBatch(SourceBatch batch) {
         sourceBatches.add(batch);
     }
@@ -98,5 +101,18 @@ public class PipelineContext {
 
     public int nextStagingTableNumber() {
         return stagingTableCounter.incrementAndGet();
+    }
+
+    /** Table-level lineage seen in this run (written to meta.meta_lineage when the run succeeds). */
+    public void addLineage(MetaAsset source, MetaAsset target) {
+        lineage.putIfAbsent(source.key() + " -> " + target.key(), new LineageEdge(source, target));
+    }
+
+    public List<LineageEdge> lineage() {
+        return List.copyOf(lineage.values());
+    }
+
+    /** source asset -&gt; target asset, written by this run. */
+    public record LineageEdge(MetaAsset source, MetaAsset target) {
     }
 }

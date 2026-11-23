@@ -119,7 +119,7 @@ public record SourceDefinition(
 
         /**
          * The TIMESTAMP field of the source (e.g. updatedAt). Two jobs:
-         *   1. INCREMENTAL WATERMARK: a run reads only documents with this field &gt; last watermark and &lt;= run start
+         *   1. INCREMENTAL WATERMARK: a run reads only documents with this field &gt; meta_pipeline.last_run_time and &lt;= run start
          *      (it must be a BSON Date in MongoDB, and should be indexed)
          *   2. DE-DUPLICATION: when the same business key appears twice, the row with the highest value is kept
          */

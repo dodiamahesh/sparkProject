@@ -179,8 +179,8 @@ rejected records → watermark.
 
 ### Step 6: COMMIT + STATUS
 
-COMMIT. Then `meta_pipeline_run.status = SUCCESS_WITH_FAILED` (14 loaded, 7 rejected). Any error →
-ROLLBACK: nothing in silver or meta changes, the watermark does not move, `status = FAILED`.
+COMMIT. Then `meta_pipeline_run.pipeline_status = SUCCESS_WITH_FAILED` (14 loaded, 7 rejected). Any error →
+ROLLBACK: nothing in silver or meta changes, `last_run_time` does not move, `pipeline_status = FAILED`.
 
 ---
 
@@ -310,15 +310,16 @@ curl.exe -X POST "http://localhost:8080/api/admin/dwh/pipelines/vat-return-pipel
 ## 9. ETL in one picture
 
 ```text
-MongoDB vat_return_coll ──(updatedAt > watermark)──> Spark
+MongoDB vat_return_coll ──(updatedAt > meta_pipeline.last_run_time)──> Spark
    │  sanitize: fromJson (flatten nested objects), trim, upper, map codes, remove separators
    │  validate: CORRUPT / VALIDATION / ORPHAN (dim_tax_form) / DUPLICATE (ackNo)
    │  transform: dim_taxpayer rows, dim_tax_period rows, date keys, fact rows (26 measures)
    ▼
 ONE PostgreSQL transaction (application connection, no staging):
    dim_taxpayer UPSERT → dim_tax_period UPSERT → dim_date UPSERT → fact_vat_return UPSERT (keys by sub-select)
-   → meta_rejected_record → meta_watermark
-   COMMIT (all) / ROLLBACK (nothing) → meta_pipeline_run.status
+   → meta_rejected_record → meta_pipeline.last_run_time
+   COMMIT (all) / ROLLBACK (nothing) → meta_pipeline_run.pipeline_status
+   successful run → lineage: meta_asset, meta_lineage (automatic), meta_column_lineage (11 declared columns)
 ```
 
 ## 10. Implementation
@@ -338,7 +339,7 @@ ONE PostgreSQL transaction (application connection, no staging):
 |---|---|
 | first run (01) | read 21, valid 14, rejected 7 -> dim_taxpayer 6, dim_tax_period 3, fact 14; SUCCESS_WITH_FAILED; no `etl_staging` table created; master unchanged (69: every message was seeded) |
 | incremental (02) | read 6, valid 5, rejected 1 -> fact 17, taxpayer 7, Asante renamed, 612 = APRV, 619 loaded |
-| **forced failure** (fact insert fails after the dimensions were written) | FAILED, `loaded_count` 0. **Rolled back:** the new taxpayer, the rejected row, the new master message and the watermark. The run row stays FAILED with the error message |
+| **forced failure** (fact insert fails after the dimensions were written) | FAILED. **Rolled back:** the new taxpayer, the rejected row, the new master message and `last_run_time`. The run row stays FAILED with the error message |
 | same window again after the fix | read the same 2 documents, both handled; the new message got `error_id` 70 (no gap) |
 | partly fixed record (3 errors -> 1) | the 2 fixed error rows are removed, the remaining one has `attempt_count + 1` |
 | `sales-pipeline` (staging path, regression) | unchanged: read 94, valid 80, rejected 16 |

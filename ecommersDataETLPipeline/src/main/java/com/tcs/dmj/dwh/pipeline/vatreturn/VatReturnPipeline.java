@@ -4,7 +4,9 @@ import com.tcs.dmj.dwh.connector.source.SourceBatch;
 import com.tcs.dmj.dwh.connector.source.SourceDefinition;
 import com.tcs.dmj.dwh.connector.target.DateDimension;
 import com.tcs.dmj.dwh.connector.target.DirectPostgresWriter.KeyLookup;
+import com.tcs.dmj.dwh.enums.MappingType;
 import com.tcs.dmj.dwh.pipeline.AbstractEtlPipeline;
+import com.tcs.dmj.dwh.pipeline.ColumnLineage;
 import com.tcs.dmj.dwh.pipeline.PipelineContext;
 import com.tcs.dmj.dwh.pipeline.PipelineToolkit;
 import org.apache.spark.sql.Dataset;
@@ -28,7 +30,7 @@ import static com.tcs.dmj.dwh.pipeline.vatreturn.VatReturnSchemaMapper.toTyped;
  *   seeded reference dimensions: dim_tax_form, dim_vat_return_type, dim_vat_return_status, dim_filing_channel
  *
  * directLoad() = true: every table above, the rejected records (+ new messages in meta_error_master) and the
- * watermark are written in ONE database transaction. COMMIT = all of it, any error = ROLLBACK = nothing.
+ * last_run_time are written in ONE database transaction. COMMIT = all of it, any error = ROLLBACK = nothing.
  *
  * Design and sample data: sample-data/vat-return-pipeline/vat-return-pipeline.md
  * Trigger: POST /api/admin/dwh/pipelines/vat-return-pipeline/run
@@ -64,9 +66,7 @@ public class VatReturnPipeline extends AbstractEtlPipeline {
 
     @Override
     public String description() {
-        return "VAT returns (vat_return_coll) -> star schema: dim_taxpayer, dim_tax_period, dim_tax_form, "
-                + "dim_vat_return_type, dim_vat_return_status, dim_filing_channel, dim_date, fact_vat_return. "
-                + "Direct load (no staging), all-or-nothing transaction";
+        return "VAT return star: vat_return_coll -> taxpayer, period, form dims, fact_vat_return (all-or-nothing)";
     }
 
     @Override
@@ -79,7 +79,31 @@ public class VatReturnPipeline extends AbstractEtlPipeline {
         return List.of(DIM_TAXPAYER, DIM_TAX_PERIOD, DateDimension.TABLE, FACT_VAT_RETURN);
     }
 
-    /** All tables of this pipeline + rejects + watermark in ONE transaction, written without staging tables. */
+    /**
+     * Column lineage of the regulatory fields (meta.meta_column_lineage). The table lineage (which collections /
+     * tables feed which table) is found automatically from the loads.
+     */
+    @Override
+    public List<ColumnLineage> columnLineage() {
+        String source = VatReturnSources.VAT_RETURNS.collection();
+        return List.of(
+                ColumnLineage.of(source, "ackNo", FACT_VAT_RETURN, "ack_no", MappingType.RENAMED),
+                ColumnLineage.of(source, "tin", DIM_TAXPAYER, "tin", MappingType.DIRECT),
+                ColumnLineage.of(source, "tin", FACT_VAT_RETURN, "taxpayer_key", MappingType.LOOKUP),
+                ColumnLineage.of(source, "taxpayerName", DIM_TAXPAYER, "taxpayer_name", MappingType.RENAMED),
+                ColumnLineage.of(source, "rtnRegisterVatDTO.crtDt", FACT_VAT_RETURN, "filed_at", MappingType.DERIVED),
+                ColumnLineage.of(source, "vatComputationData.totalOutputTaxValue", FACT_VAT_RETURN, "total_output_tax",
+                        MappingType.RENAMED),
+                ColumnLineage.of(source, "vatComputationData.netOutputTaxValue", FACT_VAT_RETURN, "net_output_tax",
+                        MappingType.RENAMED),
+                ColumnLineage.of(source, "vatComputationData.netPayableValue", FACT_VAT_RETURN, "net_payable",
+                        MappingType.RENAMED),
+                ColumnLineage.of(source, "penaltyAmount", FACT_VAT_RETURN, "penalty_amount", MappingType.RENAMED),
+                ColumnLineage.of(source, "interest", FACT_VAT_RETURN, "interest_amount", MappingType.RENAMED),
+                ColumnLineage.of(source, "netTax", FACT_VAT_RETURN, "net_tax", MappingType.RENAMED));
+    }
+
+    /** All tables of this pipeline + rejects + last_run_time in ONE transaction, written without staging tables. */
     @Override
     public boolean directLoad() {
         return true;

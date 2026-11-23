@@ -53,7 +53,7 @@ application:
       batch-size: 1000
 
     # Incremental load: every source reads only documents whose timestamp field (SourceDefinition
-    # latestRecordColumn, e.g. updatedAt) is after its last watermark (meta.meta_watermark).
+    # latestRecordColumn, e.g. updatedAt) is after the pipeline's last_run_time (meta.meta_pipeline).
     # MongoDB is only READ, the ETL never writes to it.
 
     quality:

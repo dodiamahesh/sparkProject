@@ -14,8 +14,8 @@ import org.apache.spark.sql.Row;
  * @param sourceCount documents read (active + deleted)
  * @param derived     true = the rows do not come straight from a MongoDB collection but were built from
  *                    another batch (e.g. the items[] array of an order, one row per line). Rejected rows are
- *                    saved as usual, but they have NO watermark of their own: the parent collection's
- *                    watermark covers them.
+ *                    saved as usual, but they have NO window of their own: the parent collection
+ *                    window covers them.
  */
 public record SourceBatch(
         SourceDefinition source,

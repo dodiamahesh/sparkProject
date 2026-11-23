@@ -19,10 +19,14 @@
 
 -- =====================================================================
 -- PART 1: META tables (shared by EVERY job; safe to run again: IF NOT EXISTS)
+--   meta.meta_pipeline         registry of the pipelines (registered by the application at start-up)
+--                              + last_run_time = incremental watermark of the pipeline
 --   meta.meta_pipeline_run     one row per pipeline run (status, counters, error)
+--   meta.meta_asset            lineage assets: MongoDB collections and PostgreSQL tables
+--   meta.meta_lineage          table-level lineage: source asset -> target asset, per pipeline
+--   meta.meta_column_lineage   selected field-to-field lineage (critical columns only)
 --   meta.meta_error_master     every possible data-quality error, once (error_type + message)
 --   meta.meta_rejected_record  bad records: one row per record + failed rule, error_id -> meta_error_master
---   meta.meta_watermark        incremental watermark per pipeline + collection (timestamp based)
 --   etl_staging                temporary tables used by the UPSERT (created and dropped by the job)
 --   silver.dim_date            shared (conformed) date dimension, filled by the jobs
 -- =====================================================================
@@ -30,35 +34,144 @@ CREATE SCHEMA IF NOT EXISTS meta;
 CREATE SCHEMA IF NOT EXISTS etl_staging;
 CREATE SCHEMA IF NOT EXISTS silver;
 
--- status: SUCCESS             = every record read was loaded (nothing rejected)
---         SUCCESS_WITH_FAILED = some records loaded, some rejected
---         FAILED              = all records rejected, OR exception / reject gate, OR application stopped (interrupted)
---         NULL                = the run is still busy
-CREATE TABLE IF NOT EXISTS meta.meta_pipeline_run (
-    job_run_id       BIGSERIAL    PRIMARY KEY,
-    pipeline_name    VARCHAR(100) NOT NULL,
-    window_end       TIMESTAMPTZ  NOT NULL,              -- this run read data with updatedAt <= window_end
-    status           VARCHAR(30)  CHECK (status IN ('SUCCESS', 'SUCCESS_WITH_FAILED', 'FAILED')),
-    triggered_by     VARCHAR(100),
-    start_time       TIMESTAMP    NOT NULL DEFAULT now(),
-    end_time         TIMESTAMP,
-    duration_ms      BIGINT,
-    source_count     BIGINT       NOT NULL DEFAULT 0,    -- records read from MongoDB
-    valid_count      BIGINT       NOT NULL DEFAULT 0,    -- records that passed all checks
-    rejected_count   BIGINT       NOT NULL DEFAULT 0,    -- records that failed (includes duplicates)
-    duplicate_count  BIGINT       NOT NULL DEFAULT 0,    -- part of rejected_count
-    deleted_count    BIGINT       NOT NULL DEFAULT 0,    -- documents soft-deleted at the source (applied, not validated)
-    loaded_count     BIGINT       NOT NULL DEFAULT 0,    -- rows inserted/updated in target tables
-    error_message    TEXT,                               -- short failure reason
-    error_detail     TEXT                                -- stack trace (truncated)
-);
-CREATE INDEX IF NOT EXISTS idx_pipeline_run_pipeline ON meta.meta_pipeline_run (pipeline_name, start_time DESC);
-CREATE INDEX IF NOT EXISTS idx_pipeline_run_status   ON meta.meta_pipeline_run (status);
--- upgrade of a database created before soft delete existed (re-run safe)
-ALTER TABLE meta.meta_pipeline_run ADD COLUMN IF NOT EXISTS deleted_count BIGINT NOT NULL DEFAULT 0;
+-- A database created with the OLD meta tables (meta_pipeline_run.job_run_id, meta_watermark) must be upgraded
+-- by hand once: this file never drops run history on its own.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+                WHERE table_schema = 'meta' AND table_name = 'meta_pipeline_run' AND column_name = 'job_run_id') THEN
+        RAISE EXCEPTION 'meta.meta_pipeline_run has the OLD structure (job_run_id). Run once: '
+            'DROP TABLE meta.meta_pipeline_run; DROP TABLE IF EXISTS meta.meta_watermark; '
+            '(run history and watermarks are lost: the next run of every pipeline reads everything again) '
+            'and run this file again.';
+    END IF;
+END $$;
 
--- the step table is no longer used: removed from a database created before (re-run safe)
-DROP TABLE IF EXISTS meta.meta_pipeline_step;
+-- updated_at of the meta tables is maintained by this trigger function
+CREATE OR REPLACE FUNCTION meta.set_updated_at() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    NEW.updated_at := CURRENT_TIMESTAMP;
+    RETURN NEW;
+END $$;
+
+-- ---------------------------------------------------------------------
+-- meta_pipeline: one row per pipeline. The application inserts / updates its pipelines at start-up
+-- (pipelines removed from the code get active_flag 'N'). last_run_time is the incremental watermark:
+-- a run reads updatedAt > last_run_time AND <= run start, and moves it forward only when the run succeeded.
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS meta.meta_pipeline (
+    pipeline_id           BIGINT        GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+    pipeline_name         VARCHAR(30)   NOT NULL UNIQUE,
+    pipeline_type         VARCHAR(30)   NOT NULL
+                          CHECK (pipeline_type IN ('SOURCE_TO_RAW', 'RAW_TO_CURATED', 'CURATED_TO_AGGREGATED')),
+    airflow_dag_id        VARCHAR(30)   UNIQUE,                 -- NULL: not scheduled by Airflow
+    application_job_name  VARCHAR(50),                          -- Spark application name
+    pipeline_description  VARCHAR(100),
+    last_run_time         TIMESTAMPTZ,                          -- NULL = never succeeded: next run reads everything
+    active_flag           CHAR(1)       NOT NULL DEFAULT 'Y' CHECK (active_flag IN ('Y', 'N')),
+    created_at            TIMESTAMPTZ   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at            TIMESTAMPTZ   NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE OR REPLACE TRIGGER trg_meta_pipeline_updated_at BEFORE UPDATE ON meta.meta_pipeline
+    FOR EACH ROW EXECUTE FUNCTION meta.set_updated_at();
+
+-- ---------------------------------------------------------------------
+-- meta_pipeline_run: one row per run.
+--   pipeline_status: RUNNING             = the run is busy (end_time NULL)
+--                    SUCCESS             = every record read was loaded (nothing rejected)
+--                    SUCCESS_WITH_FAILED = some records loaded, some rejected
+--                    FAILED              = all records rejected, OR exception / reject gate, OR application stopped
+--   last_run_time  : the run reads data up to this time; it becomes meta_pipeline.last_run_time on success
+--   success_records: valid (loaded) + soft-deleted at the source; failed_records: rejected (incl. duplicates)
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS meta.meta_pipeline_run (
+    pipeline_run_id   BIGINT         GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+    pipeline_id       BIGINT         NOT NULL REFERENCES meta.meta_pipeline (pipeline_id),
+    start_time        TIMESTAMPTZ    NOT NULL,
+    end_time          TIMESTAMPTZ,
+    pipeline_status   VARCHAR(20)    NOT NULL
+                      CHECK (pipeline_status IN ('RUNNING', 'SUCCESS', 'SUCCESS_WITH_FAILED', 'FAILED')),
+    total_records     BIGINT         CHECK (total_records >= 0),
+    success_records   BIGINT         CHECK (success_records >= 0),
+    failed_records    BIGINT         CHECK (failed_records >= 0),
+    last_run_time     TIMESTAMPTZ    NOT NULL,
+    error_code        VARCHAR(100),
+    error_message     VARCHAR(1000),
+    created_at        TIMESTAMPTZ    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at        TIMESTAMPTZ    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT ck_pipeline_run_end CHECK (end_time IS NULL OR end_time >= start_time)
+);
+CREATE INDEX IF NOT EXISTS idx_pipeline_run_pipeline ON meta.meta_pipeline_run (pipeline_id, start_time DESC);
+CREATE INDEX IF NOT EXISTS idx_pipeline_run_status   ON meta.meta_pipeline_run (pipeline_status);
+CREATE OR REPLACE TRIGGER trg_meta_pipeline_run_updated_at BEFORE UPDATE ON meta.meta_pipeline_run
+    FOR EACH ROW EXECUTE FUNCTION meta.set_updated_at();
+
+-- ---------------------------------------------------------------------
+-- meta_asset: every collection / table that appears in the lineage (filled by the application).
+-- An asset is unique by platform + database + schema + name.
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS meta.meta_asset (
+    asset_id           BIGINT        GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+    asset_name         VARCHAR(100)  NOT NULL,                  -- collection or table name
+    asset_type         VARCHAR(30)   NOT NULL
+                       CHECK (asset_type IN ('TABLE', 'VIEW', 'MATERIALIZED_VIEW', 'COLLECTION', 'API', 'DATASET', 'REPORT')),
+    platform           VARCHAR(30)   NOT NULL CHECK (platform IN ('MONGODB', 'EDB_PAS', 'FILESYSTEM', 'API')),
+    database_name      VARCHAR(64),
+    schema_name        VARCHAR(64),                             -- NULL for MongoDB
+    layer_name         VARCHAR(20)   NOT NULL CHECK (layer_name IN ('SOURCE', 'RAW', 'CURATED', 'AGGREGATED')),
+    asset_description  VARCHAR(100),
+    active_flag        CHAR(1)       NOT NULL DEFAULT 'Y' CHECK (active_flag IN ('Y', 'N')),
+    created_at         TIMESTAMPTZ   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at         TIMESTAMPTZ   NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_meta_asset
+    ON meta.meta_asset (platform, (COALESCE(database_name, '')), (COALESCE(schema_name, '')), asset_name);
+CREATE OR REPLACE TRIGGER trg_meta_asset_updated_at BEFORE UPDATE ON meta.meta_asset
+    FOR EACH ROW EXECUTE FUNCTION meta.set_updated_at();
+
+-- ---------------------------------------------------------------------
+-- meta_lineage: table-level edges (upstream tracing / downstream impact). Found automatically by the
+-- application from every load of a successful run; edges of a pipeline that are not seen any more get 'N'.
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS meta.meta_lineage (
+    lineage_id        BIGINT       GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+    source_asset_id   BIGINT       NOT NULL REFERENCES meta.meta_asset (asset_id),
+    target_asset_id   BIGINT       NOT NULL REFERENCES meta.meta_asset (asset_id),
+    pipeline_id       BIGINT       REFERENCES meta.meta_pipeline (pipeline_id),
+    active_flag       CHAR(1)      NOT NULL DEFAULT 'Y' CHECK (active_flag IN ('Y', 'N')),
+    created_at        TIMESTAMPTZ  NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at        TIMESTAMPTZ  NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT ck_lineage_not_self CHECK (source_asset_id <> target_asset_id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_meta_lineage
+    ON meta.meta_lineage (source_asset_id, target_asset_id, (COALESCE(pipeline_id, 0)));
+CREATE OR REPLACE TRIGGER trg_meta_lineage_updated_at BEFORE UPDATE ON meta.meta_lineage
+    FOR EACH ROW EXECUTE FUNCTION meta.set_updated_at();
+
+-- ---------------------------------------------------------------------
+-- meta_column_lineage: OPTIONAL, selective field-to-field lineage for critical fields (regulatory,
+-- reporting, calculated, ...). Declared in the code (EtlPipeline.columnLineage()), written on a successful run.
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS meta.meta_column_lineage (
+    column_lineage_id   BIGINT        GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+    pipeline_id         BIGINT        REFERENCES meta.meta_pipeline (pipeline_id),
+    source_asset_id     BIGINT        NOT NULL REFERENCES meta.meta_asset (asset_id),
+    source_column_name  VARCHAR(100)  NOT NULL,                 -- nested MongoDB fields with dots
+    target_asset_id     BIGINT        NOT NULL REFERENCES meta.meta_asset (asset_id),
+    target_column_name  VARCHAR(100)  NOT NULL,
+    mapping_type        VARCHAR(30)   NOT NULL DEFAULT 'DIRECT'
+                        CHECK (mapping_type IN ('DIRECT', 'RENAMED', 'DERIVED', 'AGGREGATED', 'LOOKUP', 'CONSTANT',
+                                                'CONDITIONAL', 'MASKED', 'HASHED')),
+    active_flag         CHAR(1)       NOT NULL DEFAULT 'Y' CHECK (active_flag IN ('Y', 'N')),
+    created_at          TIMESTAMPTZ   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TIMESTAMPTZ   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT ck_column_lineage_not_self CHECK (source_asset_id <> target_asset_id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_meta_column_lineage
+    ON meta.meta_column_lineage (source_asset_id, source_column_name, target_asset_id, target_column_name,
+                                 (COALESCE(pipeline_id, 0)));
+CREATE OR REPLACE TRIGGER trg_meta_column_lineage_updated_at BEFORE UPDATE ON meta.meta_column_lineage
+    FOR EACH ROW EXECUTE FUNCTION meta.set_updated_at();
 
 -- One row per possible error. Seeded at the end of this file with every error of this job; a rule that is
 -- added to the code later gets its row automatically on the first run that rejects a record with it.
@@ -72,6 +185,7 @@ CREATE TABLE IF NOT EXISTS meta.meta_error_master (
 );
 
 -- A record that broke 2 rules has 2 rows (same source_id, different error_id).
+-- first_job_run_id / last_job_run_id = meta.meta_pipeline_run.pipeline_run_id
 CREATE TABLE IF NOT EXISTS meta.meta_rejected_record (
     rejected_record_id  BIGSERIAL    PRIMARY KEY,
     pipeline_name       VARCHAR(100) NOT NULL,
@@ -90,16 +204,16 @@ CREATE TABLE IF NOT EXISTS meta.meta_rejected_record (
 );
 CREATE INDEX IF NOT EXISTS idx_rejected_record_error ON meta.meta_rejected_record (error_id);
 
--- incremental watermark: up to which timestamp did pipeline X read collection Y (moved only after a successful run)
-CREATE TABLE IF NOT EXISTS meta.meta_watermark (
-    pipeline_name      VARCHAR(100) NOT NULL,
-    source_collection  VARCHAR(100) NOT NULL,
-    watermark_field    VARCHAR(100) NOT NULL,            -- e.g. updatedAt (BSON Date in MongoDB)
-    last_watermark     TIMESTAMPTZ  NOT NULL,            -- next run reads watermark_field > last_watermark
-    last_job_run_id    BIGINT       NOT NULL,
-    updated_at         TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    PRIMARY KEY (pipeline_name, source_collection)       -- no row = first run: read everything
-);
+-- tables that are no longer used (removed from a database created before; re-run safe)
+DROP TABLE IF EXISTS meta.meta_pipeline_step;
+-- meta_watermark is replaced by meta.meta_pipeline.last_run_time (dropped only once the new run table exists)
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+                WHERE table_schema = 'meta' AND table_name = 'meta_pipeline_run' AND column_name = 'pipeline_run_id') THEN
+        DROP TABLE IF EXISTS meta.meta_watermark;
+    END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS silver.dim_date (
     date_key      INT         PRIMARY KEY,               -- yyyyMMdd, e.g. 20261015

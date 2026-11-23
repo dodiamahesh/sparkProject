@@ -20,7 +20,7 @@ import java.util.stream.Collectors;
  *
  * WHICH documents are read is decided by:
  *   1. the incremental window on the source's timestamp field ({@link SourceDefinition#latestRecordColumn()},
- *      e.g. updatedAt):  updatedAt &gt; last watermark AND &lt;= start of this run
+ *      e.g. updatedAt):  updatedAt &gt; meta_pipeline.last_run_time AND &lt;= start of this run
  *   2. the optional source filter of the {@link SourceDefinition} (e.g. skip test documents)
  *
  * The $match stages run INSIDE MongoDB, so only the documents of the window travel to Spark.

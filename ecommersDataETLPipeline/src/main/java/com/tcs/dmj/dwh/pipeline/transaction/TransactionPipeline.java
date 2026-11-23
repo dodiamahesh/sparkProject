@@ -43,8 +43,7 @@ public class TransactionPipeline extends AbstractEtlPipeline {
 
     @Override
     public String description() {
-        return "Multi collection example: customers + accounts + merchants + transactions -> "
-                + "dim_customer, dim_account, dim_merchant, dim_date, fact_transaction";
+        return "Banking star: customers, accounts, merchants, transactions -> fact_transaction";
     }
 
     @Override

@@ -47,8 +47,7 @@ public class EcommerceOrderPipeline extends AbstractEtlPipeline {
 
     @Override
     public String description() {
-        return "Snowflake example: ecom_categories + ecom_products + ecom_customers + ecom_orders + ecom_order_items -> "
-                + "dim_category <- dim_product, dim_ecom_customer, dim_date, fact_order, fact_order_item";
+        return "Order snowflake: categories, products, customers, orders, order items -> fact_order, fact_order_item";
     }
 
     @Override

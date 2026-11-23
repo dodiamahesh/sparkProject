@@ -73,7 +73,7 @@ public class RejectedRecordRepository {
      *
      * All three in ONE transaction.
      */
-    public void saveFromStaging(String stagingTable, String pipelineName, String collection, long jobRunId) {
+    public void saveFromStaging(String stagingTable, String pipelineName, String collection, long pipelineRunId) {
         transaction.executeWithoutResult(status -> {
             // NOT EXISTS first: ON CONFLICT alone would use up an error_id for every known error on every run
             jdbc.update("""
@@ -115,7 +115,7 @@ public class RejectedRecordRepository {
                            attempt_count    = meta.meta_rejected_record.attempt_count + 1,
                            last_job_run_id  = EXCLUDED.last_job_run_id,
                            last_rejected_at = now()
-                    """.formatted(stagingTable), pipelineName, collection, jobRunId, jobRunId);
+                    """.formatted(stagingTable), pipelineName, collection, pipelineRunId, pipelineRunId);
         });
     }
 
@@ -131,7 +131,7 @@ public class RejectedRecordRepository {
      * Runs in the CALLER's transaction (the job's all-or-nothing transaction); alone it gets its own.
      * Rejected rows are few, so they are grouped per record in driver memory.
      */
-    public void saveDirect(Iterator<Row> errorRows, String pipelineName, String collection, long jobRunId) {
+    public void saveDirect(Iterator<Row> errorRows, String pipelineName, String collection, long pipelineRunId) {
         // source_id -> its errors (type|message -> row)
         Map<String, Map<String, Row>> errorsBySource = new LinkedHashMap<>();
         Map<String, Row> distinctErrors = new LinkedHashMap<>();
@@ -197,8 +197,8 @@ public class RejectedRecordRepository {
                 ps.setString(4, row.getAs(QualityColumns.REJECTED_BUSINESS_KEY));
                 ps.setString(5, row.getAs(QualityColumns.FIELD_VALUE));
                 ps.setString(6, row.getAs(QualityColumns.REJECTED_RAW_RECORD));
-                ps.setLong(7, jobRunId);
-                ps.setLong(8, jobRunId);
+                ps.setLong(7, pipelineRunId);
+                ps.setLong(8, pipelineRunId);
                 ps.setString(9, row.getAs(QualityColumns.ERROR_TYPE));
                 ps.setString(10, row.getAs(QualityColumns.ERROR_MESSAGE));
             });

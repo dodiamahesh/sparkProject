@@ -28,8 +28,9 @@ MongoDB ──(Mongo Spark Connector)──> Spark DataFrame
 | Staging thi silver ma merge (upsert) | `JdbcTemplate`: `INSERT ... SELECT ... ON CONFLICT DO UPDATE` | `PostgresWriter.upsert()` |
 | SCD2 dimension | `JdbcTemplate`: 3 SQL ek `TransactionTemplate` ma | `Scd2Writer` |
 | Lookups / surrogate keys vaanchva | Spark-JDBC read | `PostgresReader` |
-| `meta_pipeline_run` | `JdbcTemplate`: `INSERT ... RETURNING`, `UPDATE` | `JobRunRepository` |
-| `meta_watermark` | `JdbcTemplate`: `INSERT ... ON CONFLICT DO UPDATE` | `WatermarkRepository` |
+| `meta_pipeline` (+ `last_run_time` = watermark) | `JdbcTemplate`: `INSERT ... ON CONFLICT DO UPDATE`, `UPDATE` | `MetaPipelineRepository` |
+| `meta_pipeline_run` | `JdbcTemplate`: `INSERT ... SELECT ... RETURNING`, `UPDATE` | `MetaPipelineRunRepository` |
+| `meta_asset`, `meta_lineage`, `meta_column_lineage` | `JdbcTemplate`: `INSERT ... ON CONFLICT` (expression index) | `MetaAssetRepository`, `MetaLineageRepository`, `MetaColumnLineageRepository` |
 | `meta_error_master` + `meta_rejected_record` | Spark-JDBC thi staging, pachhi `JdbcTemplate` 3 SQL ek transaction ma | `RejectedRecordRepository` |
 
 `JdbcTemplate` = application nu connection (Spring `DataSource`, Hikari pool), plain SQL.
@@ -181,7 +182,7 @@ laakho rows maate laakho statements, ane persistence context (first-level cache)
 
 ### 3) PostgreSQL na features joie: JPA ma te native SQL j bane
 
-`ON CONFLICT DO UPDATE` (upsert), `RETURNING job_run_id`, `DISTINCT ON`, `CAST(... AS JSONB)`,
+`ON CONFLICT DO UPDATE` (upsert), `RETURNING pipeline_run_id`, `DISTINCT ON`, `CAST(... AS JSONB)`,
 `WITH removed AS (DELETE ... RETURNING ...)`: aa badhu JPQL ma nathi. JPA vaaprie to pan `@Query(nativeQuery = true)`
 lakhvu pade: etle JPA no faydo shunya, ane upar thi ek layer.
 
@@ -211,7 +212,7 @@ samajvu na pade.
 
 ### 8) Meta tables naana ane saral chhe: ORM ni jarur j nathi
 
-`meta_pipeline_run`, `meta_watermark`: thoda columns, koi relationship / object graph nahi,
+`meta_pipeline`, `meta_pipeline_run`, `meta_asset`, `meta_lineage`: thoda columns, koi relationship / object graph nahi,
 caching nahi. ORM (relationships, lazy loading, caching) na kaam ni ahi koi jarur nathi. Aapde tables pan jaate
 banavta nathi (`03_postgres_tables.sql`), etle `ddl-auto` jevi suvidha pan kaam ni nathi.
 
@@ -223,8 +224,8 @@ Hibernate metamodel, entity scanning, dialect, second-level cache config: aamaan
 ### JPA kyaare saaru?
 
 CRUD application (forms, REST, object graph, relationships) maate JPA saaru chhe. **Bulk ETL** maate nahi.
-Repository style j joie to **Spring Data JDBC** (Hibernate / ANTLR vagar) `meta_pipeline_run` /
-`meta_watermark` maate vaapri shakaay. Pan upsert, composite key ane set-based kaam maate tema pan `@Query` ma
+Repository style j joie to **Spring Data JDBC** (Hibernate / ANTLR vagar) `meta_pipeline` /
+`meta_pipeline_run` maate vaapri shakaay. Pan upsert, composite key ane set-based kaam maate tema pan `@Query` ma
 SQL j lakhvu pade, etle aa project ma `JdbcTemplate` j sauthi saral ane saacho rasto chhe.
 
 ---

@@ -12,6 +12,7 @@ import org.apache.spark.sql.Row;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -23,7 +24,9 @@ import java.util.List;
  *   load(ctx, mapper.toDimPayer(typed), "silver.dim_payer", "payer_id");         // L
  * </pre>
  *
- * Saving rejected records and advancing the watermarks happens automatically after run() succeeds.
+ * Saving rejected records and advancing last_run_time happens automatically after run() succeeds.
+ * Every load also records its TABLE lineage (which collections / tables it was built from, see
+ * {@link LineageCollector}); it is written to meta.meta_lineage when the run succeeds.
  */
 public abstract class AbstractEtlPipeline implements EtlPipeline {
 
@@ -55,11 +58,13 @@ public abstract class AbstractEtlPipeline implements EtlPipeline {
 
     /** Loads a slowly changing dimension TYPE 2 (history kept). See {@link Scd2Writer}. */
     protected long loadScd2(PipelineContext context, Dataset<Row> rows, Scd2Writer.Scd2Spec spec) {
+        toolkit.lineageCollector().record(context, rows, spec.table(), List.of());
         return loaded(context, spec.table(), toolkit.scd2Writer().load(context, rows, spec));
     }
 
     /** UPSERT rows into a PostgreSQL table, matching on the business key column(s). */
     protected long load(PipelineContext context, Dataset<Row> rows, String targetTable, String... businessKeyColumns) {
+        toolkit.lineageCollector().record(context, rows, targetTable, List.of());
         return loaded(context, targetTable, toolkit.postgresWriter().upsert(context, rows, targetTable, businessKeyColumns));
     }
 
@@ -79,6 +84,8 @@ public abstract class AbstractEtlPipeline implements EtlPipeline {
      */
     protected long loadDirect(PipelineContext context, Dataset<Row> rows, String targetTable, List<String> keyColumns,
                               DirectPostgresWriter.KeyLookup... lookups) {
+        toolkit.lineageCollector().record(context, rows, targetTable,
+                Arrays.stream(lookups).map(DirectPostgresWriter.KeyLookup::dimensionTable).toList());
         return loaded(context, targetTable, toolkit.directWriter().upsert(context, rows, targetTable, keyColumns, List.of(lookups)));
     }
 
@@ -124,7 +131,7 @@ public abstract class AbstractEtlPipeline implements EtlPipeline {
 
     private static long loaded(PipelineContext context, String table, long count) {
         context.metrics().addLoaded(count);
-        log.info("[job {}] loaded {}: {} rows", context.jobRunId(), table, count);
+        log.info("[job {}] loaded {}: {} rows", context.pipelineRunId(), table, count);
         return count;
     }
 

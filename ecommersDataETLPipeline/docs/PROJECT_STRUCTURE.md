@@ -1,6 +1,6 @@
 # 🗂️ Project files: dmj-dwh
 
-> **111 files**: 85 Java (☕), plus scripts, SQL, docs and config. Base package `com.tcs.dmj.dwh`. The `target` build folder, `.git` and `.vscode` are left out. Paths are relative to the project folder.
+> **125 files**: 99 Java (☕), plus scripts, SQL, docs and config. Base package `com.tcs.dmj.dwh`. The `target` build folder, `.git` and `.vscode` are left out. Paths are relative to the project folder.
 
 **Legend:** ☕ Java · 🍃 Mongo script · 🐘 PostgreSQL · 📝 Markdown · ⚙️ YAML · 📦 Maven
 
@@ -33,21 +33,30 @@
 - ☕ `src\main\java\com\tcs\dmj\dwh\connector\target\SoftDeleteColumns.java`
 - ☕ `src\main\java\com\tcs\dmj\dwh\connector\target\SoftDeleteWriter.java`
 
-### 📂 src\main\java\com\tcs\dmj\dwh\domain  ·  _2 files_
+### 📂 src\main\java\com\tcs\dmj\dwh\domain  ·  _4 files_
 
-- ☕ `src\main\java\com\tcs\dmj\dwh\domain\JobRun.java`
+- ☕ `src\main\java\com\tcs\dmj\dwh\domain\MetaAsset.java`
+- ☕ `src\main\java\com\tcs\dmj\dwh\domain\MetaPipeline.java`
+- ☕ `src\main\java\com\tcs\dmj\dwh\domain\MetaPipelineRun.java`
 - ☕ `src\main\java\com\tcs\dmj\dwh\domain\RejectedRecord.java`
 
-### 📂 src\main\java\com\tcs\dmj\dwh\enums  ·  _2 files_
+### 📂 src\main\java\com\tcs\dmj\dwh\enums  ·  _7 files_
 
+- ☕ `src\main\java\com\tcs\dmj\dwh\enums\AssetType.java`
 - ☕ `src\main\java\com\tcs\dmj\dwh\enums\ErrorType.java`
-- ☕ `src\main\java\com\tcs\dmj\dwh\enums\JobStatus.java`
+- ☕ `src\main\java\com\tcs\dmj\dwh\enums\LayerName.java`
+- ☕ `src\main\java\com\tcs\dmj\dwh\enums\MappingType.java`
+- ☕ `src\main\java\com\tcs\dmj\dwh\enums\PipelineStatus.java`
+- ☕ `src\main\java\com\tcs\dmj\dwh\enums\PipelineType.java`
+- ☕ `src\main\java\com\tcs\dmj\dwh\enums\Platform.java`
 
-### 📂 src\main\java\com\tcs\dmj\dwh\pipeline  ·  _6 files_
+### 📂 src\main\java\com\tcs\dmj\dwh\pipeline  ·  _8 files_
 
 - ☕ `src\main\java\com\tcs\dmj\dwh\pipeline\AbstractEtlPipeline.java`
+- ☕ `src\main\java\com\tcs\dmj\dwh\pipeline\ColumnLineage.java`
 - ☕ `src\main\java\com\tcs\dmj\dwh\pipeline\EtlPipeline.java`
 - ☕ `src\main\java\com\tcs\dmj\dwh\pipeline\JobMetrics.java`
+- ☕ `src\main\java\com\tcs\dmj\dwh\pipeline\LineageCollector.java`
 - ☕ `src\main\java\com\tcs\dmj\dwh\pipeline\PipelineContext.java`
 - ☕ `src\main\java\com\tcs\dmj\dwh\pipeline\PipelineRegistry.java`
 - ☕ `src\main\java\com\tcs\dmj\dwh\pipeline\PipelineToolkit.java`
@@ -88,21 +97,25 @@
 - ☕ `src\main\java\com\tcs\dmj\dwh\pipeline\vatreturn\VatReturnSchemaMapper.java`
 - ☕ `src\main\java\com\tcs\dmj\dwh\pipeline\vatreturn\VatReturnSources.java`
 
-### 📂 src\main\java\com\tcs\dmj\dwh\repository  ·  _3 files_
+### 📂 src\main\java\com\tcs\dmj\dwh\repository  ·  _6 files_
 
-- ☕ `src\main\java\com\tcs\dmj\dwh\repository\JobRunRepository.java`
+- ☕ `src\main\java\com\tcs\dmj\dwh\repository\MetaAssetRepository.java`
+- ☕ `src\main\java\com\tcs\dmj\dwh\repository\MetaColumnLineageRepository.java`
+- ☕ `src\main\java\com\tcs\dmj\dwh\repository\MetaLineageRepository.java`
+- ☕ `src\main\java\com\tcs\dmj\dwh\repository\MetaPipelineRepository.java`
+- ☕ `src\main\java\com\tcs\dmj\dwh\repository\MetaPipelineRunRepository.java`
 - ☕ `src\main\java\com\tcs\dmj\dwh\repository\RejectedRecordRepository.java`
-- ☕ `src\main\java\com\tcs\dmj\dwh\repository\WatermarkRepository.java`
 
-### 📂 src\main\java\com\tcs\dmj\dwh\service  ·  _9 files_
+### 📂 src\main\java\com\tcs\dmj\dwh\service  ·  _10 files_
 
 - ☕ `src\main\java\com\tcs\dmj\dwh\service\DataQualityGateException.java`
-- ☕ `src\main\java\com\tcs\dmj\dwh\service\DwhJobService.java`
+- ☕ `src\main\java\com\tcs\dmj\dwh\service\DwhPipelineRunService.java`
 - ☕ `src\main\java\com\tcs\dmj\dwh\service\DwhPipelineService.java`
 - ☕ `src\main\java\com\tcs\dmj\dwh\service\EtlException.java`
-- ☕ `src\main\java\com\tcs\dmj\dwh\service\JobRunNotFoundException.java`
+- ☕ `src\main\java\com\tcs\dmj\dwh\service\LineageService.java`
 - ☕ `src\main\java\com\tcs\dmj\dwh\service\PipelineAlreadyRunningException.java`
 - ☕ `src\main\java\com\tcs\dmj\dwh\service\PipelineNotFoundException.java`
+- ☕ `src\main\java\com\tcs\dmj\dwh\service\PipelineRunNotFoundException.java`
 - ☕ `src\main\java\com\tcs\dmj\dwh\service\RejectedRecordService.java`
 - ☕ `src\main\java\com\tcs\dmj\dwh\service\SourceCommitService.java`
 
@@ -116,11 +129,12 @@
 - ☕ `src\main\java\com\tcs\dmj\dwh\service\dto\RejectedRecordSummaryDTO.java`
 - ☕ `src\main\java\com\tcs\dmj\dwh\service\dto\SourceInfoDTO.java`
 
-### 📂 src\main\java\com\tcs\dmj\dwh\service\impl  ·  _5 files_
+### 📂 src\main\java\com\tcs\dmj\dwh\service\impl  ·  _6 files_
 
-- ☕ `src\main\java\com\tcs\dmj\dwh\service\impl\DwhJobServiceImpl.java`
+- ☕ `src\main\java\com\tcs\dmj\dwh\service\impl\DwhPipelineRunServiceImpl.java`
 - ☕ `src\main\java\com\tcs\dmj\dwh\service\impl\DwhPipelineServiceImpl.java`
 - ☕ `src\main\java\com\tcs\dmj\dwh\service\impl\JobLockManager.java`
+- ☕ `src\main\java\com\tcs\dmj\dwh\service\impl\LineageServiceImpl.java`
 - ☕ `src\main\java\com\tcs\dmj\dwh\service\impl\RejectedRecordServiceImpl.java`
 - ☕ `src\main\java\com\tcs\dmj\dwh\service\impl\SourceCommitServiceImpl.java`
 
@@ -141,8 +155,8 @@
 
 ### 📂 src\main\java\com\tcs\dmj\dwh\web\rest  ·  _3 files_
 
-- ☕ `src\main\java\com\tcs\dmj\dwh\web\rest\DwhJobResource.java`
 - ☕ `src\main\java\com\tcs\dmj\dwh\web\rest\DwhPipelineResource.java`
+- ☕ `src\main\java\com\tcs\dmj\dwh\web\rest\DwhPipelineRunResource.java`
 - ☕ `src\main\java\com\tcs\dmj\dwh\web\rest\DwhRejectedRecordResource.java`
 
 ### 📂 src\main\java\com\tcs\dmj\dwh\web\rest\errors  ·  _2 files_

@@ -46,8 +46,7 @@ public class FulfillmentPipeline extends AbstractEtlPipeline {
 
     @Override
     public String description() {
-        return "Star example (depends on ecommerce-order-pipeline): ecom_warehouses + ecom_carriers + ecom_shipments -> "
-                + "dim_warehouse, dim_carrier, dim_date, dim_ecom_customer (shared), fact_shipment";
+        return "Fulfillment star: warehouses, carriers, shipments -> fact_shipment (run ecommerce-order first)";
     }
 
     @Override

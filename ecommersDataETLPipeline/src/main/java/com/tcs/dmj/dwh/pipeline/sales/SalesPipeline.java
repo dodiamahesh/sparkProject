@@ -37,9 +37,9 @@ import static com.tcs.dmj.dwh.pipeline.sales.SalesStarSchemaMapper.withOrderCust
  *
  * Order matters: products + customers first (orders need their keys), then orders, then payments
  * (a payment needs its order loaded). Rejects (document AND line level) end up in
- * meta.meta_rejected_record; the watermarks move only after everything was loaded.
+ * meta.meta_rejected_record; last_run_time moves only after everything was loaded.
  *
- * Trigger: POST /api/admin/dwh/pipelines/sales-pipeline/run   (incremental: updated_at after the last watermark)
+ * Trigger: POST /api/admin/dwh/pipelines/sales-pipeline/run   (incremental: updated_at after last_run_time)
  */
 @Component
 public class SalesPipeline extends AbstractEtlPipeline {
@@ -69,8 +69,7 @@ public class SalesPipeline extends AbstractEtlPipeline {
 
     @Override
     public String description() {
-        return "Job-2 (J2_SALES) star schema: products + customers + orders (items[]) + payments -> "
-                + "dim_product, dim_customer (SCD2), dim_order_status, dim_payment_method, dim_date, fact_sales, fact_payment";
+        return "Sales star (J2_SALES): products, customers (SCD2), orders, payments -> fact_sales, fact_payment";
     }
 
     @Override

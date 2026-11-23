@@ -1,6 +1,7 @@
 package com.tcs.dmj.dwh.pipeline;
 
 import com.tcs.dmj.dwh.connector.source.SourceDefinition;
+import com.tcs.dmj.dwh.enums.PipelineType;
 
 import java.util.List;
 
@@ -18,6 +19,7 @@ public interface EtlPipeline {
     /** Unique name used in the REST URL, e.g. "payment-pipeline". */
     String name();
 
+    /** Short description, stored in meta.meta_pipeline.pipeline_description (at most 100 characters). */
     String description();
 
     /**
@@ -34,13 +36,26 @@ public interface EtlPipeline {
     /** PostgreSQL tables this pipeline writes (shown in the API). */
     List<String> targetTables();
 
+    /** Functional category, stored in meta.meta_pipeline.pipeline_type. */
+    default PipelineType pipelineType() {
+        return PipelineType.RAW_TO_CURATED;
+    }
+
+    /**
+     * Selected field-to-field lineage for meta.meta_column_lineage (critical fields only; table lineage is found
+     * automatically). Written when a run succeeds. Default: none.
+     */
+    default List<ColumnLineage> columnLineage() {
+        return List.of();
+    }
+
     /** The pipeline logic: extract -> validate -> transform -> load. */
     void run(PipelineContext context);
 
     /**
      * false (default) = tables are loaded through etl_staging tables, every table commits on its own.
      * true = the pipeline writes DIRECTLY into its tables (AbstractEtlPipeline.loadDirect, no staging) and the whole
-     *        run is ONE database transaction: all tables + rejected records + watermarks commit together, or a
+     *        run is ONE database transaction: all tables + rejected records + last_run_time commit together, or a
      *        failure rolls everything back (all-or-nothing).
      */
     default boolean directLoad() {

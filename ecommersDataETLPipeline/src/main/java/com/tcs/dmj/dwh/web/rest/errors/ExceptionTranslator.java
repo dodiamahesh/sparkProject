@@ -1,7 +1,7 @@
 package com.tcs.dmj.dwh.web.rest.errors;
 
 import com.tcs.dmj.dwh.service.EtlException;
-import com.tcs.dmj.dwh.service.JobRunNotFoundException;
+import com.tcs.dmj.dwh.service.PipelineRunNotFoundException;
 import com.tcs.dmj.dwh.service.PipelineAlreadyRunningException;
 import com.tcs.dmj.dwh.service.PipelineNotFoundException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -25,7 +25,7 @@ public class ExceptionTranslator {
 
     private static final Logger log = LoggerFactory.getLogger(ExceptionTranslator.class);
 
-    @ExceptionHandler({PipelineNotFoundException.class, JobRunNotFoundException.class})
+    @ExceptionHandler({PipelineNotFoundException.class, PipelineRunNotFoundException.class})
     public ResponseEntity<ApiError> handleNotFound(EtlException e, HttpServletRequest request) {
         return build(HttpStatus.NOT_FOUND, e.getMessage(), request);
     }

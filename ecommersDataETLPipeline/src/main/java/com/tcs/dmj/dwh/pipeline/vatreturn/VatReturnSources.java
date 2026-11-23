@@ -82,7 +82,7 @@ final class VatReturnSources {
                     "rtnRegisterVatDTO", "additionalInputData", "penaltyAmount", "interest", "netTax", "delayDays",
                     "updatedAt")
             .businessKey("ackNo")                 // one filing = one acknowledgement number
-            .latestRecordColumn("updatedAt")      // watermark: must be set by the source on every insert / update
+            .latestRecordColumn("updatedAt")      // incremental field: must be set by the source on every insert / update
             .softDelete()                         // isDeleted = true at the source -> soft delete in silver
             .excludeTestRecords()
             .maxRejectPercent(30)

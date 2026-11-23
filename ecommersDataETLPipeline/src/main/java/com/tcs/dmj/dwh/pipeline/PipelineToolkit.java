@@ -20,15 +20,18 @@ public class PipelineToolkit {
     private final PostgresReader postgresReader;
     private final Scd2Writer scd2Writer;
     private final SoftDeleteWriter softDeleteWriter;
+    private final LineageCollector lineageCollector;
 
     public PipelineToolkit(SourceProcessor sourceProcessor, PostgresWriter postgresWriter, DirectPostgresWriter directWriter,
-                           PostgresReader postgresReader, Scd2Writer scd2Writer, SoftDeleteWriter softDeleteWriter) {
+                           PostgresReader postgresReader, Scd2Writer scd2Writer, SoftDeleteWriter softDeleteWriter,
+                           LineageCollector lineageCollector) {
         this.sourceProcessor = sourceProcessor;
         this.postgresWriter = postgresWriter;
         this.directWriter = directWriter;
         this.postgresReader = postgresReader;
         this.scd2Writer = scd2Writer;
         this.softDeleteWriter = softDeleteWriter;
+        this.lineageCollector = lineageCollector;
     }
 
     public SourceProcessor sourceProcessor() {
@@ -53,5 +56,9 @@ public class PipelineToolkit {
 
     public SoftDeleteWriter softDeleteWriter() {
         return softDeleteWriter;
+    }
+
+    public LineageCollector lineageCollector() {
+        return lineageCollector;
     }
 }

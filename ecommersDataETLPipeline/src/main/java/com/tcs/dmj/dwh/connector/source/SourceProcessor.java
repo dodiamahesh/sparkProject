@@ -3,7 +3,7 @@ package com.tcs.dmj.dwh.connector.source;
 import com.tcs.dmj.dwh.config.ApplicationProperties;
 import com.tcs.dmj.dwh.enums.ErrorType;
 import com.tcs.dmj.dwh.pipeline.PipelineContext;
-import com.tcs.dmj.dwh.repository.WatermarkRepository;
+import com.tcs.dmj.dwh.repository.MetaPipelineRepository;
 import com.tcs.dmj.dwh.service.DataQualityGateException;
 import com.tcs.dmj.dwh.service.constant.SparkTypes;
 import com.tcs.dmj.dwh.validation.DataQualityEngine;
@@ -37,13 +37,13 @@ import static org.apache.spark.sql.functions.trim;
 /**
  * The standard "first half" of every pipeline, for one source collection:
  *
- *   WINDOW (watermark) -> EXTRACT (MongoDB) -> SANITIZE -> SPLIT SOFT DELETES -> VALIDATE -> DE-DUPLICATE
+ *   WINDOW (last_run_time) -> EXTRACT (MongoDB) -> SANITIZE -> SPLIT SOFT DELETES -> VALIDATE -> DE-DUPLICATE
  *     -> split into valid / rejected -> REJECT GATE
  *
  * Every run is INCREMENTAL: only documents whose timestamp field is inside the window are read
  * (see {@link LoadWindow}). MongoDB is only READ, never updated.
  *
- * Rejected rows and the new watermark are NOT written here. They are written at the end of the job by
+ * Rejected rows and the new last_run_time are NOT written here. They are written at the end of the job by
  * {@code SourceCommitServiceImpl}, so a failed job changes nothing and the next run reads the same window again.
  */
 @Component
@@ -53,30 +53,30 @@ public class SourceProcessor {
 
     private final MongoSourceReader reader;
     private final DataQualityEngine qualityEngine;
-    private final WatermarkRepository watermarkRepository;
+    private final MetaPipelineRepository metaPipelineRepository;
     private final int rejectGateMinRecords;
 
     private static final String DELETED_FLAG = "_sd_deleted";
     private static final String LATEST_IS_DELETED = "_sd_latest_deleted";
 
     public SourceProcessor(MongoSourceReader reader, DataQualityEngine qualityEngine,
-                           WatermarkRepository watermarkRepository, ApplicationProperties properties) {
+                           MetaPipelineRepository metaPipelineRepository, ApplicationProperties properties) {
         this.reader = reader;
         this.qualityEngine = qualityEngine;
-        this.watermarkRepository = watermarkRepository;
+        this.metaPipelineRepository = metaPipelineRepository;
         this.rejectGateMinRecords = properties.quality().rejectGateMinRecords();
     }
 
     public SourceBatch process(PipelineContext context, SourceDefinition source, DataSanitizer sanitizer, DataQualityRules rules) {
         String collection = source.collection();
 
-        // 0. WINDOW: last watermark of this pipeline + collection -> start of this run
-        LoadWindow window = watermarkRepository.window(context.pipelineName(), collection, context.windowEnd());
+        // 0. WINDOW: last_run_time of this pipeline (meta.meta_pipeline) -> start of this run
+        LoadWindow window = metaPipelineRepository.window(context.pipelineName(), context.windowEnd());
 
         // 1. EXTRACT: read + keep a JSON copy of the original document for the rejected table
         Dataset<Row> raw = context.cache(reader.read(source, window)
                 .withColumn(QualityColumns.RAW_RECORD, to_json(struct(fieldColumns(source)))));
-        log.info("[job {}] extract {} ({})", context.jobRunId(), collection, window.describe(source.latestRecordColumn()));
+        log.info("[job {}] extract {} ({})", context.pipelineRunId(), collection, window.describe(source.latestRecordColumn()));
         long sourceCount = raw.count();
 
         // 2-4. SANITIZE + VALIDATE + DE-DUPLICATE
@@ -96,7 +96,7 @@ public class SourceProcessor {
         context.addSourceBatch(batch);
 
         log.info("[job {}] {}: read={}, valid={}, rejected={} (of which duplicates={}), deleted at source={}",
-                context.jobRunId(), collection, batch.sourceCount(), batch.validCount(),
+                context.pipelineRunId(), collection, batch.sourceCount(), batch.validCount(),
                 batch.rejectedCount(), batch.duplicateCount(), batch.deletedCount());
 
         // 5. REJECT GATE: too many bad rows -> stop the job BEFORE the pipeline loads this collection
@@ -111,7 +111,7 @@ public class SourceProcessor {
      * lines of an array field: one order document with items[] -> one row per line.
      *
      * A bad line is rejected on its own (with its own source_id / business_key in the rejected table),
-     * while the rest of the document is still loaded. These rows have no watermark of their own.
+     * while the rest of the document is still loaded. These rows have no window of their own.
      *
      * @param definition describes the line rows: collection (e.g. "orders.items"), fields, business key
      * @param rows       must contain {@link QualityColumns#SOURCE_ID} (unique per line, e.g. "&lt;_id&gt;#2")
@@ -129,7 +129,7 @@ public class SourceProcessor {
         context.metrics().addDuplicates(batch.duplicateCount());
         context.addSourceBatch(batch);
 
-        log.info("[job {}] {}: lines={}, valid={}, rejected={}", context.jobRunId(), name,
+        log.info("[job {}] {}: lines={}, valid={}, rejected={}", context.pipelineRunId(), name,
                 batch.sourceCount(), batch.validCount(), batch.rejectedCount());
         return batch;
     }
@@ -203,7 +203,7 @@ public class SourceProcessor {
             throw new DataQualityGateException(source.collection(), String.format(Locale.ROOT,
                     "Reject gate failed for %s: %d of %d rows rejected (%.1f%%), allowed at most %.1f%%. "
                             + "Errors: %s. Example: %s. Nothing from this collection was loaded and the "
-                            + "watermark did not move.%s",
+                            + "last_run_time did not move.%s",
                     source.collection(), batch.badRowCount(), batch.activeCount(), percent, maxPercent,
                     errorSummary(badErrors), exampleError(badErrors), source.ownerHint()));
         }

@@ -39,7 +39,7 @@ public class PaymentPipeline extends AbstractEtlPipeline {
 
     @Override
     public String description() {
-        return "Single collection example: payments -> dim_payer, dim_payment_method, dim_biller, dim_date, fact_payment";
+        return "Payment star: payments -> payer, payment method and biller dimensions, fact_payment";
     }
 
     @Override
