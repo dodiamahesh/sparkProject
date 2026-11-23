@@ -1,0 +1,31 @@
+# =====================================================================
+#  DEV PROFILE  (local machine)
+#  Activated by default (see spring.profiles.active in application.yml)
+# =====================================================================
+spring:
+  datasource:
+    # SILVER layer: PostgreSQL (star schema + meta tables)
+    # Local PostgreSQL 18 service runs on port 5433 (docker-compose.yml uses 5432 -> set POSTGRES_URL).
+    # Put your real password in the POSTGRES_PASSWORD environment variable (or replace the default below).
+    # Database silver (exists, schemas meta + silver): run sample-data/<job>/03_postgres_tables.sql once per job
+    url: ${POSTGRES_URL:jdbc:postgresql://localhost:5433/silver?reWriteBatchedInserts=true}
+    username: ${POSTGRES_USER:postgres}
+    password: ${POSTGRES_PASSWORD:root}
+  data:
+    mongodb:
+      # BRONZE layer: MongoDB (raw source collections)
+      uri: ${MONGO_URI:mongodb://localhost:27017}
+      database: ${MONGO_DATABASE:bronze_db}
+
+application:
+  dwh:
+    spark:
+      master: local[*]
+      config:
+        # Avoid hostname / VPN issues on a laptop
+        "[spark.driver.host]": "localhost"
+        "[spark.driver.bindAddress]": "127.0.0.1"
+
+logging:
+  level:
+    com.tcs.dmj.dwh: DEBUG
