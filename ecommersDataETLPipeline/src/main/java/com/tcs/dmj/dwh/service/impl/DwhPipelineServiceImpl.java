@@ -202,7 +202,7 @@ public class DwhPipelineServiceImpl implements DwhPipelineService {
         try {
             for (EtlPipeline pipeline : pipelineRegistry.getAllPipelines()) {
                 metaPipelineRepository.register(pipeline.name(), pipeline.pipelineType().name(),
-                        pipeline.description(), applicationJobName, pipeline.airflowDagId());
+                        pipeline.description(), applicationJobName, pipeline.name());   // DAG id = pipeline name
             }
             int deactivated = metaPipelineRepository.deactivateAllExcept(
                     pipelineRegistry.getAllPipelines().stream().map(EtlPipeline::name).toList());

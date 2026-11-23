@@ -32,8 +32,8 @@ CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dmj_dwh_
 
 
 def dag_id_of(pipeline: str) -> str:
-    """Same rule as EtlPipeline.airflowDagId() in the application (stored in meta.meta_pipeline.airflow_dag_id)."""
-    return pipeline.replace("-", "_")
+    """DAG id = pipeline name, exactly (the application stores the same value in meta.meta_pipeline.airflow_dag_id)."""
+    return pipeline
 
 
 def asset_of(pipeline: str) -> Asset:

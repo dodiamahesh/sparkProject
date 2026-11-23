@@ -4,8 +4,8 @@
 #  Every DAG runs the SAME jar with --run-pipeline=<name>: only that pipeline runs, then the process exits
 #  (0 = success -> dependent DAGs start, 1 = failed -> retries, dependent DAGs wait).
 #
-#  DAG id = pipeline name with "_" instead of "-" (sales-pipeline -> sales_pipeline). The application stores
-#  the same id in meta.meta_pipeline.airflow_dag_id.
+#  DAG id = pipeline name, exactly the same (sales-pipeline -> DAG "sales-pipeline"). The application stores
+#  the same value in meta.meta_pipeline.pipeline_name and meta.meta_pipeline.airflow_dag_id.
 #
 #  Per pipeline:
 #    schedule:   cron / preset ("0 2 * * *", "@daily") for a pipeline that starts on its own

@@ -44,7 +44,7 @@ ecommerce-fulfillment-pipeline:
 
 This uses Airflow data-aware scheduling: Airflow 2.4+ (`Dataset`) and Airflow 3 (`Asset`).
 
-**DAG id** = pipeline name with `_` instead of `-`, for example `ecommerce_fulfillment_pipeline`. The application stores the same id in `meta.meta_pipeline.airflow_dag_id` (`EtlPipeline.airflowDagId()`).
+**DAG id = pipeline name**, exactly the same: the pipeline `ecommerce-fulfillment-pipeline` has the DAG `ecommerce-fulfillment-pipeline`. The application stores it in `meta.meta_pipeline.airflow_dag_id` (equal to `pipeline_name`). A pipeline name may only contain letters, digits, `-`, `_` and `.` (Airflow rule) and at most 30 characters; the application refuses to start otherwise.
 
 ## Setup (once)
 

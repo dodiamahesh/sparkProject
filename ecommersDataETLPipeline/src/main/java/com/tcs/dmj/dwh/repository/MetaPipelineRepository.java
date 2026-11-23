@@ -49,7 +49,8 @@ public class MetaPipelineRepository {
     }
 
     /**
-     * Inserts the pipeline, or updates its type / description / job name / Airflow DAG id when they changed in the code.
+     * Inserts the pipeline, or updates its type / description / job name / Airflow DAG id (= pipeline name) when they
+     * changed in the code.
      * last_run_time is never touched here. A re-registered pipeline becomes active again.
      * The INSERT runs only for a new pipeline (WHERE NOT EXISTS), so pipeline_id has no gaps.
      */
@@ -58,6 +59,10 @@ public class MetaPipelineRepository {
         if (pipelineName.length() > MAX_NAME_LENGTH) {
             throw new IllegalStateException("Pipeline name '" + pipelineName + "' is longer than " + MAX_NAME_LENGTH
                     + " characters (meta.meta_pipeline.pipeline_name)");
+        }
+        if (!pipelineName.matches("[A-Za-z0-9._-]+")) {
+            throw new IllegalStateException("Pipeline name '" + pipelineName + "' may only contain letters, digits, '-', '_'"
+                    + " and '.': it is also the Airflow DAG id");
         }
         String jobName = truncate(applicationJobName, MAX_JOB_NAME_LENGTH);
         String shortDescription = truncate(description, MAX_DESCRIPTION_LENGTH);

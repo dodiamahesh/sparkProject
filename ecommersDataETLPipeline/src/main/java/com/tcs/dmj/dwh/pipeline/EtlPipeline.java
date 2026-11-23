@@ -16,7 +16,11 @@ import java.util.List;
  */
 public interface EtlPipeline {
 
-    /** Unique name used in the REST URL, e.g. "payment-pipeline". */
+    /**
+     * Unique name, e.g. "payment-pipeline". The SAME name is used everywhere: REST URL, --run-pipeline=&lt;name&gt;,
+     * meta.meta_pipeline.pipeline_name and the Airflow DAG id (meta.meta_pipeline.airflow_dag_id). At most 30
+     * characters; letters, digits, "-", "_" and "." only (Airflow DAG id rule).
+     */
     String name();
 
     /** Short description, stored in meta.meta_pipeline.pipeline_description (at most 100 characters). */
@@ -35,15 +39,6 @@ public interface EtlPipeline {
 
     /** PostgreSQL tables this pipeline writes (shown in the API). */
     List<String> targetTables();
-
-    /**
-     * Airflow DAG that triggers this pipeline (meta.meta_pipeline.airflow_dag_id, at most 30 characters).
-     * Default: the name with "_" instead of "-", e.g. sales-pipeline -&gt; sales_pipeline. The DAG generator
-     * (airflow/dags/dmj_dwh_dags.py) uses the same rule.
-     */
-    default String airflowDagId() {
-        return name().replace('-', '_');
-    }
 
     /** Functional category, stored in meta.meta_pipeline.pipeline_type. */
     default PipelineType pipelineType() {
