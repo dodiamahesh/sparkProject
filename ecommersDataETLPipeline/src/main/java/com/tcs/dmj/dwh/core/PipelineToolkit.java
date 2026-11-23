@@ -1,4 +1,4 @@
-package com.tcs.dmj.dwh.pipeline;
+package com.tcs.dmj.dwh.core;
 
 import com.tcs.dmj.dwh.connector.source.SourceProcessor;
 import com.tcs.dmj.dwh.connector.target.DirectPostgresWriter;

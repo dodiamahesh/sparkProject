@@ -1,8 +1,8 @@
 package com.tcs.dmj.dwh.connector.source;
 
 import com.tcs.dmj.dwh.config.ApplicationProperties;
+import com.tcs.dmj.dwh.core.PipelineContext;
 import com.tcs.dmj.dwh.enums.ErrorType;
-import com.tcs.dmj.dwh.pipeline.PipelineContext;
 import com.tcs.dmj.dwh.repository.MetaPipelineRepository;
 import com.tcs.dmj.dwh.service.DataQualityGateException;
 import com.tcs.dmj.dwh.service.constant.SparkTypes;

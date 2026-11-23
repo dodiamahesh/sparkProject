@@ -2,9 +2,9 @@ package com.tcs.dmj.dwh.service.impl;
 
 import com.tcs.dmj.dwh.connector.source.SourceBatch;
 import com.tcs.dmj.dwh.connector.target.PostgresWriter;
-import com.tcs.dmj.dwh.pipeline.PipelineContext;
-import com.tcs.dmj.dwh.repository.RejectedRecordRepository;
+import com.tcs.dmj.dwh.core.PipelineContext;
 import com.tcs.dmj.dwh.repository.MetaPipelineRepository;
+import com.tcs.dmj.dwh.repository.RejectedRecordRepository;
 import com.tcs.dmj.dwh.service.SourceCommitService;
 import com.tcs.dmj.dwh.validation.QualityColumns;
 import org.springframework.stereotype.Service;

@@ -1,6 +1,6 @@
 # 🗂️ Project files: dmj-dwh
 
-> **130 files**: 100 Java (☕), plus scripts, SQL, Airflow DAGs, docs and config. Base package `com.tcs.dmj.dwh`. The `target` build folder, `.git` and `.vscode` are left out. Paths are relative to the project folder.
+> **131 files**: 100 Java (☕), plus scripts, SQL, Airflow DAGs, docs and config. Base package `com.tcs.dmj.dwh`. The `target` build folder, `.git` and `.vscode` are left out. Paths are relative to the project folder.
 
 **Legend:** ☕ Java · 🍃 Mongo script · 🐘 PostgreSQL · 🐍 Python (Airflow) · 📝 Markdown · ⚙️ YAML · 📦 Maven
 
@@ -37,6 +37,17 @@
 - ☕ `src\main\java\com\tcs\dmj\dwh\connector\target\SoftDeleteColumns.java`
 - ☕ `src\main\java\com\tcs\dmj\dwh\connector\target\SoftDeleteWriter.java`
 
+### 📂 src\main\java\com\tcs\dmj\dwh\core  ·  _8 files_
+
+- ☕ `src\main\java\com\tcs\dmj\dwh\core\AbstractEtlPipeline.java`
+- ☕ `src\main\java\com\tcs\dmj\dwh\core\ColumnLineage.java`
+- ☕ `src\main\java\com\tcs\dmj\dwh\core\EtlPipeline.java`
+- ☕ `src\main\java\com\tcs\dmj\dwh\core\JobMetrics.java`
+- ☕ `src\main\java\com\tcs\dmj\dwh\core\LineageCollector.java`
+- ☕ `src\main\java\com\tcs\dmj\dwh\core\PipelineContext.java`
+- ☕ `src\main\java\com\tcs\dmj\dwh\core\PipelineRegistry.java`
+- ☕ `src\main\java\com\tcs\dmj\dwh\core\PipelineToolkit.java`
+
 ### 📂 src\main\java\com\tcs\dmj\dwh\domain  ·  _4 files_
 
 - ☕ `src\main\java\com\tcs\dmj\dwh\domain\MetaAsset.java`
@@ -53,17 +64,6 @@
 - ☕ `src\main\java\com\tcs\dmj\dwh\enums\PipelineStatus.java`
 - ☕ `src\main\java\com\tcs\dmj\dwh\enums\PipelineType.java`
 - ☕ `src\main\java\com\tcs\dmj\dwh\enums\Platform.java`
-
-### 📂 src\main\java\com\tcs\dmj\dwh\pipeline  ·  _8 files_
-
-- ☕ `src\main\java\com\tcs\dmj\dwh\pipeline\AbstractEtlPipeline.java`
-- ☕ `src\main\java\com\tcs\dmj\dwh\pipeline\ColumnLineage.java`
-- ☕ `src\main\java\com\tcs\dmj\dwh\pipeline\EtlPipeline.java`
-- ☕ `src\main\java\com\tcs\dmj\dwh\pipeline\JobMetrics.java`
-- ☕ `src\main\java\com\tcs\dmj\dwh\pipeline\LineageCollector.java`
-- ☕ `src\main\java\com\tcs\dmj\dwh\pipeline\PipelineContext.java`
-- ☕ `src\main\java\com\tcs\dmj\dwh\pipeline\PipelineRegistry.java`
-- ☕ `src\main\java\com\tcs\dmj\dwh\pipeline\PipelineToolkit.java`
 
 ### 📂 src\main\java\com\tcs\dmj\dwh\pipeline\fulfillment  ·  _3 files_
 
@@ -208,10 +208,11 @@
 - 🐍 `airflow\dags\dmj_dwh_dags.py`
 - ⚙️ `airflow\dags\dmj_dwh_pipelines.yaml`
 
-### 📂 docs  ·  _3 files_
+### 📂 docs  ·  _4 files_
 
-- 📝 `docs\airflow-execution-jar-running-on-multiple-jvm.md`
 - 📝 `docs\PROJECT_STRUCTURE.md`
+- 📝 `docs\airflow-execution-jar-running-on-multiple-jvm.md`
+- 📝 `docs\full-flow-test-report.md`
 - 📝 `docs\staging-transaction-and-jdbc.md`
 
 ### 📂 (project root)  ·  _1 file_

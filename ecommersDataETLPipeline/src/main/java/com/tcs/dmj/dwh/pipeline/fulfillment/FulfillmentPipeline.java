@@ -2,9 +2,9 @@ package com.tcs.dmj.dwh.pipeline.fulfillment;
 
 import com.tcs.dmj.dwh.connector.source.SourceBatch;
 import com.tcs.dmj.dwh.connector.source.SourceDefinition;
-import com.tcs.dmj.dwh.pipeline.AbstractEtlPipeline;
-import com.tcs.dmj.dwh.pipeline.PipelineContext;
-import com.tcs.dmj.dwh.pipeline.PipelineToolkit;
+import com.tcs.dmj.dwh.core.AbstractEtlPipeline;
+import com.tcs.dmj.dwh.core.PipelineContext;
+import com.tcs.dmj.dwh.core.PipelineToolkit;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 import org.springframework.stereotype.Component;

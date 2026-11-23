@@ -1,13 +1,13 @@
 package com.tcs.dmj.dwh.service.impl;
 
 import com.tcs.dmj.dwh.config.ApplicationProperties;
+import com.tcs.dmj.dwh.core.EtlPipeline;
+import com.tcs.dmj.dwh.core.JobMetrics;
+import com.tcs.dmj.dwh.core.PipelineContext;
+import com.tcs.dmj.dwh.core.PipelineRegistry;
 import com.tcs.dmj.dwh.domain.MetaPipeline;
 import com.tcs.dmj.dwh.domain.MetaPipelineRun;
 import com.tcs.dmj.dwh.enums.PipelineStatus;
-import com.tcs.dmj.dwh.pipeline.EtlPipeline;
-import com.tcs.dmj.dwh.pipeline.JobMetrics;
-import com.tcs.dmj.dwh.pipeline.PipelineContext;
-import com.tcs.dmj.dwh.pipeline.PipelineRegistry;
 import com.tcs.dmj.dwh.repository.MetaPipelineRepository;
 import com.tcs.dmj.dwh.repository.MetaPipelineRunRepository;
 import com.tcs.dmj.dwh.service.DwhPipelineService;

@@ -330,7 +330,7 @@ ONE PostgreSQL transaction (application connection, no staging):
 | `pipeline/vatreturn/VatReturnSchemaMapper.java` | `toTyped`, `toDimTaxpayer` (latest return per tin wins), `toDimTaxPeriod`, `toFactVatReturn` |
 | `pipeline/vatreturn/VatReturnPipeline.java` | `directLoad() = true`; `run()`: extract + validate -> dim_taxpayer -> dim_tax_period -> dim_date -> fact_vat_return |
 | `connector/target/DirectPostgresWriter.java` | **new**: `toLocalIterator` + `JdbcTemplate.batchUpdate` with `INSERT ... ON CONFLICT`, surrogate keys by sub-select (`KeyLookup`), only inside an active transaction |
-| `pipeline/EtlPipeline.directLoad()` | **new**, default `false`. `true` = `DwhPipelineServiceImpl` runs `run()` + commit phase in ONE `TransactionTemplate` |
+| `core/EtlPipeline.directLoad()` | **new**, default `false`. `true` = `DwhPipelineServiceImpl` runs `run()` + commit phase in ONE `TransactionTemplate` |
 | `repository/RejectedRecordRepository.saveDirect()` | **new**: rejected rows without staging; new messages -> `meta_error_master` first; same transaction |
 
 ### What was tested (temporary databases, `reWriteBatchedInserts=true`)

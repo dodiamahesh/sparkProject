@@ -1,6 +1,6 @@
 package com.tcs.dmj.dwh.service;
 
-import com.tcs.dmj.dwh.pipeline.PipelineContext;
+import com.tcs.dmj.dwh.core.PipelineContext;
 
 /**
  * The "commit" phase of a run: save the rejected records and advance meta.meta_pipeline.last_run_time.

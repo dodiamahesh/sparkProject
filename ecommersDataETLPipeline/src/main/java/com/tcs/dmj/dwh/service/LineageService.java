@@ -1,7 +1,7 @@
 package com.tcs.dmj.dwh.service;
 
-import com.tcs.dmj.dwh.pipeline.EtlPipeline;
-import com.tcs.dmj.dwh.pipeline.PipelineContext;
+import com.tcs.dmj.dwh.core.EtlPipeline;
+import com.tcs.dmj.dwh.core.PipelineContext;
 
 /**
  * Writes the lineage of a successful run: meta.meta_asset, meta.meta_lineage (table level, found automatically)

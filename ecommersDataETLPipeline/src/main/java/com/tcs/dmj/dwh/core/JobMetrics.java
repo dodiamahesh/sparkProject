@@ -1,4 +1,4 @@
-package com.tcs.dmj.dwh.pipeline;
+package com.tcs.dmj.dwh.core;
 
 import java.util.concurrent.atomic.AtomicLong;
 

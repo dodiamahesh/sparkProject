@@ -1,4 +1,4 @@
-package com.tcs.dmj.dwh.pipeline;
+package com.tcs.dmj.dwh.core;
 
 import com.tcs.dmj.dwh.service.PipelineNotFoundException;
 import org.slf4j.Logger;

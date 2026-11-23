@@ -1,12 +1,12 @@
 package com.tcs.dmj.dwh.service.impl;
 
 import com.tcs.dmj.dwh.connector.source.SourceBatch;
+import com.tcs.dmj.dwh.core.ColumnLineage;
+import com.tcs.dmj.dwh.core.EtlPipeline;
+import com.tcs.dmj.dwh.core.LineageCollector;
+import com.tcs.dmj.dwh.core.PipelineContext;
 import com.tcs.dmj.dwh.domain.MetaAsset;
 import com.tcs.dmj.dwh.enums.Platform;
-import com.tcs.dmj.dwh.pipeline.ColumnLineage;
-import com.tcs.dmj.dwh.pipeline.EtlPipeline;
-import com.tcs.dmj.dwh.pipeline.LineageCollector;
-import com.tcs.dmj.dwh.pipeline.PipelineContext;
 import com.tcs.dmj.dwh.repository.MetaAssetRepository;
 import com.tcs.dmj.dwh.repository.MetaColumnLineageRepository;
 import com.tcs.dmj.dwh.repository.MetaLineageRepository;
