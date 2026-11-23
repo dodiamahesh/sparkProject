@@ -15,7 +15,8 @@ The expected result of every run (read / valid / rejected, final status, and why
 
 ## How a run reads MongoDB (incremental by timestamp)
 
-There is only ONE way to run a pipeline: `POST /api/admin/dwh/pipelines/{name}/run`. Every source of the pipeline reads
+A pipeline runs through the REST API (`POST /api/admin/dwh/pipelines/{name}/run`) or from Airflow
+(`java -jar dmj-dwh-1.0.0.jar --run-pipeline={name}`, one DAG per pipeline: see `airflow/README.md`). Every source of the pipeline reads
 
 ```
 updatedAt > meta_pipeline.last_run_time   AND   updatedAt <= start time of this run

@@ -36,6 +36,15 @@ public interface EtlPipeline {
     /** PostgreSQL tables this pipeline writes (shown in the API). */
     List<String> targetTables();
 
+    /**
+     * Airflow DAG that triggers this pipeline (meta.meta_pipeline.airflow_dag_id, at most 30 characters).
+     * Default: the name with "_" instead of "-", e.g. sales-pipeline -&gt; sales_pipeline. The DAG generator
+     * (airflow/dags/dmj_dwh_dags.py) uses the same rule.
+     */
+    default String airflowDagId() {
+        return name().replace('-', '_');
+    }
+
     /** Functional category, stored in meta.meta_pipeline.pipeline_type. */
     default PipelineType pipelineType() {
         return PipelineType.RAW_TO_CURATED;

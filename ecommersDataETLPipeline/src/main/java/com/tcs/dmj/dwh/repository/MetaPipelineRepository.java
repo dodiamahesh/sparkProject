@@ -28,6 +28,7 @@ public class MetaPipelineRepository {
     public static final int MAX_NAME_LENGTH = 30;
     public static final int MAX_DESCRIPTION_LENGTH = 100;
     public static final int MAX_JOB_NAME_LENGTH = 50;
+    public static final int MAX_DAG_ID_LENGTH = 30;
 
     private static final RowMapper<MetaPipeline> ROW_MAPPER = (rs, rowNum) -> new MetaPipeline(
             rs.getLong("pipeline_id"),
@@ -48,32 +49,38 @@ public class MetaPipelineRepository {
     }
 
     /**
-     * Inserts the pipeline, or updates its type / description / job name when they changed in the code.
+     * Inserts the pipeline, or updates its type / description / job name / Airflow DAG id when they changed in the code.
      * last_run_time is never touched here. A re-registered pipeline becomes active again.
      * The INSERT runs only for a new pipeline (WHERE NOT EXISTS), so pipeline_id has no gaps.
      */
-    public void register(String pipelineName, String pipelineType, String description, String applicationJobName) {
+    public void register(String pipelineName, String pipelineType, String description, String applicationJobName,
+                         String airflowDagId) {
         if (pipelineName.length() > MAX_NAME_LENGTH) {
             throw new IllegalStateException("Pipeline name '" + pipelineName + "' is longer than " + MAX_NAME_LENGTH
                     + " characters (meta.meta_pipeline.pipeline_name)");
         }
         String jobName = truncate(applicationJobName, MAX_JOB_NAME_LENGTH);
         String shortDescription = truncate(description, MAX_DESCRIPTION_LENGTH);
+        String dagId = truncate(airflowDagId, MAX_DAG_ID_LENGTH);
         jdbc.update("""
-                INSERT INTO meta.meta_pipeline (pipeline_name, pipeline_type, application_job_name, pipeline_description)
-                SELECT CAST(? AS VARCHAR), CAST(? AS VARCHAR), CAST(? AS VARCHAR), CAST(? AS VARCHAR)
+                INSERT INTO meta.meta_pipeline
+                       (pipeline_name, pipeline_type, application_job_name, pipeline_description, airflow_dag_id)
+                SELECT CAST(? AS VARCHAR), CAST(? AS VARCHAR), CAST(? AS VARCHAR), CAST(? AS VARCHAR), CAST(? AS VARCHAR)
                  WHERE NOT EXISTS (SELECT 1 FROM meta.meta_pipeline WHERE pipeline_name = ?)
                 ON CONFLICT DO NOTHING
-                """, pipelineName, pipelineType, jobName, shortDescription, pipelineName);
+                """, pipelineName, pipelineType, jobName, shortDescription, dagId, pipelineName);
         jdbc.update("""
                 UPDATE meta.meta_pipeline
-                   SET pipeline_type = ?, application_job_name = ?, pipeline_description = ?, active_flag = 'Y'
+                   SET pipeline_type = ?, application_job_name = ?, pipeline_description = ?, airflow_dag_id = ?,
+                       active_flag = 'Y'
                  WHERE pipeline_name = ?
                    AND (pipeline_type IS DISTINCT FROM CAST(? AS VARCHAR)
                         OR application_job_name IS DISTINCT FROM CAST(? AS VARCHAR)
                         OR pipeline_description IS DISTINCT FROM CAST(? AS VARCHAR)
+                        OR airflow_dag_id IS DISTINCT FROM CAST(? AS VARCHAR)
                         OR active_flag <> 'Y')
-                """, pipelineType, jobName, shortDescription, pipelineName, pipelineType, jobName, shortDescription);
+                """, pipelineType, jobName, shortDescription, dagId, pipelineName, pipelineType, jobName,
+                shortDescription, dagId);
     }
 
     /** Pipelines that are in the table but no longer in the code: active_flag = 'N' (their history stays). */

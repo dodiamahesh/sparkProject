@@ -1,14 +1,18 @@
 # 🗂️ Project files: dmj-dwh
 
-> **125 files**: 99 Java (☕), plus scripts, SQL, docs and config. Base package `com.tcs.dmj.dwh`. The `target` build folder, `.git` and `.vscode` are left out. Paths are relative to the project folder.
+> **130 files**: 100 Java (☕), plus scripts, SQL, Airflow DAGs, docs and config. Base package `com.tcs.dmj.dwh`. The `target` build folder, `.git` and `.vscode` are left out. Paths are relative to the project folder.
 
-**Legend:** ☕ Java · 🍃 Mongo script · 🐘 PostgreSQL · 📝 Markdown · ⚙️ YAML · 📦 Maven
+**Legend:** ☕ Java · 🍃 Mongo script · 🐘 PostgreSQL · 🐍 Python (Airflow) · 📝 Markdown · ⚙️ YAML · 📦 Maven
 
 ---
 
 ### 📂 src\main\java\com\tcs\dmj\dwh  ·  _1 file_
 
 - ☕ `src\main\java\com\tcs\dmj\dwh\DmjDwhApp.java`
+
+### 📂 src\main\java\com\tcs\dmj\dwh\batch  ·  _1 file_
+
+- ☕ `src\main\java\com\tcs\dmj\dwh\batch\PipelineBatchRunner.java`
 
 ### 📂 src\main\java\com\tcs\dmj\dwh\config  ·  _2 files_
 
@@ -133,8 +137,8 @@
 
 - ☕ `src\main\java\com\tcs\dmj\dwh\service\impl\DwhPipelineRunServiceImpl.java`
 - ☕ `src\main\java\com\tcs\dmj\dwh\service\impl\DwhPipelineServiceImpl.java`
-- ☕ `src\main\java\com\tcs\dmj\dwh\service\impl\JobLockManager.java`
 - ☕ `src\main\java\com\tcs\dmj\dwh\service\impl\LineageServiceImpl.java`
+- ☕ `src\main\java\com\tcs\dmj\dwh\service\impl\PipelineRunLock.java`
 - ☕ `src\main\java\com\tcs\dmj\dwh\service\impl\RejectedRecordServiceImpl.java`
 - ☕ `src\main\java\com\tcs\dmj\dwh\service\impl\SourceCommitServiceImpl.java`
 
@@ -195,8 +199,18 @@
 
 - ☕ `src\test\java\com\tcs\dmj\dwh\validation\DataQualityEngineTest.java`
 
-### 📂 docs  ·  _2 files_
+### 📂 airflow  ·  _1 file_
 
+- 📝 `airflow\README.md`
+
+### 📂 airflow\dags  ·  _2 files_
+
+- 🐍 `airflow\dags\dmj_dwh_dags.py`
+- ⚙️ `airflow\dags\dmj_dwh_pipelines.yaml`
+
+### 📂 docs  ·  _3 files_
+
+- 📝 `docs\airflow-execution-jar-running-on-multiple-jvm.md`
 - 📝 `docs\PROJECT_STRUCTURE.md`
 - 📝 `docs\staging-transaction-and-jdbc.md`
 

@@ -13,7 +13,21 @@ public record ApplicationProperties(
         Spark spark,
         Mongo mongo,
         Postgres postgres,
-        Quality quality) {
+        Quality quality,
+        Batch batch) {
+
+    public ApplicationProperties {
+        batch = batch == null ? new Batch(false) : batch;
+    }
+
+    /**
+     * Batch mode: java -jar dmj-dwh.jar --run-pipeline=&lt;name&gt; (used by Airflow) runs ONE pipeline and exits.
+     *
+     * @param failOnRejectedRecords true = a run that ends SUCCESS_WITH_FAILED exits with code 1 (the Airflow task
+     *                              fails and the dependent DAGs do not start); false (default) = exit code 0
+     */
+    public record Batch(boolean failOnRejectedRecords) {
+    }
 
     /**
      * Data-quality checks done for every source.

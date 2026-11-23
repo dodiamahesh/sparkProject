@@ -114,19 +114,38 @@ public class MetaPipelineRunRepository {
         return jdbc.query(sql.toString(), ROW_MAPPER, params.toArray());
     }
 
+    /** Pipelines that have a run with status RUNNING (busy now, or left behind by a process that died). */
+    public List<String> pipelinesWithRunningRuns() {
+        return jdbc.queryForList("""
+                SELECT DISTINCT p.pipeline_name
+                  FROM meta.meta_pipeline_run r
+                  JOIN meta.meta_pipeline p ON p.pipeline_id = r.pipeline_id
+                 WHERE r.pipeline_status = ?
+                """, String.class, PipelineStatus.RUNNING.name());
+    }
+
+    public boolean isRunning(String pipelineName) {
+        return Boolean.TRUE.equals(jdbc.queryForObject("""
+                SELECT EXISTS (SELECT 1 FROM meta.meta_pipeline_run r
+                                 JOIN meta.meta_pipeline p ON p.pipeline_id = r.pipeline_id
+                                WHERE p.pipeline_name = ? AND r.pipeline_status = ?)
+                """, Boolean.class, pipelineName, PipelineStatus.RUNNING.name()));
+    }
+
     /**
-     * If the application was killed while a run was busy, its row stays RUNNING forever.
-     * Called at startup: such runs become FAILED.
+     * Runs of this pipeline that stayed RUNNING because their process died: they become FAILED.
+     * Call it ONLY while holding the pipeline's run lock (then no live run of this pipeline exists anywhere).
      *
      * @return number of runs closed
      */
-    public int failInterruptedRuns() {
+    public int failInterruptedRuns(String pipelineName) {
         return jdbc.update("""
-                UPDATE meta.meta_pipeline_run
+                UPDATE meta.meta_pipeline_run r
                    SET pipeline_status = ?, end_time = clock_timestamp(), error_code = 'INTERRUPTED',
-                       error_message = 'The application stopped while the run was busy'
-                 WHERE pipeline_status = ?
-                """, PipelineStatus.FAILED.name(), PipelineStatus.RUNNING.name());
+                       error_message = 'The process stopped while the run was busy'
+                  FROM meta.meta_pipeline p
+                 WHERE p.pipeline_id = r.pipeline_id AND p.pipeline_name = ? AND r.pipeline_status = ?
+                """, PipelineStatus.FAILED.name(), pipelineName, PipelineStatus.RUNNING.name());
     }
 
     private static String truncate(String text, int maxLength) {

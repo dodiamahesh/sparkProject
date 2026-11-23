@@ -12,6 +12,7 @@ import com.tcs.dmj.dwh.repository.MetaPipelineRepository;
 import com.tcs.dmj.dwh.repository.MetaPipelineRunRepository;
 import com.tcs.dmj.dwh.service.DwhPipelineService;
 import com.tcs.dmj.dwh.service.LineageService;
+import com.tcs.dmj.dwh.service.PipelineAlreadyRunningException;
 import com.tcs.dmj.dwh.service.PipelineRunNotFoundException;
 import com.tcs.dmj.dwh.service.SourceCommitService;
 import com.tcs.dmj.dwh.service.dto.PipelineInfoDTO;
@@ -20,7 +21,7 @@ import com.tcs.dmj.dwh.utils.ErrorMessages;
 import org.apache.spark.sql.SparkSession;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.boot.context.event.ApplicationStartedEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.jdbc.BadSqlGrammarException;
 import org.springframework.stereotype.Service;
@@ -58,21 +59,21 @@ public class DwhPipelineServiceImpl implements DwhPipelineService {
     private final MetaPipelineRunRepository pipelineRunRepository;
     private final SourceCommitService commitService;
     private final LineageService lineageService;
-    private final JobLockManager lockManager;
+    private final PipelineRunLock runLock;
     private final SparkSession spark;
     private final TransactionTemplate transaction;
     private final String applicationJobName;
 
     public DwhPipelineServiceImpl(PipelineRegistry pipelineRegistry, MetaPipelineRepository metaPipelineRepository,
                                   MetaPipelineRunRepository pipelineRunRepository, SourceCommitService commitService,
-                                  LineageService lineageService, JobLockManager lockManager, SparkSession spark,
+                                  LineageService lineageService, PipelineRunLock runLock, SparkSession spark,
                                   TransactionTemplate transaction, ApplicationProperties properties) {
         this.pipelineRegistry = pipelineRegistry;
         this.metaPipelineRepository = metaPipelineRepository;
         this.pipelineRunRepository = pipelineRunRepository;
         this.commitService = commitService;
         this.lineageService = lineageService;
-        this.lockManager = lockManager;
+        this.runLock = runLock;
         this.spark = spark;
         this.transaction = transaction;
         this.applicationJobName = properties.spark().appName();
@@ -94,7 +95,7 @@ public class DwhPipelineServiceImpl implements DwhPipelineService {
                             pipeline.sources().stream().map(SourceInfoDTO::from).toList(),
                             pipeline.targetTables(),
                             meta == null ? null : meta.lastRunTime(),
-                            lockManager.isRunning(pipeline.name()));
+                            pipelineRunRepository.isRunning(pipeline.name()));
                 })
                 .toList();
     }
@@ -102,8 +103,15 @@ public class DwhPipelineServiceImpl implements DwhPipelineService {
     @Override
     public MetaPipelineRun runPipeline(String pipelineName) {
         EtlPipeline pipeline = pipelineRegistry.getPipeline(pipelineName);
-        lockManager.acquire(pipeline.name());
-        try {
+        try (PipelineRunLock.Held lock = runLock.tryAcquire(pipeline.name())) {
+            if (lock == null) {
+                throw new PipelineAlreadyRunningException(pipeline.name());
+            }
+            // we hold the lock: a RUNNING row of this pipeline can only be left behind by a process that died
+            int interrupted = pipelineRunRepository.failInterruptedRuns(pipeline.name());
+            if (interrupted > 0) {
+                log.warn("{}: {} run(s) left RUNNING by a stopped process marked FAILED", pipeline.name(), interrupted);
+            }
             // Upper bound of the window for EVERY source of this run. Data changed after this moment is read next run.
             // MILLIS (not seconds): MongoDB dates have millisecond precision, so a document changed in the same second
             // as the run start is still inside the window and can never fall between two runs.
@@ -112,8 +120,6 @@ public class DwhPipelineServiceImpl implements DwhPipelineService {
             execute(pipeline, pipelineRunId, windowEnd);
             return pipelineRunRepository.findById(pipelineRunId)
                     .orElseThrow(() -> new PipelineRunNotFoundException(pipelineRunId));
-        } finally {
-            lockManager.release(pipeline.name());
         }
     }
 
@@ -182,33 +188,40 @@ public class DwhPipelineServiceImpl implements DwhPipelineService {
     }
 
     /**
-     * On start-up:
+     * On start-up (ApplicationStartedEvent: BEFORE the batch runner of an Airflow task starts its pipeline):
      *   1. every pipeline of the code is registered in meta.meta_pipeline (pipelines that are no longer in the
      *      code get active_flag 'N'; last_run_time is never touched here)
-     *   2. runs left RUNNING by a crash are marked FAILED
+     *   2. runs left RUNNING by a process that died are marked FAILED. Only for pipelines whose run lock is free:
+     *      a run that is busy in ANOTHER process (REST service, other Airflow task) is left alone.
      * These are also the first queries on the meta tables, so a database without tables stops the application
      * here with a clear message (the application does not create tables itself).
      */
-    @EventListener(ApplicationReadyEvent.class)
+    @EventListener(ApplicationStartedEvent.class)
     public void onStartup() {
-        int closed;
+        int closed = 0;
         try {
             for (EtlPipeline pipeline : pipelineRegistry.getAllPipelines()) {
                 metaPipelineRepository.register(pipeline.name(), pipeline.pipelineType().name(),
-                        pipeline.description(), applicationJobName);
+                        pipeline.description(), applicationJobName, pipeline.airflowDagId());
             }
             int deactivated = metaPipelineRepository.deactivateAllExcept(
                     pipelineRegistry.getAllPipelines().stream().map(EtlPipeline::name).toList());
             if (deactivated > 0) {
                 log.warn("{} pipeline(s) in meta.meta_pipeline are no longer in the code: active_flag = 'N'", deactivated);
             }
-            closed = pipelineRunRepository.failInterruptedRuns();
+            for (String pipelineName : pipelineRunRepository.pipelinesWithRunningRuns()) {
+                try (PipelineRunLock.Held lock = runLock.tryAcquire(pipelineName)) {
+                    if (lock != null) {
+                        closed += pipelineRunRepository.failInterruptedRuns(pipelineName);
+                    }
+                }
+            }
         } catch (BadSqlGrammarException e) {
             throw new IllegalStateException("Meta tables not found in PostgreSQL (" + e.getMostSpecificCause().getMessage()
                     + "). Run sample-data/<job>/03_postgres_tables.sql for every job once, then start the application again.", e);
         }
         if (closed > 0) {
-            log.warn("Marked {} run(s) as FAILED because the application stopped while they were running", closed);
+            log.warn("Marked {} run(s) as FAILED because their process stopped while they were running", closed);
         }
     }
 }

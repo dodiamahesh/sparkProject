@@ -60,6 +60,12 @@ application:
       # Reject gate (SourceDefinition.maxRejectPercent) is skipped for batches smaller than this
       reject-gate-min-records: 10
 
+    # Batch mode (Airflow): java -jar dmj-dwh.jar --run-pipeline=<name> runs ONE pipeline, then exits with
+    #   0 = SUCCESS (and SUCCESS_WITH_FAILED, unless fail-on-rejected-records is true)
+    #   1 = FAILED, pipeline not found, already running, or any start-up error
+    batch:
+      fail-on-rejected-records: ${DWH_FAIL_ON_REJECTED_RECORDS:false}
+
 logging:
   level:
     root: INFO
