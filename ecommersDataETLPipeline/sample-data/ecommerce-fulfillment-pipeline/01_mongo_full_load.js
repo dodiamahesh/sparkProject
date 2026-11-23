@@ -5,7 +5,7 @@
 //     Run ecommerce-order-pipeline (its 01 script + first run) FIRST.
 //
 //  Run:   mongosh "mongodb://localhost:27017" sample-data/ecommerce-fulfillment-pipeline/01_mongo_full_load.js
-//  Then:  POST http://localhost:8080/api/etl/pipelines/ecommerce-fulfillment-pipeline/run   (first run: no watermark yet, reads everything)
+//  Then:  POST http://localhost:8080/api/admin/dwh/pipelines/ecommerce-fulfillment-pipeline/run   (first run: no watermark yet, reads everything)
 //
 //  Database: bronze_db (default MONGO_DATABASE).
 //      ecom_warehouses -> dim_warehouse, ecom_carriers -> dim_carrier,
@@ -84,4 +84,4 @@ db.ecom_shipments.createIndex({ shipmentId: 1 });   db.ecom_shipments.createInde
 print("");
 COLLECTIONS.forEach(c => print(`✔ ${DB_NAME}.${c.padEnd(16)} ${db.getCollection(c).countDocuments()} documents`));
 print("  expected: warehouses 6, carriers 5, shipments 15");
-print("  Next: POST /api/etl/pipelines/ecommerce-fulfillment-pipeline/run");
+print("  Next: POST /api/admin/dwh/pipelines/ecommerce-fulfillment-pipeline/run");

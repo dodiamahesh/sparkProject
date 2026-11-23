@@ -15,7 +15,7 @@ The expected result of every run (read / valid / rejected, final status, and why
 
 ## How a run reads MongoDB (incremental by timestamp)
 
-There is only ONE way to run a pipeline: `POST /api/etl/pipelines/{name}/run`. Every source reads
+There is only ONE way to run a pipeline: `POST /api/admin/dwh/pipelines/{name}/run`. Every source reads
 
 ```
 updatedAt > last watermark   AND   updatedAt <= start time of this run
@@ -97,11 +97,11 @@ different shape. The app reads ONE database (`MONGO_DATABASE`, default `bronze_d
 
 # 2) First run (no watermark yet: reads everything)
 mongosh "mongodb://localhost:27017" sample-data\sales-pipeline\01_mongo_full_load.js
-curl.exe -X POST "http://localhost:8080/api/etl/pipelines/sales-pipeline/run"
+curl.exe -X POST "http://localhost:8080/api/admin/dwh/pipelines/sales-pipeline/run"
 
 # 3) Next run (reads only what changed after the first run)
 mongosh "mongodb://localhost:27017" sample-data\sales-pipeline\02_mongo_incremental.js
-curl.exe -X POST "http://localhost:8080/api/etl/pipelines/sales-pipeline/run"
+curl.exe -X POST "http://localhost:8080/api/admin/dwh/pipelines/sales-pipeline/run"
 ```
 
 Dependency: `ecommerce-fulfillment-pipeline` needs the orders of `ecommerce-order-pipeline`. Order:

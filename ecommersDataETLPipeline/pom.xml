@@ -11,11 +11,11 @@
         <relativePath/>
     </parent>
 
-    <groupId>com.demo</groupId>
-    <artifactId>spark-etl-pipeline</artifactId>
+    <groupId>com.tcs.dmj</groupId>
+    <artifactId>dmj-dwh</artifactId>
     <version>1.0.0</version>
-    <name>spark-etl-pipeline</name>
-    <description>Standard Spark ETL framework: MongoDB (bronze) to PostgreSQL star schema (silver)</description>
+    <name>dmj-dwh</name>
+    <description>DMJ data warehouse (dwh): MongoDB (bronze) to PostgreSQL star schema (silver / curated) with Spark</description>
 
     <properties>
         <java.version>17</java.version>
@@ -143,7 +143,7 @@
                 <configuration>
                     <archive>
                         <manifestEntries>
-                            <!-- Used by: java -jar target/spark-etl-pipeline-1.0.0.jar (no extra flags needed) -->
+                            <!-- Used by: java -jar target/dmj-dwh-1.0.0.jar (no extra flags needed) -->
                             <Add-Opens>java.base/java.lang java.base/java.lang.invoke java.base/java.lang.reflect java.base/java.io java.base/java.net java.base/java.nio java.base/java.util java.base/java.util.concurrent java.base/java.util.concurrent.atomic java.base/jdk.internal.ref java.base/sun.nio.ch java.base/sun.nio.cs java.base/sun.security.action java.base/sun.util.calendar</Add-Opens>
                         </manifestEntries>
                     </archive>

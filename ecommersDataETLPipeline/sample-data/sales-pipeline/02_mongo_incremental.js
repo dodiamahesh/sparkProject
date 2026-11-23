@@ -3,7 +3,7 @@
 //
 //  Run (after 01 + the first run):
 //      mongosh "mongodb://localhost:27017" sample-data/sales-pipeline/02_mongo_incremental.js
-//      POST http://localhost:8080/api/etl/pipelines/sales-pipeline/run
+//      POST http://localhost:8080/api/admin/dwh/pipelines/sales-pipeline/run
 //
 //  Changes between 2026-10-21 00:00 and 04:00 IST (design document, incremental run) taken from
 //  "../sparkJavaMongoConnectorAirflowLinageTheory/sample_data/02_mongo_incremental_0400_data.js".
@@ -146,4 +146,4 @@ print("");
 ["products", "customers", "orders", "payments"].forEach(c => print(
   `✔ ${c.padEnd(10)} to read: ${db.getCollection(c).countDocuments({ updated_at: { $gte: NOW } })}`));
 print("  expected: products 2, customers 4, orders 4, payments 2");
-print("  Next: POST /api/etl/pipelines/sales-pipeline/run");
+print("  Next: POST /api/admin/dwh/pipelines/sales-pipeline/run");

@@ -5,7 +5,7 @@
 //     Run the order pipeline's 02 script + its next run FIRST.
 //
 //  Run:   mongosh "mongodb://localhost:27017" sample-data/ecommerce-fulfillment-pipeline/02_mongo_incremental.js
-//         POST http://localhost:8080/api/etl/pipelines/ecommerce-fulfillment-pipeline/run
+//         POST http://localhost:8080/api/admin/dwh/pipelines/ecommerce-fulfillment-pipeline/run
 //
 //  INCREMENTAL by timestamp: the next run reads documents with updatedAt > last watermark (= start of the
 //  previous successful run). Every changed / new document below gets updatedAt = NOW (the moment this
@@ -64,4 +64,4 @@ print("");
 ["ecom_warehouses", "ecom_carriers", "ecom_shipments"].forEach(c => print(
   `✔ ${c.padEnd(16)} to read: ${db.getCollection(c).countDocuments({ updatedAt: { $gte: NOW }, isTest: { $ne: true } })}`));
 print("  expected: warehouses 1, carriers 1, shipments 4");
-print("  Next: POST /api/etl/pipelines/ecommerce-fulfillment-pipeline/run");
+print("  Next: POST /api/admin/dwh/pipelines/ecommerce-fulfillment-pipeline/run");

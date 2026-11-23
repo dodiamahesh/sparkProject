@@ -3,7 +3,7 @@
 //
 //  Run (after 01 + the first run):
 //      mongosh "mongodb://localhost:27017" sample-data/transaction-pipeline/02_mongo_incremental.js
-//      POST http://localhost:8080/api/etl/pipelines/transaction-pipeline/run
+//      POST http://localhost:8080/api/admin/dwh/pipelines/transaction-pipeline/run
 //
 //  INCREMENTAL by timestamp: the next run reads documents with updatedAt > last watermark (= start of the
 //  previous successful run). Every changed / new document below gets updatedAt = NOW (the moment this
@@ -88,4 +88,4 @@ print("");
 ["customers", "accounts", "merchants", "transactions"].forEach(c => print(
   `✔ ${c.padEnd(13)} to read: ${db.getCollection(c).countDocuments({ updatedAt: { $gte: NOW }, isTest: { $ne: true } })}`));
 print("  expected: customers 3, accounts 3, merchants 2, transactions 5");
-print("  Next: POST /api/etl/pipelines/transaction-pipeline/run");
+print("  Next: POST /api/admin/dwh/pipelines/transaction-pipeline/run");

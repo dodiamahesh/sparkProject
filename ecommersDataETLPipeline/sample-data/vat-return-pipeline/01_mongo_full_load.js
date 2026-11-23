@@ -2,7 +2,7 @@
 //  vat-return-pipeline  |  01_mongo_full_load.js  |  MongoDB sample data for the FIRST run
 //
 //  Run:   mongosh "mongodb://localhost:27017" sample-data/vat-return-pipeline/01_mongo_full_load.js
-//  Then:  POST http://localhost:8080/api/etl/pipelines/vat-return-pipeline/run   (first run: no watermark yet, reads everything)
+//  Then:  POST http://localhost:8080/api/admin/dwh/pipelines/vat-return-pipeline/run   (first run: no watermark yet, reads everything)
 //
 //  Database: bronze_db (default MONGO_DATABASE; the collection name does not clash with any other job).
 //  Collection: vat_return_coll = one document per FILED monthly VAT return (same shape as the GRA source document).
@@ -172,4 +172,4 @@ print("");
 print(`✔ ${DB_NAME}.${COLL} ${db.getCollection(COLL).countDocuments()} documents ` +
       `(${db.getCollection(COLL).countDocuments({ isTest: { $ne: true } })} without the test document)`);
 print("  expected: 22 documents (21 without the test document)");
-print("  Next: POST /api/etl/pipelines/vat-return-pipeline/run");
+print("  Next: POST /api/admin/dwh/pipelines/vat-return-pipeline/run");

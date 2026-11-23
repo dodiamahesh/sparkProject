@@ -5,14 +5,14 @@ This job writes **directly into the silver tables: no `etl_staging.stg_*` tables
 
 | | |
 |---|---|
-| Pipeline name | `vat-return-pipeline` → `POST /api/etl/pipelines/vat-return-pipeline/run` |
+| Pipeline name | `vat-return-pipeline` → `POST /api/admin/dwh/pipelines/vat-return-pipeline/run` |
 | Source | MongoDB `bronze_db.vat_return_coll` (default `MONGO_DATABASE`; the name clashes with no other job) |
 | Target | `silver`: 6 dimensions + shared `silver.dim_date` + 1 fact |
 | Model | **Star schema** |
 | Load | Incremental by `updatedAt` watermark, one transaction for the whole run (all-or-nothing) |
 | Files | `01_mongo_full_load.js`, `02_mongo_incremental.js`, `03_postgres_tables.sql` (this folder) |
 
-Status: **implemented** (`src/main/java/com/demo/etl/pipelines/vatreturn`), tested end to end with this sample data (section 10).
+Status: **implemented** (`src/main/java/com/tcs/dmj/dwh/pipeline/vatreturn`), tested end to end with this sample data (section 10).
 
 ---
 
@@ -286,9 +286,9 @@ Reject gate: `maxRejectPercent(30)` (not applied below 10 rows).
 ```powershell
 & "C:\Program Files\PostgreSQL\18\bin\psql.exe" -h localhost -p 5433 -U postgres -d silver -f sample-data\vat-return-pipeline\03_postgres_tables.sql
 mongosh "mongodb://localhost:27017" sample-data\vat-return-pipeline\01_mongo_full_load.js
-curl.exe -X POST "http://localhost:8080/api/etl/pipelines/vat-return-pipeline/run"
+curl.exe -X POST "http://localhost:8080/api/admin/dwh/pipelines/vat-return-pipeline/run"
 mongosh "mongodb://localhost:27017" sample-data\vat-return-pipeline\02_mongo_incremental.js
-curl.exe -X POST "http://localhost:8080/api/etl/pipelines/vat-return-pipeline/run"
+curl.exe -X POST "http://localhost:8080/api/admin/dwh/pipelines/vat-return-pipeline/run"
 ```
 
 ---
@@ -325,12 +325,12 @@ ONE PostgreSQL transaction (application connection, no staging):
 
 | Where | What |
 |---|---|
-| `pipelines/vatreturn/VatReturnSources.java` | `SourceDefinition` (business key `ackNo`, watermark `updatedAt`, `excludeTestRecords()`, `maxRejectPercent(30)`), `sanitizer()` (section 5), `rules(formIds)` (section 6) |
-| `pipelines/vatreturn/VatReturnSchemaMapper.java` | `toTyped`, `toDimTaxpayer` (latest return per tin wins), `toDimTaxPeriod`, `toFactVatReturn` |
-| `pipelines/vatreturn/VatReturnPipeline.java` | `directLoad() = true`; `run()`: extract + validate -> dim_taxpayer -> dim_tax_period -> dim_date -> fact_vat_return |
-| `framework/target/DirectPostgresWriter.java` | **new**: `toLocalIterator` + `JdbcTemplate.batchUpdate` with `INSERT ... ON CONFLICT`, surrogate keys by sub-select (`KeyLookup`), only inside an active transaction |
-| `framework/pipeline/EtlPipeline.directLoad()` | **new**, default `false`. `true` = `EtlJobService` runs `run()` + commit phase in ONE `TransactionTemplate` |
-| `framework/audit/RejectedRecordRepository.saveDirect()` | **new**: rejected rows without staging; new messages -> `meta_error_master` first; same transaction |
+| `pipeline/vatreturn/VatReturnSources.java` | `SourceDefinition` (business key `ackNo`, watermark `updatedAt`, `excludeTestRecords()`, `maxRejectPercent(30)`), `sanitizer()` (section 5), `rules(formIds)` (section 6) |
+| `pipeline/vatreturn/VatReturnSchemaMapper.java` | `toTyped`, `toDimTaxpayer` (latest return per tin wins), `toDimTaxPeriod`, `toFactVatReturn` |
+| `pipeline/vatreturn/VatReturnPipeline.java` | `directLoad() = true`; `run()`: extract + validate -> dim_taxpayer -> dim_tax_period -> dim_date -> fact_vat_return |
+| `connector/target/DirectPostgresWriter.java` | **new**: `toLocalIterator` + `JdbcTemplate.batchUpdate` with `INSERT ... ON CONFLICT`, surrogate keys by sub-select (`KeyLookup`), only inside an active transaction |
+| `pipeline/EtlPipeline.directLoad()` | **new**, default `false`. `true` = `DwhPipelineServiceImpl` runs `run()` + commit phase in ONE `TransactionTemplate` |
+| `repository/RejectedRecordRepository.saveDirect()` | **new**: rejected rows without staging; new messages -> `meta_error_master` first; same transaction |
 
 ### What was tested (temporary databases, `reWriteBatchedInserts=true`)
 

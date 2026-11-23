@@ -17,14 +17,15 @@ spring:
       uri: ${MONGO_URI:mongodb://localhost:27017}
       database: ${MONGO_DATABASE:bronze_db}
 
-etl:
-  spark:
-    master: local[*]
-    config:
-      # Avoid hostname / VPN issues on a laptop
-      "[spark.driver.host]": "localhost"
-      "[spark.driver.bindAddress]": "127.0.0.1"
+application:
+  dwh:
+    spark:
+      master: local[*]
+      config:
+        # Avoid hostname / VPN issues on a laptop
+        "[spark.driver.host]": "localhost"
+        "[spark.driver.bindAddress]": "127.0.0.1"
 
 logging:
   level:
-    com.demo.etl: DEBUG
+    com.tcs.dmj.dwh: DEBUG

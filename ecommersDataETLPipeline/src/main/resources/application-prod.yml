@@ -1,7 +1,7 @@
 # =====================================================================
 #  PROD PROFILE
 #  All secrets / hosts come from environment variables. Never commit real passwords.
-#  Run: java -jar spark-etl-pipeline-1.0.0.jar --spring.profiles.active=prod
+#  Run: java -jar dmj-dwh-1.0.0.jar --spring.profiles.active=prod
 # =====================================================================
 spring:
   datasource:
@@ -15,18 +15,19 @@ spring:
       uri: ${MONGO_URI}
       database: ${MONGO_DATABASE:bronze_db}
 
-etl:
-  spark:
-    # e.g. local[*] for a single server, or spark://host:7077 for a standalone cluster
-    master: ${SPARK_MASTER:local[*]}
-    config:
-      "[spark.sql.shuffle.partitions]": "${SPARK_SHUFFLE_PARTITIONS:50}"
-      "[spark.ui.enabled]": "false"
-      "[spark.sql.ansi.enabled]": "false"
-      "[spark.sql.legacy.timeParserPolicy]": "CORRECTED"
-  postgres:
-    batch-size: 5000
+application:
+  dwh:
+    spark:
+      # e.g. local[*] for a single server, or spark://host:7077 for a standalone cluster
+      master: ${SPARK_MASTER:local[*]}
+      config:
+        "[spark.sql.shuffle.partitions]": "${SPARK_SHUFFLE_PARTITIONS:50}"
+        "[spark.ui.enabled]": "false"
+        "[spark.sql.ansi.enabled]": "false"
+        "[spark.sql.legacy.timeParserPolicy]": "CORRECTED"
+    postgres:
+      batch-size: 5000
 
 logging:
   level:
-    com.demo.etl: INFO
+    com.tcs.dmj.dwh: INFO

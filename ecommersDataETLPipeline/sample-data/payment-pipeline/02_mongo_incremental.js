@@ -3,7 +3,7 @@
 //
 //  Run (after 01 + the first run):
 //      mongosh "mongodb://localhost:27017" sample-data/payment-pipeline/02_mongo_incremental.js
-//      POST http://localhost:8080/api/etl/pipelines/payment-pipeline/run
+//      POST http://localhost:8080/api/admin/dwh/pipelines/payment-pipeline/run
 //
 //  INCREMENTAL by timestamp: the next run reads documents with updatedAt > last watermark (= start of the
 //  previous successful run). Every changed / new document below gets updatedAt = NOW (the moment this
@@ -77,4 +77,4 @@ update("payments", { paymentId: "PAY-0005" }, { isDeleted: true });
 
 const pending = db.payments.countDocuments({ updatedAt: { $gte: NOW }, isTest: { $ne: true } });
 print(`\n✔ Documents the INCREMENTAL run will read: ${pending} (expected 6)`);
-print("  Next: POST /api/etl/pipelines/payment-pipeline/run");
+print("  Next: POST /api/admin/dwh/pipelines/payment-pipeline/run");

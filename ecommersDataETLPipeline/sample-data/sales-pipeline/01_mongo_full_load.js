@@ -2,7 +2,7 @@
 //  sales-pipeline (Job-2, J2_SALES)  |  01_mongo_full_load.js  |  MongoDB sample data for the FIRST run
 //
 //  Run:   mongosh "mongodb://localhost:27017" sample-data/sales-pipeline/01_mongo_full_load.js
-//  Then:  POST http://localhost:8080/api/etl/pipelines/sales-pipeline/run   (first run: no watermark yet, reads everything)
+//  Then:  POST http://localhost:8080/api/admin/dwh/pipelines/sales-pipeline/run   (first run: no watermark yet, reads everything)
 //
 //  Database: bronze_db (default MONGO_DATABASE). Data = design document "Job-2: Multiple Collections",
 //  taken from "../sparkJavaMongoConnectorAirflowLinageTheory/sample_data/01_mongo_full_load_data.js" (only the 4
@@ -221,4 +221,4 @@ db.payments.createIndex({ payment_id: 1 });     db.payments.createIndex({ update
 print("");
 COLLECTIONS.forEach(c => print(`✔ ${DB_NAME}.${c.padEnd(10)} ${db.getCollection(c).countDocuments()} documents`));
 print("  expected: products 24, customers 23, orders 24, payments 23");
-print("  Next: POST /api/etl/pipelines/sales-pipeline/run");
+print("  Next: POST /api/admin/dwh/pipelines/sales-pipeline/run");

@@ -2,7 +2,7 @@
 //  ecommerce-order-pipeline  |  01_mongo_full_load.js  |  MongoDB sample data for the FIRST run
 //
 //  Run:   mongosh "mongodb://localhost:27017" sample-data/ecommerce-order-pipeline/01_mongo_full_load.js
-//  Then:  POST http://localhost:8080/api/etl/pipelines/ecommerce-order-pipeline/run   (first run: no watermark yet, reads everything)
+//  Then:  POST http://localhost:8080/api/admin/dwh/pipelines/ecommerce-order-pipeline/run   (first run: no watermark yet, reads everything)
 //
 //  Database: bronze_db (default MONGO_DATABASE). Collections ecom_* do not clash with the sales job.
 //
@@ -123,4 +123,4 @@ db.ecom_order_items.createIndex({ orderItemId: 1 }); db.ecom_order_items.createI
 print("");
 COLLECTIONS.forEach(c => print(`✔ ${DB_NAME}.${c.padEnd(17)} ${db.getCollection(c).countDocuments()} documents`));
 print("  expected: categories 6, products 11, customers 8, orders 11, order_items 15");
-print("  Next: POST /api/etl/pipelines/ecommerce-order-pipeline/run");
+print("  Next: POST /api/admin/dwh/pipelines/ecommerce-order-pipeline/run");

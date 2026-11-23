@@ -3,7 +3,7 @@
 //
 //  Run (after 01 + the first run):
 //      mongosh "mongodb://localhost:27017" sample-data/vat-return-pipeline/02_mongo_incremental.js
-//      POST http://localhost:8080/api/etl/pipelines/vat-return-pipeline/run
+//      POST http://localhost:8080/api/admin/dwh/pipelines/vat-return-pipeline/run
 //
 //  INCREMENTAL by timestamp: the next run reads documents with updatedAt > last watermark (= start of the
 //  previous successful run). Every changed / new document below gets updatedAt = NOW, exactly like the source
@@ -119,4 +119,4 @@ update("120000000614", { isDeleted: true });
 print("");
 print(`✔ ${COLL} to read: ${coll.countDocuments({ updatedAt: { $gte: NOW }, isTest: { $ne: true } })}`);
 print("  expected: 7");
-print("  Next: POST /api/etl/pipelines/vat-return-pipeline/run");
+print("  Next: POST /api/admin/dwh/pipelines/vat-return-pipeline/run");
