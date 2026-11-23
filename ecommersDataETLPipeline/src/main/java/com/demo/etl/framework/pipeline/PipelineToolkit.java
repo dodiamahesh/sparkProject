@@ -1,6 +1,5 @@
 package com.demo.etl.framework.pipeline;
 
-import com.demo.etl.framework.audit.StepTracker;
 import com.demo.etl.framework.source.SourceProcessor;
 import com.demo.etl.framework.target.DirectPostgresWriter;
 import com.demo.etl.framework.target.PostgresReader;
@@ -21,18 +20,15 @@ public class PipelineToolkit {
     private final PostgresReader postgresReader;
     private final Scd2Writer scd2Writer;
     private final SoftDeleteWriter softDeleteWriter;
-    private final StepTracker stepTracker;
 
     public PipelineToolkit(SourceProcessor sourceProcessor, PostgresWriter postgresWriter, DirectPostgresWriter directWriter,
-                           PostgresReader postgresReader, Scd2Writer scd2Writer, SoftDeleteWriter softDeleteWriter,
-                           StepTracker stepTracker) {
+                           PostgresReader postgresReader, Scd2Writer scd2Writer, SoftDeleteWriter softDeleteWriter) {
         this.sourceProcessor = sourceProcessor;
         this.postgresWriter = postgresWriter;
         this.directWriter = directWriter;
         this.postgresReader = postgresReader;
         this.scd2Writer = scd2Writer;
         this.softDeleteWriter = softDeleteWriter;
-        this.stepTracker = stepTracker;
     }
 
     public SourceProcessor sourceProcessor() {
@@ -57,9 +53,5 @@ public class PipelineToolkit {
 
     public SoftDeleteWriter softDeleteWriter() {
         return softDeleteWriter;
-    }
-
-    public StepTracker stepTracker() {
-        return stepTracker;
     }
 }

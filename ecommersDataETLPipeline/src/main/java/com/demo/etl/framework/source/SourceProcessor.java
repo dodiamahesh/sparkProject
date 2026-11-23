@@ -1,7 +1,6 @@
 package com.demo.etl.framework.source;
 
 import com.demo.etl.config.EtlProperties;
-import com.demo.etl.framework.audit.StepTracker;
 import com.demo.etl.framework.common.SparkTypes;
 import com.demo.etl.framework.audit.WatermarkRepository;
 import com.demo.etl.framework.exception.DataQualityGateException;
@@ -54,18 +53,16 @@ public class SourceProcessor {
 
     private final MongoSourceReader reader;
     private final DataQualityEngine qualityEngine;
-    private final StepTracker stepTracker;
     private final WatermarkRepository watermarkRepository;
     private final int rejectGateMinRecords;
 
     private static final String DELETED_FLAG = "_sd_deleted";
     private static final String LATEST_IS_DELETED = "_sd_latest_deleted";
 
-    public SourceProcessor(MongoSourceReader reader, DataQualityEngine qualityEngine, StepTracker stepTracker,
+    public SourceProcessor(MongoSourceReader reader, DataQualityEngine qualityEngine,
                            WatermarkRepository watermarkRepository, EtlProperties properties) {
         this.reader = reader;
         this.qualityEngine = qualityEngine;
-        this.stepTracker = stepTracker;
         this.watermarkRepository = watermarkRepository;
         this.rejectGateMinRecords = properties.quality().rejectGateMinRecords();
     }
@@ -79,19 +76,17 @@ public class SourceProcessor {
         // 1. EXTRACT: read + keep a JSON copy of the original document for the rejected table
         Dataset<Row> raw = context.cache(reader.read(source, window)
                 .withColumn(QualityColumns.RAW_RECORD, to_json(struct(fieldColumns(source)))));
-        long sourceCount = stepTracker.track(context,
-                "Extract " + collection + " (" + window.describe(source.latestRecordColumn()) + ")", raw::count);
+        log.info("[job {}] extract {} ({})", context.jobRunId(), collection, window.describe(source.latestRecordColumn()));
+        long sourceCount = raw.count();
 
         // 2-4. SANITIZE + VALIDATE + DE-DUPLICATE
-        SourceBatch batch = stepTracker.track(context, "Validate " + collection, () -> {
-            Dataset<Row> cleaned = sanitizer.apply(raw);
-            // 2b. SOFT DELETE: keys whose latest version is marked deleted are not validated, they are deleted
-            ActiveAndDeleted split = splitSoftDeletes(context, cleaned, source);
-            QualityResult result = qualityEngine.check(split.active(), rules, source.businessKey(),
-                    source.latestRecordColumn());
-            Dataset<Row> valid = context.cache(result.valid());
-            return toBatch(context, source, valid, result.rejected(), split.deleted(), sourceCount, false);
-        }, SourceBatch::validCount);
+        Dataset<Row> cleaned = sanitizer.apply(raw);
+        // 2b. SOFT DELETE: keys whose latest version is marked deleted are not validated, they are deleted
+        ActiveAndDeleted split = splitSoftDeletes(context, cleaned, source);
+        QualityResult result = qualityEngine.check(split.active(), rules, source.businessKey(),
+                source.latestRecordColumn());
+        Dataset<Row> valid = context.cache(result.valid());
+        SourceBatch batch = toBatch(context, source, valid, result.rejected(), split.deleted(), sourceCount, false);
 
         context.metrics().addSource(batch.sourceCount());
         context.metrics().addValid(batch.validCount());
@@ -106,7 +101,7 @@ public class SourceProcessor {
 
         // 5. REJECT GATE: too many bad rows -> stop the job BEFORE the pipeline loads this collection
         if (source.maxRejectPercent() != null) {
-            stepTracker.track(context, "Reject gate " + collection, () -> checkRejectGate(batch));
+            checkRejectGate(batch);
         }
         return batch;
     }
@@ -125,11 +120,9 @@ public class SourceProcessor {
     public SourceBatch processDerived(PipelineContext context, SourceDefinition definition,
                                       Dataset<Row> rows, DataQualityRules rules) {
         String name = definition.collection();
-        SourceBatch batch = stepTracker.track(context, "Validate " + name + " (lines)", () -> {
-            QualityResult result = qualityEngine.check(rows, rules, definition.businessKey(),
-                    definition.latestRecordColumn());
-            return toBatch(context, definition, context.cache(result.valid()), result.rejected(), null, -1, true);
-        }, SourceBatch::validCount);
+        QualityResult result = qualityEngine.check(rows, rules, definition.businessKey(),
+                definition.latestRecordColumn());
+        SourceBatch batch = toBatch(context, definition, context.cache(result.valid()), result.rejected(), null, -1, true);
 
         // Lines are not extra SOURCE documents: only the rejected lines are added to the job counters
         context.metrics().addRejected(batch.rejectedCount());
@@ -194,14 +187,14 @@ public class SourceProcessor {
 
     // ================================================================== reject gate
 
-    /** @return number of bad rows; throws when the reject percentage is above the source's limit */
-    private long checkRejectGate(SourceBatch batch) {
+    /** Throws when the reject percentage is above the source's limit. */
+    private void checkRejectGate(SourceBatch batch) {
         SourceDefinition source = batch.source();
         double maxPercent = source.maxRejectPercent();
         if (batch.activeCount() < rejectGateMinRecords) {
             log.info("Reject gate skipped for {}: only {} rows (minimum {})",
                     source.collection(), batch.activeCount(), rejectGateMinRecords);
-            return batch.badRowCount();
+            return;
         }
         double percent = 100.0 * batch.badRowCount() / batch.activeCount();   // deleted documents are not validated
         if (percent > maxPercent) {
@@ -214,7 +207,6 @@ public class SourceProcessor {
                     source.collection(), batch.badRowCount(), batch.activeCount(), percent, maxPercent,
                     errorSummary(badErrors), exampleError(badErrors), source.ownerHint()));
         }
-        return batch.badRowCount();
     }
 
     /** "ORPHAN=62, VALIDATION=3" (number of failed rules per error type) */

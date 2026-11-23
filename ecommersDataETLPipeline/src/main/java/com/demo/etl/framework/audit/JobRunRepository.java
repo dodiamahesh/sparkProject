@@ -98,17 +98,12 @@ public class JobRunRepository {
 
     /**
      * If the application was killed while a job was running, its row keeps status NULL forever.
-     * Called at startup: such runs (and their unfinished steps) become FAILED.
+     * Called at startup: such runs become FAILED.
      *
      * @return number of runs closed
      */
     public int failInterruptedRuns() {
         String message = "Interrupted: the application stopped while the job was running";
-        jdbc.update("""
-                UPDATE meta.meta_pipeline_step
-                   SET status = ?, end_time = now(), error_message = ?
-                 WHERE status IS NULL
-                """, StepStatus.FAILED.name(), message);
         return jdbc.update("""
                 UPDATE meta.meta_pipeline_run
                    SET status = ?, end_time = now(), error_message = ?

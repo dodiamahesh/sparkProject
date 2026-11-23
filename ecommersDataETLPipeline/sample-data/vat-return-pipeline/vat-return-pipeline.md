@@ -331,7 +331,6 @@ ONE PostgreSQL transaction (application connection, no staging):
 | `framework/target/DirectPostgresWriter.java` | **new**: `toLocalIterator` + `JdbcTemplate.batchUpdate` with `INSERT ... ON CONFLICT`, surrogate keys by sub-select (`KeyLookup`), only inside an active transaction |
 | `framework/pipeline/EtlPipeline.directLoad()` | **new**, default `false`. `true` = `EtlJobService` runs `run()` + commit phase in ONE `TransactionTemplate` |
 | `framework/audit/RejectedRecordRepository.saveDirect()` | **new**: rejected rows without staging; new messages -> `meta_error_master` first; same transaction |
-| `framework/audit/JobStepRepository` | step rows commit in their own transaction (`REQUIRES_NEW`): visible during the run, kept after a rollback |
 
 ### What was tested (temporary databases, `reWriteBatchedInserts=true`)
 
@@ -339,7 +338,7 @@ ONE PostgreSQL transaction (application connection, no staging):
 |---|---|
 | first run (01) | read 21, valid 14, rejected 7 -> dim_taxpayer 6, dim_tax_period 3, fact 14; SUCCESS_WITH_FAILED; no `etl_staging` table created; master unchanged (69: every message was seeded) |
 | incremental (02) | read 6, valid 5, rejected 1 -> fact 17, taxpayer 7, Asante renamed, 612 = APRV, 619 loaded |
-| **forced failure** (fact insert fails after the dimensions were written) | FAILED, `loaded_count` 0. **Rolled back:** the new taxpayer, the rejected row, the new master message and the watermark. The steps stay visible (the failing one is FAILED) |
+| **forced failure** (fact insert fails after the dimensions were written) | FAILED, `loaded_count` 0. **Rolled back:** the new taxpayer, the rejected row, the new master message and the watermark. The run row stays FAILED with the error message |
 | same window again after the fix | read the same 2 documents, both handled; the new message got `error_id` 70 (no gap) |
 | partly fixed record (3 errors -> 1) | the 2 fixed error rows are removed, the remaining one has `attempt_count + 1` |
 | `sales-pipeline` (staging path, regression) | unchanged: read 94, valid 80, rejected 16 |

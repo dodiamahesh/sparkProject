@@ -20,7 +20,6 @@
 -- =====================================================================
 -- PART 1: META tables (shared by EVERY job; safe to run again: IF NOT EXISTS)
 --   meta.meta_pipeline_run     one row per pipeline run (status, counters, error)
---   meta.meta_pipeline_step    one row per step of a run (where did it fail, how long)
 --   meta.meta_error_master     every possible data-quality error, once (error_type + message)
 --   meta.meta_rejected_record  bad records: one row per record + failed rule, error_id -> meta_error_master
 --   meta.meta_watermark        incremental watermark per pipeline + collection (timestamp based)
@@ -58,19 +57,8 @@ CREATE INDEX IF NOT EXISTS idx_pipeline_run_status   ON meta.meta_pipeline_run (
 -- upgrade of a database created before soft delete existed (re-run safe)
 ALTER TABLE meta.meta_pipeline_run ADD COLUMN IF NOT EXISTS deleted_count BIGINT NOT NULL DEFAULT 0;
 
-CREATE TABLE IF NOT EXISTS meta.meta_pipeline_step (
-    job_step_id    BIGSERIAL    PRIMARY KEY,
-    job_run_id     BIGINT       NOT NULL REFERENCES meta.meta_pipeline_run (job_run_id),
-    step_order     INT          NOT NULL,
-    step_name      VARCHAR(200) NOT NULL,
-    status         VARCHAR(30)  CHECK (status IN ('SUCCESS', 'FAILED')),   -- NULL = step still busy
-    record_count   BIGINT,
-    start_time     TIMESTAMP    NOT NULL DEFAULT now(),
-    end_time       TIMESTAMP,
-    duration_ms    BIGINT,
-    error_message  TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_pipeline_step_run ON meta.meta_pipeline_step (job_run_id, step_order);
+-- the step table is no longer used: removed from a database created before (re-run safe)
+DROP TABLE IF EXISTS meta.meta_pipeline_step;
 
 -- One row per possible error. Seeded at the end of this file with every error of this job; a rule that is
 -- added to the code later gets its row automatically on the first run that rejects a record with it.

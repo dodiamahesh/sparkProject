@@ -32,7 +32,6 @@ updatedAt > last watermark   AND   updatedAt <= start time of this run
 | Table | One row per |
 |---|---|
 | `meta_pipeline_run` | pipeline run: status, counts, error. **status** = `SUCCESS` (nothing rejected), `SUCCESS_WITH_FAILED` (some rows rejected), `FAILED` (all rows rejected, an exception / reject gate, or the app stopped during the run). Empty (NULL) while the run is busy. |
-| `meta_pipeline_step` | step of a run (`SUCCESS` / `FAILED`, NULL while busy) |
 | `meta_error_master` | possible error: `error_id`, `error_type` (CORRUPT / VALIDATION / ORPHAN / DUPLICATE), `field_name`, `error_message`. Seeded by the 03 file; a rule added later in the code gets its row on its first reject. |
 | `meta_rejected_record` | rejected record **+ failed rule**: `error_id` -> `meta_error_master`, `field_value` (the bad value), `raw_record`. A record that broke 2 rules has 2 rows. |
 | `meta_watermark` | pipeline + collection: read up to this timestamp |

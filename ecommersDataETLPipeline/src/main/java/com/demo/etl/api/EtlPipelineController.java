@@ -2,10 +2,10 @@ package com.demo.etl.api;
 
 import com.demo.etl.api.dto.PipelineInfo;
 import com.demo.etl.api.dto.SourceInfo;
+import com.demo.etl.framework.audit.JobRun;
 import com.demo.etl.framework.audit.WatermarkRepository;
 import com.demo.etl.framework.job.EtlJobService;
 import com.demo.etl.framework.job.JobLockManager;
-import com.demo.etl.framework.job.JobRunDetails;
 import com.demo.etl.framework.pipeline.PipelineRegistry;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -55,11 +55,11 @@ public class EtlPipelineController {
     }
 
     /**
-     * Synchronous: the response is the finished run (status SUCCESS / SUCCESS_WITH_FAILED / FAILED) with its steps.
+     * Synchronous: the response is the finished run (status SUCCESS / SUCCESS_WITH_FAILED / FAILED, counts, error).
      * A FAILED job is still HTTP 200: the run row tells why it failed.
      */
     @PostMapping("/{pipelineName}/run")
-    public JobRunDetails runPipeline(
+    public JobRun runPipeline(
             @PathVariable String pipelineName,
             @RequestHeader(value = "X-Triggered-By", defaultValue = "api") String triggeredBy) {
         return jobService.runPipeline(pipelineName, triggeredBy);

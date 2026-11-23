@@ -1,8 +1,8 @@
 package com.demo.etl.framework.job;
 
+import com.demo.etl.framework.audit.JobRun;
 import com.demo.etl.framework.audit.JobRunRepository;
 import com.demo.etl.framework.audit.JobStatus;
-import com.demo.etl.framework.audit.JobStepRepository;
 import com.demo.etl.framework.common.ErrorMessages;
 import com.demo.etl.framework.exception.JobRunNotFoundException;
 import com.demo.etl.framework.pipeline.EtlPipeline;
@@ -30,7 +30,7 @@ import java.time.temporal.ChronoUnit;
  *   3. pipeline.run()          -> per source: read updatedAt > last watermark AND <= window end,
  *                                 validate, transform, load
  *   4. commit                  -> save rejects, advance watermarks
- *      (pipelines with directLoad(): steps 3 + 4 run in ONE transaction -> all-or-nothing)
+ *      (pipelines with directLoad(): 3 + 4 run in ONE transaction -> all-or-nothing)
  *   5. finish run row          -> SUCCESS / SUCCESS_WITH_FAILED / FAILED + counts + error
  *   6. always: free Spark cache, release lock
  */
@@ -41,26 +41,24 @@ public class EtlJobService {
 
     private final PipelineRegistry pipelineRegistry;
     private final JobRunRepository jobRunRepository;
-    private final JobStepRepository jobStepRepository;
     private final SourceCommitService commitService;
     private final JobLockManager lockManager;
     private final SparkSession spark;
     private final TransactionTemplate transaction;
 
     public EtlJobService(PipelineRegistry pipelineRegistry, JobRunRepository jobRunRepository,
-                         JobStepRepository jobStepRepository, SourceCommitService commitService,
-                         JobLockManager lockManager, SparkSession spark, TransactionTemplate transaction) {
+                         SourceCommitService commitService, JobLockManager lockManager, SparkSession spark,
+                         TransactionTemplate transaction) {
         this.pipelineRegistry = pipelineRegistry;
         this.jobRunRepository = jobRunRepository;
-        this.jobStepRepository = jobStepRepository;
         this.commitService = commitService;
         this.lockManager = lockManager;
         this.spark = spark;
         this.transaction = transaction;
     }
 
-    /** Runs the pipeline and returns the finished run with all its steps. */
-    public JobRunDetails runPipeline(String pipelineName, String triggeredBy) {
+    /** Runs the pipeline and returns the finished run. */
+    public JobRun runPipeline(String pipelineName, String triggeredBy) {
         EtlPipeline pipeline = pipelineRegistry.getPipeline(pipelineName);
         lockManager.acquire(pipeline.name());
         try {
@@ -76,9 +74,8 @@ public class EtlJobService {
         }
     }
 
-    public JobRunDetails getJobRun(long jobRunId) {
+    public JobRun getJobRun(long jobRunId) {
         return jobRunRepository.findById(jobRunId)
-                .map(run -> new JobRunDetails(run, jobStepRepository.findByJobRunId(jobRunId)))
                 .orElseThrow(() -> new JobRunNotFoundException(jobRunId));
     }
 
@@ -92,7 +89,7 @@ public class EtlJobService {
         try {
             if (context.directLoad()) {
                 // ALL-OR-NOTHING: every table + rejected records + watermarks in ONE transaction.
-                // Any exception -> ROLLBACK of everything (steps are kept: they commit on their own).
+                // Any exception -> ROLLBACK of everything.
                 transaction.executeWithoutResult(status -> {
                     pipeline.run(context);
                     commitService.commit(context);

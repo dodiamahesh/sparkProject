@@ -1,7 +1,6 @@
 package com.demo.etl.framework.job;
 
 import com.demo.etl.framework.audit.RejectedRecordRepository;
-import com.demo.etl.framework.audit.StepTracker;
 import com.demo.etl.framework.audit.WatermarkRepository;
 import com.demo.etl.framework.pipeline.PipelineContext;
 import com.demo.etl.framework.quality.QualityColumns;
@@ -32,14 +31,12 @@ public class SourceCommitService {
     private final PostgresWriter postgresWriter;
     private final RejectedRecordRepository rejectedRecordRepository;
     private final WatermarkRepository watermarkRepository;
-    private final StepTracker stepTracker;
 
     public SourceCommitService(PostgresWriter postgresWriter, RejectedRecordRepository rejectedRecordRepository,
-                               WatermarkRepository watermarkRepository, StepTracker stepTracker) {
+                               WatermarkRepository watermarkRepository) {
         this.postgresWriter = postgresWriter;
         this.rejectedRecordRepository = rejectedRecordRepository;
         this.watermarkRepository = watermarkRepository;
-        this.stepTracker = stepTracker;
     }
 
     public void commit(PipelineContext context) {
@@ -54,38 +51,32 @@ public class SourceCommitService {
         }
 
         for (SourceBatch batch : context.sourceBatches()) {
-            stepTracker.track(context, "Save rejected records [" + batch.collection() + "]",
-                    () -> saveRejectedRecords(context, batch));
+            saveRejectedRecords(context, batch);
         }
 
         // Only after everything above succeeded: the next run starts where this one ended
         for (SourceBatch batch : context.sourceBatches()) {
             if (!batch.derived()) {
-                stepTracker.track(context, "Advance watermark [" + batch.collection() + "] to " + context.windowEnd(), () -> {
-                    watermarkRepository.advance(context.pipelineName(), batch.collection(),
-                            batch.source().latestRecordColumn(), context.windowEnd(), context.jobRunId());
-                    return batch.sourceCount();
-                });
+                watermarkRepository.advance(context.pipelineName(), batch.collection(),
+                        batch.source().latestRecordColumn(), context.windowEnd(), context.jobRunId());
             }
         }
     }
 
-    /** @return number of rejected records saved */
-    private long saveRejectedRecords(PipelineContext context, SourceBatch batch) {
+    private void saveRejectedRecords(PipelineContext context, SourceBatch batch) {
         if (batch.rejectedCount() == 0) {
-            return 0;
+            return;
         }
         if (context.directLoad()) {
             // no staging table: rows go straight from Spark into the meta tables, inside the job's transaction
             rejectedRecordRepository.saveDirect(QualityColumns.oneRowPerError(batch.rejected()).toLocalIterator(),
                     context.pipelineName(), batch.collection(), context.jobRunId());
-            return batch.rejectedCount();
+            return;
         }
         String staging = postgresWriter.writeToStaging(context, QualityColumns.oneRowPerError(batch.rejected()),
                 "rejected_" + batch.collection());
         try {
             rejectedRecordRepository.saveFromStaging(staging, context.pipelineName(), batch.collection(), context.jobRunId());
-            return batch.rejectedCount();
         } finally {
             postgresWriter.dropStagingTable(staging);
         }

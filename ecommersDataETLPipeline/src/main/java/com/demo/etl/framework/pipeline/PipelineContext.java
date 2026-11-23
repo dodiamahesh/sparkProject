@@ -26,7 +26,6 @@ public class PipelineContext {
     private final JobMetrics metrics = new JobMetrics();
     private final List<SourceBatch> sourceBatches = new ArrayList<>();
     private final List<Dataset<Row>> cachedDatasets = new ArrayList<>();
-    private final AtomicInteger stepCounter = new AtomicInteger();
     private final AtomicInteger stagingTableCounter = new AtomicInteger();
     private final Set<String> deletesApplied = ConcurrentHashMap.newKeySet();
 
@@ -95,10 +94,6 @@ public class PipelineContext {
 
     public boolean deletesApplied(String collection) {
         return deletesApplied.contains(collection);
-    }
-
-    public int nextStepOrder() {
-        return stepCounter.incrementAndGet();
     }
 
     public int nextStagingTableNumber() {

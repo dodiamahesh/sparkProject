@@ -9,6 +9,8 @@ import com.demo.etl.framework.target.DirectPostgresWriter;
 import com.demo.etl.framework.target.Scd2Writer;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.List;
 
@@ -21,10 +23,11 @@ import java.util.List;
  *   load(ctx, mapper.toDimPayer(typed), "silver.dim_payer", "payer_id");         // L
  * </pre>
  *
- * Every building block is recorded as a step in meta.meta_pipeline_step.
  * Saving rejected records and advancing the watermarks happens automatically after run() succeeds.
  */
 public abstract class AbstractEtlPipeline implements EtlPipeline {
+
+    private static final Logger log = LoggerFactory.getLogger(AbstractEtlPipeline.class);
 
     protected final PipelineToolkit toolkit;
 
@@ -52,18 +55,12 @@ public abstract class AbstractEtlPipeline implements EtlPipeline {
 
     /** Loads a slowly changing dimension TYPE 2 (history kept). See {@link Scd2Writer}. */
     protected long loadScd2(PipelineContext context, Dataset<Row> rows, Scd2Writer.Scd2Spec spec) {
-        long count = toolkit.stepTracker().track(context, "Load " + spec.table() + " (SCD2)",
-                () -> toolkit.scd2Writer().load(context, rows, spec));
-        context.metrics().addLoaded(count);
-        return count;
+        return loaded(context, spec.table(), toolkit.scd2Writer().load(context, rows, spec));
     }
 
     /** UPSERT rows into a PostgreSQL table, matching on the business key column(s). */
     protected long load(PipelineContext context, Dataset<Row> rows, String targetTable, String... businessKeyColumns) {
-        long count = toolkit.stepTracker().track(context, "Load " + targetTable,
-                () -> toolkit.postgresWriter().upsert(context, rows, targetTable, businessKeyColumns));
-        context.metrics().addLoaded(count);
-        return count;
+        return loaded(context, targetTable, toolkit.postgresWriter().upsert(context, rows, targetTable, businessKeyColumns));
     }
 
     /** Adds every date found in {@code dateColumn} to the shared silver.dim_date table. */
@@ -82,10 +79,7 @@ public abstract class AbstractEtlPipeline implements EtlPipeline {
      */
     protected long loadDirect(PipelineContext context, Dataset<Row> rows, String targetTable, List<String> keyColumns,
                               DirectPostgresWriter.KeyLookup... lookups) {
-        long count = toolkit.stepTracker().track(context, "Load " + targetTable + " (direct)",
-                () -> toolkit.directWriter().upsert(context, rows, targetTable, keyColumns, List.of(lookups)));
-        context.metrics().addLoaded(count);
-        return count;
+        return loaded(context, targetTable, toolkit.directWriter().upsert(context, rows, targetTable, keyColumns, List.of(lookups)));
     }
 
     /** Adds every date of the given columns to silver.dim_date, directly (see {@link #loadDirect}). */
@@ -125,8 +119,13 @@ public abstract class AbstractEtlPipeline implements EtlPipeline {
         if (batch.deletedCount() == 0) {
             return 0;
         }
-        return toolkit.stepTracker().track(context, "Soft delete " + table + " [" + batch.collection() + "]",
-                () -> toolkit.softDeleteWriter().apply(context, batch, table, keyColumn, scd2));
+        return toolkit.softDeleteWriter().apply(context, batch, table, keyColumn, scd2);
+    }
+
+    private static long loaded(PipelineContext context, String table, long count) {
+        context.metrics().addLoaded(count);
+        log.info("[job {}] loaded {}: {} rows", context.jobRunId(), table, count);
+        return count;
     }
 
     /** Replaces a business key with the dimension's surrogate key (adds the key column). */
