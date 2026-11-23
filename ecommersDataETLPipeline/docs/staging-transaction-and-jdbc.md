@@ -31,7 +31,7 @@ MongoDB ──(Mongo Spark Connector)──> Spark DataFrame
 | `meta_pipeline` (+ `last_run_time` = watermark) | `JdbcTemplate`: `INSERT ... ON CONFLICT DO UPDATE`, `UPDATE` | `MetaPipelineRepository` |
 | `meta_pipeline_run` | `JdbcTemplate`: `INSERT ... SELECT ... RETURNING`, `UPDATE` | `MetaPipelineRunRepository` |
 | `meta_asset`, `meta_lineage`, `meta_column_lineage` | `JdbcTemplate`: `INSERT ... ON CONFLICT` (expression index) | `MetaAssetRepository`, `MetaLineageRepository`, `MetaColumnLineageRepository` |
-| `meta_error_master` + `meta_rejected_record` | Spark-JDBC thi staging, pachhi `JdbcTemplate` 3 SQL ek transaction ma | `RejectedRecordRepository` |
+| `meta_error_master` + `meta_rejected_record` | Spark-JDBC thi staging, pachhi `JdbcTemplate` 2 SQL ek transaction ma (record dith ek row, `error_ids` array) | `RejectedRecordRepository` |
 
 `JdbcTemplate` = application nu connection (Spring `DataSource`, Hikari pool), plain SQL.
 Spark-JDBC = Spark nu potanu connection, dar partition alag, dar partition potani rite commit kare.

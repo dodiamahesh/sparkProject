@@ -341,5 +341,5 @@ ONE PostgreSQL transaction (application connection, no staging):
 | incremental (02) | read 6, valid 5, rejected 1 -> fact 17, taxpayer 7, Asante renamed, 612 = APRV, 619 loaded |
 | **forced failure** (fact insert fails after the dimensions were written) | FAILED. **Rolled back:** the new taxpayer, the rejected row, the new master message and `last_run_time`. The run row stays FAILED with the error message |
 | same window again after the fix | read the same 2 documents, both handled; the new message got `error_id` 70 (no gap) |
-| partly fixed record (3 errors -> 1) | the 2 fixed error rows are removed, the remaining one has `attempt_count + 1` |
+| partly fixed record (3 errors -> 1) | its one row now has only the remaining error in `error_ids` / `error_messages`, `attempt_count + 1` |
 | `sales-pipeline` (staging path, regression) | unchanged: read 94, valid 80, rejected 16 |

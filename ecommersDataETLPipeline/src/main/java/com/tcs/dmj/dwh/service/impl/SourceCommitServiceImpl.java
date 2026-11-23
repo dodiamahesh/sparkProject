@@ -13,8 +13,8 @@ import org.springframework.stereotype.Service;
  * The "commit" phase. Runs ONLY after the pipeline loaded all its tables successfully.
  * For every source collection processed in the job:
  *
- *   1. save rejected rows        -> meta.meta_rejected_record (one row per record + error, error_id ->
- *                                   meta.meta_error_master)
+ *   1. save rejected records     -> meta.meta_rejected_record (ONE row per record, error_ids[] ->
+ *                                   meta.meta_error_master: every rule it broke)
  *                                   (directLoad pipelines: without staging table, in the job's transaction)
  *   2. advance last_run_time     -> meta.meta_pipeline.last_run_time = start time of this run (once per pipeline)
  *   (first: every soft delete read from the source must have been applied by the pipeline, else the job fails)

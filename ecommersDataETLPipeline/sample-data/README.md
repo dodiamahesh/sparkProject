@@ -39,14 +39,16 @@ updatedAt > meta_pipeline.last_run_time   AND   updatedAt <= start time of this 
 | `meta_lineage` | table-level edge source asset -> target asset, per pipeline. Found **automatically** from every load of a successful run (Spark plan of the loaded data). |
 | `meta_column_lineage` | selected field-to-field mapping (critical columns only), declared in the pipeline code (`columnLineage()`, e.g. VAT). |
 | `meta_error_master` | possible error: `error_id`, `error_type` (CORRUPT / VALIDATION / ORPHAN / DUPLICATE), `field_name`, `error_message`. Seeded by the 03 file; a rule added later in the code gets its row on its first reject. |
-| `meta_rejected_record` | rejected record **+ failed rule**: `error_id` -> `meta_error_master`, `field_value` (the bad value), `raw_record`. A record that broke 2 rules has 2 rows. |
+| `meta_rejected_record` | rejected record (**one row per record**): `error_ids` (array -> `meta_error_master`, every rule it broke), `error_messages` (comma separated, same order), `field_values` (JSON: bad value per field), `raw_record`, `attempt_count`. Rejected again -> the row is overwritten with its current errors. |
 
 Which errors are open, with their message:
 
 ```sql
-SELECT r.pipeline_name, r.source_collection, r.business_key, e.error_type, e.error_message, r.field_value
-  FROM meta.meta_rejected_record r JOIN meta.meta_error_master e USING (error_id)
+SELECT pipeline_name, source_collection, business_key, error_ids, error_messages, field_values
+  FROM meta.meta_rejected_record
  ORDER BY 1, 2, 3;
+
+-- records with error 12:  WHERE 12 = ANY (error_ids)
 ```
 
 Table lineage (filled automatically by every successful run):

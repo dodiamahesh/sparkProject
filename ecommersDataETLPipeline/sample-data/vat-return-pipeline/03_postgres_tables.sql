@@ -26,7 +26,7 @@
 --   meta.meta_lineage          table-level lineage: source asset -> target asset, per pipeline
 --   meta.meta_column_lineage   selected field-to-field lineage (critical columns only)
 --   meta.meta_error_master     every possible data-quality error, once (error_type + message)
---   meta.meta_rejected_record  bad records: one row per record + failed rule, error_id -> meta_error_master
+--   meta.meta_rejected_record  bad records: ONE row per record, error_ids[] -> meta_error_master (all failed rules)
 --   etl_staging                temporary tables used by the UPSERT (created and dropped by the job)
 --   silver.dim_date            shared (conformed) date dimension, filled by the jobs
 -- =====================================================================
@@ -184,7 +184,11 @@ CREATE TABLE IF NOT EXISTS meta.meta_error_master (
     CONSTRAINT uq_error_master UNIQUE (error_type, error_message)
 );
 
--- A record that broke 2 rules has 2 rows (same source_id, different error_id).
+-- ONE row per rejected record, with ALL the rules it broke:
+--   error_ids      {12,19}                        -> meta_error_master.error_id (sorted; arrays have no FK)
+--   error_messages 'amount must be ..., tin ...'  (same order, comma separated)
+--   field_values   {"amount": "-5", "tin": "X1"}  (the bad value per checked field)
+-- The same record rejected again: overwritten with its CURRENT errors, attempt_count + 1.
 -- first_job_run_id / last_job_run_id = meta.meta_pipeline_run.pipeline_run_id
 CREATE TABLE IF NOT EXISTS meta.meta_rejected_record (
     rejected_record_id  BIGSERIAL    PRIMARY KEY,
@@ -192,17 +196,60 @@ CREATE TABLE IF NOT EXISTS meta.meta_rejected_record (
     source_collection   VARCHAR(100) NOT NULL,
     source_id           VARCHAR(100) NOT NULL,           -- MongoDB _id (order lines: <_id>#<line_no>)
     business_key        VARCHAR(200),                    -- e.g. PAY-0007, O1008/line-2
-    error_id            INT          NOT NULL REFERENCES meta.meta_error_master (error_id),
-    field_value         TEXT,                            -- the bad value of error_master.field_name
+    error_ids           INT[]        NOT NULL,
+    error_messages      TEXT         NOT NULL,
+    field_values        JSONB,
     raw_record          JSONB,                           -- original document (before cleaning)
-    attempt_count       INT          NOT NULL DEFAULT 1, -- how many runs rejected this record with this error
+    attempt_count       INT          NOT NULL DEFAULT 1, -- how many runs rejected this record
     first_job_run_id    BIGINT       NOT NULL,
     last_job_run_id     BIGINT       NOT NULL,
     first_rejected_at   TIMESTAMP    NOT NULL DEFAULT now(),
     last_rejected_at    TIMESTAMP    NOT NULL DEFAULT now(),
-    CONSTRAINT uq_rejected_record UNIQUE (pipeline_name, source_collection, source_id, error_id)
+    CONSTRAINT uq_rejected_record UNIQUE (pipeline_name, source_collection, source_id)
 );
-CREATE INDEX IF NOT EXISTS idx_rejected_record_error ON meta.meta_rejected_record (error_id);
+
+-- upgrade of a table from an older version (one row per record + error, column error_id): the rows of a record
+-- are merged into ONE row (re-run safe: does nothing once upgraded)
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+                WHERE table_schema = 'meta' AND table_name = 'meta_rejected_record' AND column_name = 'error_id') THEN
+        ALTER TABLE meta.meta_rejected_record
+            ADD COLUMN error_ids INT[], ADD COLUMN error_messages TEXT, ADD COLUMN field_values JSONB;
+        WITH records AS (
+            SELECT r.pipeline_name, r.source_collection, r.source_id,
+                   MIN(r.rejected_record_id)                                     AS keep_id,
+                   ARRAY_AGG(r.error_id ORDER BY r.error_id)                     AS error_ids,
+                   STRING_AGG(e.error_message, ', ' ORDER BY r.error_id)         AS error_messages,
+                   JSONB_OBJECT_AGG(e.field_name, r.field_value)
+                       FILTER (WHERE e.field_name IS NOT NULL)                   AS field_values,
+                   MAX(r.attempt_count) AS attempt_count,  MIN(r.first_job_run_id) AS first_job_run_id,
+                   MAX(r.last_job_run_id) AS last_job_run_id, MIN(r.first_rejected_at) AS first_rejected_at,
+                   MAX(r.last_rejected_at) AS last_rejected_at
+              FROM meta.meta_rejected_record r
+              JOIN meta.meta_error_master e ON e.error_id = r.error_id
+             GROUP BY r.pipeline_name, r.source_collection, r.source_id)
+        UPDATE meta.meta_rejected_record t
+           SET error_ids = c.error_ids, error_messages = c.error_messages, field_values = c.field_values,
+               attempt_count = c.attempt_count, first_job_run_id = c.first_job_run_id,
+               last_job_run_id = c.last_job_run_id, first_rejected_at = c.first_rejected_at,
+               last_rejected_at = c.last_rejected_at
+          FROM records c
+         WHERE t.rejected_record_id = c.keep_id;
+        DELETE FROM meta.meta_rejected_record WHERE error_ids IS NULL;
+        ALTER TABLE meta.meta_rejected_record DROP CONSTRAINT IF EXISTS uq_rejected_record;
+        DROP INDEX IF EXISTS meta.idx_rejected_record_error;
+        ALTER TABLE meta.meta_rejected_record
+            DROP COLUMN error_id,
+            DROP COLUMN field_value,
+            ALTER COLUMN error_ids SET NOT NULL,
+            ALTER COLUMN error_messages SET NOT NULL,
+            ADD CONSTRAINT uq_rejected_record UNIQUE (pipeline_name, source_collection, source_id);
+        RAISE NOTICE 'meta.meta_rejected_record upgraded: one row per rejected record';
+    END IF;
+END $$;
+-- "which records have error 12": WHERE 12 = ANY (error_ids)
+CREATE INDEX IF NOT EXISTS idx_rejected_record_errors ON meta.meta_rejected_record USING GIN (error_ids);
 
 -- tables that are no longer used (removed from a database created before; re-run safe)
 DROP TABLE IF EXISTS meta.meta_pipeline_step;

@@ -1,12 +1,17 @@
 package com.tcs.dmj.dwh.domain;
 
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
 
 /**
- * One row of meta.meta_rejected_record (= one failed rule of one record), with its error from
- * meta.meta_error_master. A record that broke 2 rules has 2 rows (same sourceId, different errorId).
+ * One row of meta.meta_rejected_record = ONE rejected record with ALL the rules it broke.
  *
- * @param fieldValue the bad value of {@code fieldName} in this record
+ * @param errorIds      meta.meta_error_master.error_id of every failed rule, sorted
+ * @param errorMessages the messages of errorIds, comma separated, in the same order
+ * @param fieldValues   the bad value per checked field, e.g. {"amount": "-5", "tin": "X1"}
+ *                      (rules on several fields have no entry here)
+ * @param rawRecord     the original document (JSON, before cleaning)
  */
 public record RejectedRecord(
         long rejectedRecordId,
@@ -14,11 +19,9 @@ public record RejectedRecord(
         String sourceCollection,
         String sourceId,
         String businessKey,
-        int errorId,
-        String errorType,
-        String fieldName,
-        String errorMessage,
-        String fieldValue,
+        List<Integer> errorIds,
+        String errorMessages,
+        Map<String, String> fieldValues,
         String rawRecord,
         int attemptCount,
         long firstJobRunId,
