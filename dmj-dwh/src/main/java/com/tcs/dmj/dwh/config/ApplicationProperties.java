@@ -38,8 +38,15 @@ public record ApplicationProperties(
     public record Quality(int rejectGateMinRecords) {
     }
 
-    /** Spark session settings. {@code config} is passed to Spark as-is. */
-    public record Spark(String appName, String master, Map<String, String> config) {
+    /**
+     * Spark session settings. {@code config} is passed to Spark as-is (blank values are skipped).
+     *
+     * @param master          local[*] (offDev) or the cluster, e.g. spark://spark-master:7077 (dev / test / prod)
+     * @param executorJarsDir CLUSTER only: folder with the jars the EXECUTORS need (Mongo connector + driver,
+     *                        PostgreSQL driver), made by "mvn package" in target/spark-jars. Every *.jar in it is
+     *                        added to spark.jars. Empty = none (local mode needs none).
+     */
+    public record Spark(String appName, String master, String executorJarsDir, Map<String, String> config) {
     }
 
     /** Bronze layer (source). */

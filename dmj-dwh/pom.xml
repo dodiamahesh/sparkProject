@@ -150,6 +150,29 @@
                 </configuration>
             </plugin>
             <plugin>
+                <!--
+                    Cluster profiles (dev / test / prod): the Spark EXECUTORS read MongoDB and PostgreSQL, so they
+                    need these jars. mvn package copies them to target/spark-jars; the application sends them to
+                    the executors (application.dwh.spark.executor-jars-dir). Local mode (offDev) does not need them.
+                -->
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>copy-spark-executor-jars</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>copy-dependencies</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.directory}/spark-jars</outputDirectory>
+                            <includeGroupIds>org.mongodb,org.mongodb.spark,org.postgresql</includeGroupIds>
+                            <includeScope>runtime</includeScope>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>

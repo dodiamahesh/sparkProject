@@ -1,7 +1,17 @@
 # =====================================================================
-#  PROD PROFILE
-#  All secrets / hosts come from environment variables. Never commit real passwords.
+#  prod PROFILE  (PRODUCTION + full Spark cluster)
 #  Run: java -jar dmj-dwh-1.0.0.jar --spring.profiles.active=prod
+#
+#  Every host and secret comes from ENVIRONMENT VARIABLES (no defaults: a missing value stops the start-up).
+#  Never commit real passwords. Same cluster set-up as dev / test (standalone, CLIENT mode), largest resources.
+#
+#  Required: SPARK_MASTER, SPARK_DRIVER_HOST, POSTGRES_URL, POSTGRES_USER, POSTGRES_PASSWORD, MONGO_URI
+#  Optional: MONGO_DATABASE, SPARK_EXECUTOR_JARS_DIR, SPARK_EXECUTOR_CORES / _MEMORY, SPARK_CORES_MAX,
+#            SPARK_SHUFFLE_PARTITIONS, SPARK_DRIVER_PORT, SPARK_BLOCKMANAGER_PORT, SPARK_EXTRA_JARS
+#
+#  Other cluster managers: only "master" and a few keys change, e.g.
+#    YARN       master: yarn            (+ HADOOP_CONF_DIR / YARN_CONF_DIR set on this machine)
+#    Kubernetes master: k8s://https://<api-server>:6443  (+ "[spark.kubernetes.container.image]")
 # =====================================================================
 spring:
   datasource:
@@ -18,13 +28,22 @@ spring:
 application:
   dwh:
     spark:
-      # e.g. local[*] for a single server, or spark://host:7077 for a standalone cluster
-      master: ${SPARK_MASTER:local[*]}
+      master: ${SPARK_MASTER}
+      executor-jars-dir: ${SPARK_EXECUTOR_JARS_DIR:/opt/dmj-dwh/spark-jars}
       config:
+        "[spark.submit.deployMode]": "client"
+        "[spark.driver.host]": "${SPARK_DRIVER_HOST}"
+        "[spark.driver.bindAddress]": "0.0.0.0"
+        "[spark.driver.port]": "${SPARK_DRIVER_PORT:7078}"
+        "[spark.blockManager.port]": "${SPARK_BLOCKMANAGER_PORT:7079}"
+        "[spark.port.maxRetries]": "16"
+        # ---- resources: LARGE (prod) ----
+        "[spark.executor.cores]": "${SPARK_EXECUTOR_CORES:4}"
+        "[spark.executor.memory]": "${SPARK_EXECUTOR_MEMORY:8g}"
+        "[spark.cores.max]": "${SPARK_CORES_MAX:16}"
         "[spark.sql.shuffle.partitions]": "${SPARK_SHUFFLE_PARTITIONS:50}"
-        "[spark.ui.enabled]": "false"
-        "[spark.sql.ansi.enabled]": "false"
-        "[spark.sql.legacy.timeParserPolicy]": "CORRECTED"
+        "[spark.network.timeout]": "600s"
+        "[spark.jars]": "${SPARK_EXTRA_JARS:}"
     postgres:
       batch-size: 5000
 

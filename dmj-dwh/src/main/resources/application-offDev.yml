@@ -1,0 +1,35 @@
+# =====================================================================
+#  offDev PROFILE  (your laptop, offline development)
+#  Default profile (spring.profiles.active in application.yml).
+#
+#  Spark   : local[*] = driver + executors inside THIS JVM, no cluster, no extra jars
+#  Database: local PostgreSQL + MongoDB. Defaults below; override with environment variables if needed.
+# =====================================================================
+spring:
+  datasource:
+    # SILVER layer: PostgreSQL (star schema + meta tables). Local PostgreSQL 18 service on port 5433.
+    # Put your real password in the POSTGRES_PASSWORD environment variable (or replace the default below).
+    url: ${POSTGRES_URL:jdbc:postgresql://localhost:5433/silver?reWriteBatchedInserts=true}
+    username: ${POSTGRES_USER:postgres}
+    password: ${POSTGRES_PASSWORD:root}
+  data:
+    mongodb:
+      # BRONZE layer: MongoDB (raw source collections)
+      uri: ${MONGO_URI:mongodb://localhost:27017}
+      database: ${MONGO_DATABASE:bronze_db}
+
+application:
+  dwh:
+    spark:
+      master: local[*]
+      config:
+        "[spark.sql.shuffle.partitions]": "4"
+        # Avoid hostname / VPN issues on a laptop
+        "[spark.driver.host]": "localhost"
+        "[spark.driver.bindAddress]": "127.0.0.1"
+    postgres:
+      batch-size: 1000
+
+logging:
+  level:
+    com.tcs.dmj.dwh: DEBUG

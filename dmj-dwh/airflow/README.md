@@ -3,7 +3,7 @@
 One jar holds every pipeline. Each pipeline has its **own DAG**. A DAG task starts the jar in **batch mode**:
 
 ```bash
-java -jar dmj-dwh-1.0.0.jar --spring.profiles.active=prod --run-pipeline=sales-pipeline
+java -jar dmj-dwh-1.0.0.jar --spring.profiles.active=<offDev|dev|test|prod> --run-pipeline=sales-pipeline
 ```
 
 - Only `sales-pipeline` runs. There is no web server, and the process exits when the run ends.
@@ -46,16 +46,45 @@ This uses Airflow data-aware scheduling: Airflow 2.4+ (`Dataset`) and Airflow 3 
 
 **DAG id = pipeline name**, exactly the same: the pipeline `sales-pipeline` has the DAG `sales-pipeline`. The application stores it in `meta.meta_pipeline.airflow_dag_id` (equal to `pipeline_name`). A pipeline name may only contain letters, digits, `-`, `_` and `.` (Airflow rule) and at most 30 characters; the application refuses to start otherwise.
 
-## Setup (once)
+## Environments (offDev / dev / test / prod)
 
-1. **Build** the jar with `mvn clean package`. This produces `target/dmj-dwh-1.0.0.jar`.
-2. **Copy** the jar to every Airflow worker, at the path given in `defaults.jar` (default `/opt/dmj-dwh/dmj-dwh-1.0.0.jar`). The worker needs Java 17. The jar sets the Spark `--add-opens` flags itself.
+**One Airflow per environment**, and the **same** `dags/` files in all of them. Each Airflow says which environment
+it is with one setting:
+
+| Where | Setting |
+|---|---|
+| environment variable on the scheduler and the workers | `DMJ_DWH_ENV=dev` (or `AIRFLOW_VAR_DMJ_DWH_ENV=dev`) |
+| or Airflow Variable (Admin > Variables) | `dmj_dwh_env` = `dev` |
+
+The DAG file then takes the block `environments.<env>` of the YAML:
+
+| env | Spring profile | Spark | schedules | other |
+|---|---|---|---|---|
+| `offDev` | `offDev` | `local[*]` inside the task JVM | off (trigger by hand) | small JVM, no retries |
+| `dev` | `dev` | `spark://dev-spark-master:7077` | off (trigger by hand) | no retries |
+| `test` | `test` | `spark://test-spark-master:7077` | on | rejected rows fail the task |
+| `prod` | `prod` | Airflow Variable `dmj_dwh_spark_master` | on | 2 retries, big JVM |
+
+The task command becomes `java ... -jar dmj-dwh-1.0.0.jar --spring.profiles.active=<profile> --run-pipeline=<name>`,
+so the jar loads `application-<profile>.yml`. `SPARK_DRIVER_HOST` (the address the Spark executors connect back to)
+is set automatically to the worker's IP. Not set or unknown environment: the DAG file fails to load with a clear
+error in the Airflow UI, so it never guesses (for example never runs prod settings on dev).
+
+The DAG id stays the pipeline name (`sales-pipeline`) in every environment, because each environment has its own
+Airflow and its own `meta` tables. The environment is shown as a DAG tag and in the description.
+
+## Setup (once per Airflow / environment)
+
+1. **Build** with `mvn clean package`. This produces `target/dmj-dwh-1.0.0.jar` and `target/spark-jars/` (6 jars the Spark executors need on a cluster).
+2. **Copy** the jar to every Airflow worker, at the path given in `defaults.jar` (default `/opt/dmj-dwh/dmj-dwh-1.0.0.jar`), and `target/spark-jars/*` to `/opt/dmj-dwh/spark-jars/` (dev / test / prod). The worker needs Java 17. The jar sets the Spark `--add-opens` flags itself.
 3. **Copy** the 2 files of `dags/` to the Airflow `dags/` folder.
-4. **Create** the Airflow Connection `dmj_dwh_postgres`:
+4. **Set** `DMJ_DWH_ENV` (or the Variable `dmj_dwh_env`) to this Airflow's environment.
+5. **Create** the Airflow Connection `dmj_dwh_postgres` with THIS environment's database:
    - type Postgres
    - host, port, schema = database name, login, password
-5. **Create** the Airflow Variable `dmj_dwh_mongo_uri`, for example `mongodb://user:pass@mongo-host:27017`.
-6. **Create the PostgreSQL tables** once by running `sample-data/sales-pipeline/03_postgres_tables.sql`. The application never creates tables itself.
+6. **Create** the Airflow Variable `dmj_dwh_mongo_uri`, for example `mongodb://user:pass@mongo-host:27017`. prod also needs `dmj_dwh_spark_master`.
+7. **Network** (cluster environments): the Spark workers must reach MongoDB, PostgreSQL and the Airflow workers on ports 7078 / 7079 (driver and block manager, see `application-<profile>.yml`).
+8. **Create the PostgreSQL tables** once by running `sample-data/sales-pipeline/03_postgres_tables.sql`. The application never creates tables itself.
 
 The `env` values in the YAML are Jinja templates. `{{ conn.<id>.<field> }}` reads an Airflow Connection and `{{ var.value.<key> }}` reads an Airflow Variable, so no password is written in a file.
 

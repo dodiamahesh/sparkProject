@@ -7,6 +7,17 @@
 #  DAG id = pipeline name, exactly the same (sales-pipeline -> DAG "sales-pipeline"). The application stores
 #  the same value in meta.meta_pipeline.pipeline_name and meta.meta_pipeline.airflow_dag_id.
 #
+#  ENVIRONMENTS: the SAME two files are deployed to every Airflow (dev, test, prod). Each Airflow says which
+#  environment it is with ONE setting, read when the DAG file is parsed:
+#      environment variable  DMJ_DWH_ENV=dev            (on the scheduler + workers), or
+#      Airflow Variable      dmj_dwh_env = dev          (Admin > Variables)
+#  The matching block under "environments" picks the Spring profile (application-<profile>.yml) and the
+#  environment's settings. No value set = the DAG file fails to load with a clear message (never a silent guess).
+#
+#  Order of settings (later wins):
+#      defaults  ->  environments.<env>  ->  pipelines.<name>  ->  pipelines.<name>.environments.<env>
+#  "env" maps (environment variables of the java process) are merged key by key in the same order.
+#
 #  Per pipeline:
 #    schedule:   cron / preset ("0 2 * * *", "@daily") for a pipeline that starts on its own
 #    depends_on: list of pipelines; the DAG starts when ALL of them finished SUCCESSFULLY since its last run
@@ -16,9 +27,8 @@
 
 defaults:
   java: java                                     # or the full path, e.g. /usr/lib/jvm/java-17/bin/java
-  java_options: "-Xms1g -Xmx4g"
+  java_options: "-Xms1g -Xmx4g"                  # = Spark DRIVER memory (client mode: the driver is this JVM)
   jar: /opt/dmj-dwh/dmj-dwh-1.0.0.jar
-  spring_profile: prod
   owner: dmj-dwh-team
   start_date: "2026-11-01"
   retries: 1
@@ -28,17 +38,61 @@ defaults:
   # Airflow pool (Admin > Pools): limits how many pipelines run at the same time. Create it first, e.g.
   # "dmj_dwh" with 2 slots, then uncomment. Without it: Airflow default_pool. See docs/airflow-execution-jar-running-on-multiple-jvm.md
   # pool: dmj_dwh
-  # Environment of the java process (application-prod.yml reads these). Values are Jinja templates:
+  # Environment of the java process (application-<profile>.yml reads these). Values are Jinja templates:
   #   {{ conn.<id>.<field> }}  = Airflow Connection,  {{ var.value.<key> }} = Airflow Variable
+  # Every Airflow has its OWN connection "dmj_dwh_postgres" and variable "dmj_dwh_mongo_uri" pointing to ITS
+  # environment's databases, so these lines are the same everywhere.
   env:
     POSTGRES_URL: "jdbc:postgresql://{{ conn.dmj_dwh_postgres.host }}:{{ conn.dmj_dwh_postgres.port }}/{{ conn.dmj_dwh_postgres.schema }}?reWriteBatchedInserts=true"
     POSTGRES_USER: "{{ conn.dmj_dwh_postgres.login }}"
     POSTGRES_PASSWORD: "{{ conn.dmj_dwh_postgres.password }}"
     MONGO_URI: "{{ var.value.dmj_dwh_mongo_uri }}"
     MONGO_DATABASE: bronze_db
-    SPARK_MASTER: "local[*]"
+    SPARK_EXECUTOR_JARS_DIR: /opt/dmj-dwh/spark-jars      # copy target/spark-jars here (cluster profiles)
+    # SPARK_DRIVER_HOST is filled automatically with the worker's IP (see dmj_dwh_dags.py), unless set here
+
+environments:
+
+  offDev:                                        # Airflow on your laptop (e.g. in WSL / Docker), local Spark
+    spring_profile: offDev
+    java_options: "-Xms512m -Xmx2g"
+    schedules: false                             # no automatic runs: trigger the DAG by hand
+    retries: 0
+    env:
+      SPARK_EXECUTOR_JARS_DIR: ""                # local[*] needs no executor jars
+
+  dev:
+    spring_profile: dev
+    java_options: "-Xms1g -Xmx2g"
+    schedules: false                             # dev: trigger by hand (set true to test the schedule)
+    retries: 0
+    env:
+      SPARK_MASTER: "spark://dev-spark-master:7077"
+      SPARK_CORES_MAX: "4"
+
+  test:
+    spring_profile: test
+    java_options: "-Xms1g -Xmx4g"
+    schedules: true
+    env:
+      SPARK_MASTER: "spark://test-spark-master:7077"
+      SPARK_CORES_MAX: "8"
+      DWH_FAIL_ON_REJECTED_RECORDS: "true"       # QA: a run with rejected rows fails the task (easy to spot)
+
+  prod:
+    spring_profile: prod
+    java_options: "-Xms2g -Xmx8g"
+    schedules: true
+    retries: 2
+    env:
+      SPARK_MASTER: "{{ var.value.dmj_dwh_spark_master }}"    # e.g. spark://prod-spark-master:7077
+      SPARK_CORES_MAX: "16"
 
 pipelines:
 
   sales-pipeline:
-    schedule: "0 2 * * *"                          # every day 02:00
+    schedule: "0 2 * * *"                          # every day 02:00 (only where "schedules: true")
+    # per-environment overrides of this pipeline, e.g.:
+    # environments:
+    #   test:
+    #     schedule: "0 */4 * * *"                  # every 4 hours on test

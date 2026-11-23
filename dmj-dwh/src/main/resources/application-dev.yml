@@ -1,30 +1,55 @@
 # =====================================================================
-#  DEV PROFILE  (local machine)
-#  Activated by default (see spring.profiles.active in application.yml)
+#  dev PROFILE  (shared DEV server + small Spark cluster)
+#  Run: java -jar dmj-dwh-1.0.0.jar --spring.profiles.active=dev
+#
+#  Spark runs on a STANDALONE CLUSTER in CLIENT mode:
+#    driver    = this JVM (REST service or the Airflow task) on the dev server / Airflow worker
+#    executors = on the Spark workers; they read MongoDB and PostgreSQL THEMSELVES, so
+#                - the workers must reach MongoDB, PostgreSQL and this machine (spark.driver.host + the 2 ports)
+#                - the connector jars are sent to them from SPARK_EXECUTOR_JARS_DIR (copy target/spark-jars there)
+#                - the cluster must run Spark 3.5.x with Scala 2.12 (same as the jar)
+#
+#  Environment variables (defaults = the dev servers; CHANGE the host names once for your team):
+#    SPARK_MASTER         spark://dev-spark-master:7077
+#    SPARK_DRIVER_HOST    REQUIRED: IP / host name of THIS machine, reachable from the Spark workers
+#    POSTGRES_URL / POSTGRES_USER / POSTGRES_PASSWORD (password REQUIRED)
+#    MONGO_URI / MONGO_DATABASE
 # =====================================================================
 spring:
   datasource:
-    # SILVER layer: PostgreSQL (star schema + meta tables)
-    # Local PostgreSQL 18 service runs on port 5433 (docker-compose.yml uses 5432 -> set POSTGRES_URL).
-    # Put your real password in the POSTGRES_PASSWORD environment variable (or replace the default below).
-    # Database silver (exists, schemas meta + silver): run sample-data/<job>/03_postgres_tables.sql once per job
-    url: ${POSTGRES_URL:jdbc:postgresql://localhost:5433/silver?reWriteBatchedInserts=true}
-    username: ${POSTGRES_USER:postgres}
-    password: ${POSTGRES_PASSWORD:root}
+    url: ${POSTGRES_URL:jdbc:postgresql://dev-postgres:5432/silver?reWriteBatchedInserts=true}
+    username: ${POSTGRES_USER:dmj_dwh}
+    password: ${POSTGRES_PASSWORD}
+    hikari:
+      maximum-pool-size: 5
   data:
     mongodb:
-      # BRONZE layer: MongoDB (raw source collections)
-      uri: ${MONGO_URI:mongodb://localhost:27017}
+      uri: ${MONGO_URI:mongodb://dev-mongo:27017}
       database: ${MONGO_DATABASE:bronze_db}
 
 application:
   dwh:
     spark:
-      master: local[*]
+      master: ${SPARK_MASTER:spark://dev-spark-master:7077}
+      executor-jars-dir: ${SPARK_EXECUTOR_JARS_DIR:/opt/dmj-dwh/spark-jars}
       config:
-        # Avoid hostname / VPN issues on a laptop
-        "[spark.driver.host]": "localhost"
-        "[spark.driver.bindAddress]": "127.0.0.1"
+        "[spark.submit.deployMode]": "client"
+        # ---- driver <-> executors network (open these ports from the workers to this machine) ----
+        "[spark.driver.host]": "${SPARK_DRIVER_HOST}"
+        "[spark.driver.bindAddress]": "0.0.0.0"
+        "[spark.driver.port]": "${SPARK_DRIVER_PORT:7078}"
+        "[spark.blockManager.port]": "${SPARK_BLOCKMANAGER_PORT:7079}"
+        "[spark.port.maxRetries]": "16"              # a 2nd job on the same machine takes the next port
+        # ---- resources: SMALL (dev) ----
+        "[spark.executor.cores]": "${SPARK_EXECUTOR_CORES:2}"
+        "[spark.executor.memory]": "${SPARK_EXECUTOR_MEMORY:2g}"
+        "[spark.cores.max]": "${SPARK_CORES_MAX:4}"   # max cores of THIS application on the cluster
+        "[spark.sql.shuffle.partitions]": "${SPARK_SHUFFLE_PARTITIONS:8}"
+        "[spark.network.timeout]": "300s"
+        # extra jars (comma separated, optional), added before the executor-jars-dir jars
+        "[spark.jars]": "${SPARK_EXTRA_JARS:}"
+    postgres:
+      batch-size: 1000
 
 logging:
   level:

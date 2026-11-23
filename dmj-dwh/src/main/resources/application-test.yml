@@ -1,0 +1,50 @@
+# =====================================================================
+#  test PROFILE  (TEST / QA server + medium Spark cluster)
+#  Run: java -jar dmj-dwh-1.0.0.jar --spring.profiles.active=test
+#
+#  Same set-up as dev (standalone cluster, CLIENT mode, see application-dev.yml), with more resources and
+#  production-like settings (INFO logs, bigger batches). Use it for full-volume and end-to-end tests.
+#
+#  Environment variables (defaults = the test servers; CHANGE the host names once for your team):
+#    SPARK_MASTER         spark://test-spark-master:7077
+#    SPARK_DRIVER_HOST    REQUIRED: IP / host name of THIS machine, reachable from the Spark workers
+#    POSTGRES_URL / POSTGRES_USER / POSTGRES_PASSWORD (password REQUIRED)
+#    MONGO_URI / MONGO_DATABASE
+# =====================================================================
+spring:
+  datasource:
+    url: ${POSTGRES_URL:jdbc:postgresql://test-postgres:5432/silver?reWriteBatchedInserts=true}
+    username: ${POSTGRES_USER:dmj_dwh}
+    password: ${POSTGRES_PASSWORD}
+    hikari:
+      maximum-pool-size: 10
+  data:
+    mongodb:
+      uri: ${MONGO_URI:mongodb://test-mongo:27017}
+      database: ${MONGO_DATABASE:bronze_db}
+
+application:
+  dwh:
+    spark:
+      master: ${SPARK_MASTER:spark://test-spark-master:7077}
+      executor-jars-dir: ${SPARK_EXECUTOR_JARS_DIR:/opt/dmj-dwh/spark-jars}
+      config:
+        "[spark.submit.deployMode]": "client"
+        "[spark.driver.host]": "${SPARK_DRIVER_HOST}"
+        "[spark.driver.bindAddress]": "0.0.0.0"
+        "[spark.driver.port]": "${SPARK_DRIVER_PORT:7078}"
+        "[spark.blockManager.port]": "${SPARK_BLOCKMANAGER_PORT:7079}"
+        "[spark.port.maxRetries]": "16"
+        # ---- resources: MEDIUM (test) ----
+        "[spark.executor.cores]": "${SPARK_EXECUTOR_CORES:2}"
+        "[spark.executor.memory]": "${SPARK_EXECUTOR_MEMORY:4g}"
+        "[spark.cores.max]": "${SPARK_CORES_MAX:8}"
+        "[spark.sql.shuffle.partitions]": "${SPARK_SHUFFLE_PARTITIONS:16}"
+        "[spark.network.timeout]": "300s"
+        "[spark.jars]": "${SPARK_EXTRA_JARS:}"
+    postgres:
+      batch-size: 5000
+
+logging:
+  level:
+    com.tcs.dmj.dwh: INFO
