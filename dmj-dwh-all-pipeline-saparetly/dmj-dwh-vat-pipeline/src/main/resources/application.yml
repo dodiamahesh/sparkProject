@@ -1,0 +1,76 @@
+# =====================================================================
+#  COMMON SETTINGS (shared by every profile)
+#  Environment specific values live in application-<profile>.yml
+# =====================================================================
+spring:
+  application:
+    name: dmj-dwh
+  profiles:
+    # Default profile when nothing is passed. Override with:
+    #   java -jar app.jar --spring.profiles.active=prod
+    active: dev
+  # PostgreSQL tables are NOT created by the application.
+  # Run sample-data/<job>/03_postgres_tables.sql once per job before the first run (re-run safe).
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+application:
+  dwh:
+    spark:
+      app-name: ${spring.application.name}
+      master: local[*]
+      # Any Spark setting can be added here. Keep the [square brackets] so the dots stay in the key.
+      config:
+        "[spark.sql.shuffle.partitions]": "4"
+        # Spark UI is off because Spark 3.5 UI uses the javax servlet stack, Spring Boot 3 uses jakarta.
+        "[spark.ui.enabled]": "false"
+        # Invalid casts return NULL (instead of throwing). Our data-quality rules rely on this.
+        "[spark.sql.ansi.enabled]": "false"
+        "[spark.sql.legacy.timeParserPolicy]": "CORRECTED"
+        # Business timezone: MongoDB stores dates in UTC, but date keys (20261001) must be the IST day.
+        "[spark.sql.session.timeZone]": "Asia/Kolkata"
+
+    mongo:
+      uri: ${spring.data.mongodb.uri}
+      database: ${spring.data.mongodb.database}
+
+    postgres:
+      url: ${spring.datasource.url}
+      username: ${spring.datasource.username}
+      password: ${spring.datasource.password}
+      # Temporary tables used for UPSERT (Spark writes here, then SQL merges into the real table)
+      staging-schema: etl_staging
+      batch-size: 1000
+
+    # Incremental load: every source reads only documents whose timestamp field (SourceDefinition
+    # latestRecordColumn, e.g. updatedAt) is after the pipeline's last_run_time (meta.meta_pipeline).
+    # MongoDB is only READ, the ETL never writes to it.
+
+    quality:
+      # Reject gate (SourceDefinition.maxRejectPercent) is skipped for batches smaller than this
+      reject-gate-min-records: 10
+
+    # Batch mode (Airflow): java -jar dmj-dwh.jar --run-pipeline=<name> runs ONE pipeline, then exits with
+    #   0 = SUCCESS (and SUCCESS_WITH_FAILED, unless fail-on-rejected-records is true)
+    #   1 = FAILED, pipeline not found, already running, or any start-up error
+    batch:
+      fail-on-rejected-records: ${DWH_FAIL_ON_REJECTED_RECORDS:false}
+
+logging:
+  level:
+    root: INFO
+    org.apache.spark: WARN
+    org.sparkproject: WARN
+    org.apache.hadoop: ERROR
+    org.mongodb.driver: WARN
+    org.apache.parquet: WARN
