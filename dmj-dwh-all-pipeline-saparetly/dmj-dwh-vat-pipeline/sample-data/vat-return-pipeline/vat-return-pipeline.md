@@ -6,7 +6,7 @@ This job writes **directly into the silver tables: no `etl_staging.stg_*` tables
 | | |
 |---|---|
 | Pipeline name | `vat-return-pipeline` → `POST /api/admin/dwh/pipelines/vat-return-pipeline/run` |
-| Source | MongoDB `bronze_db.vat_return_coll` (default `MONGO_DATABASE`; the name clashes with no other job) |
+| Source | MongoDB `bronze_db.vat_return_coll` (default `MONGO_DATABASE`) |
 | Target | `silver`: 6 dimensions + shared `silver.dim_date` + 1 fact |
 | Model | **Star schema** |
 | Load | Incremental by `updatedAt` watermark, one transaction for the whole run (all-or-nothing) |
@@ -186,7 +186,7 @@ ROLLBACK: nothing in silver or meta changes, `last_run_time` does not move, `pip
 
 ## 4. Loading without staging tables
 
-The other jobs write Spark data into `etl_staging.stg_*` and merge with one SQL. This job writes **directly**:
+The framework also supports a staging mode (`directLoad() = false`: Spark writes into `etl_staging.stg_*`, then one SQL merges). This job writes **directly**:
 
 1. Spark validates and transforms as usual (`cache()` the results).
 2. The rows are streamed to the driver with `toLocalIterator()`: **one partition at a time**, never all rows.
@@ -276,9 +276,10 @@ Reject gate: `maxRejectPercent(30)` (not applied below 10 rows).
 | INSERT Tema Steel Works Ltd, Oct (new taxpayer) | 621 | new dim row + fact row |
 | INSERT Volta Logistics, Oct | 622 | new fact row |
 | INSERT Kwame, November, filed on 21 Nov | 623 | VALIDATION: `rtnToDate` (30 Nov) cannot be in the future |
-| DELETE the bad-tin return | 617 | not visible (deletes are not pushed) |
+| DELETE the bad-tin return | 617 | not visible (hard deletes are not pushed) |
+| SOFT DELETE BNSJ Aug (`isDeleted: true`) | 614 | `fact_vat_return.is_deleted = TRUE` (row kept) |
 
-**Expected incremental run:** read 6 · valid 5 · rejected 1 → `dim_taxpayer` 7 · `fact_vat_return` 17 ·
+**Expected incremental run:** read 7 · valid 5 · rejected 1 · deleted 1 → `dim_taxpayer` 7 · `fact_vat_return` 17 ·
 **SUCCESS_WITH_FAILED**.
 
 ### Run order
@@ -342,4 +343,3 @@ ONE PostgreSQL transaction (application connection, no staging):
 | **forced failure** (fact insert fails after the dimensions were written) | FAILED. **Rolled back:** the new taxpayer, the rejected row, the new master message and `last_run_time`. The run row stays FAILED with the error message |
 | same window again after the fix | read the same 2 documents, both handled; the new message got `error_id` 70 (no gap) |
 | partly fixed record (3 errors -> 1) | its one row now has only the remaining error in `error_ids` / `error_messages`, `attempt_count + 1` |
-| `sales-pipeline` (staging path, regression) | unchanged: read 94, valid 80, rejected 16 |

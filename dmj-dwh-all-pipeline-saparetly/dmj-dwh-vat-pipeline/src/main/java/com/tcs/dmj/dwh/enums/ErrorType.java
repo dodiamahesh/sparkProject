@@ -12,7 +12,7 @@ public enum ErrorType {
     /** Value has the right type but breaks a business rule: missing field, negative amount, bad email. */
     VALIDATION,
 
-    /** Referential integrity: the record points to a customer/account/merchant that does not exist. */
+    /** Referential integrity: the record points to a form / taxpayer / code that does not exist. */
     ORPHAN,
 
     /** Same business key seen more than once in this batch. One copy is kept, the others are rejected. */

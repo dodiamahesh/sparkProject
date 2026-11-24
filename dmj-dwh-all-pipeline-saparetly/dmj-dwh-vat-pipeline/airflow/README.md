@@ -1,12 +1,13 @@
 # Running dmj-dwh from Airflow
 
-One jar holds every pipeline. Each pipeline has its **own DAG**. A DAG task starts the jar in **batch mode**:
+One jar holds every pipeline (today only `vat-return-pipeline`). Each pipeline has its **own DAG**. A DAG task
+starts the jar in **batch mode**:
 
 ```bash
-java -jar dmj-dwh-1.0.0.jar --spring.profiles.active=prod --run-pipeline=sales-pipeline
+java -jar dmj-dwh-1.0.0.jar --spring.profiles.active=prod --run-pipeline=vat-return-pipeline
 ```
 
-- Only `sales-pipeline` runs. There is no web server, and the process exits when the run ends.
+- Only `vat-return-pipeline` runs. There is no web server, and the process exits when the run ends.
 - The run is recorded in `meta.meta_pipeline_run` exactly like a REST run.
 
 | Exit code | When | In Airflow |
@@ -19,7 +20,7 @@ To make `SUCCESS_WITH_FAILED` fail the task as well, set `DWH_FAIL_ON_REJECTED_R
 The last line of every task log is easy to search for:
 
 ```
-DWH_RESULT pipeline=sales-pipeline pipelineRunId=42 status=SUCCESS total=94 success=94 failed=0 errorCode=null exitCode=0
+DWH_RESULT pipeline=vat-return-pipeline pipelineRunId=42 status=SUCCESS_WITH_FAILED total=21 success=14 failed=7 errorCode=null exitCode=0
 ```
 
 ## Files
@@ -32,10 +33,10 @@ DWH_RESULT pipeline=sales-pipeline pipelineRunId=42 status=SUCCESS total=94 succ
 ## Dependencies between DAGs
 
 ```yaml
-ecommerce-order-pipeline:
-  schedule: "0 1 * * *"
-ecommerce-fulfillment-pipeline:
-  depends_on: [ecommerce-order-pipeline]
+vat-return-pipeline:
+  schedule: "0 3 * * *"
+vat-report-pipeline:                  # example: a future pipeline that needs the VAT tables
+  depends_on: [vat-return-pipeline]
 ```
 
 - Every task publishes the asset (dataset) `dmjdwh://pipeline/<name>`, but **only when it succeeds**.
@@ -44,7 +45,7 @@ ecommerce-fulfillment-pipeline:
 
 This uses Airflow data-aware scheduling: Airflow 2.4+ (`Dataset`) and Airflow 3 (`Asset`).
 
-**DAG id = pipeline name**, exactly the same: the pipeline `ecommerce-fulfillment-pipeline` has the DAG `ecommerce-fulfillment-pipeline`. The application stores it in `meta.meta_pipeline.airflow_dag_id` (equal to `pipeline_name`). A pipeline name may only contain letters, digits, `-`, `_` and `.` (Airflow rule) and at most 30 characters; the application refuses to start otherwise.
+**DAG id = pipeline name**, exactly the same: the pipeline `vat-return-pipeline` has the DAG `vat-return-pipeline`. The application stores it in `meta.meta_pipeline.airflow_dag_id` (equal to `pipeline_name`). A pipeline name may only contain letters, digits, `-`, `_` and `.` (Airflow rule) and at most 30 characters; the application refuses to start otherwise.
 
 ## Setup (once)
 
@@ -55,7 +56,7 @@ This uses Airflow data-aware scheduling: Airflow 2.4+ (`Dataset`) and Airflow 3 
    - type Postgres
    - host, port, schema = database name, login, password
 5. **Create** the Airflow Variable `dmj_dwh_mongo_uri`, for example `mongodb://user:pass@mongo-host:27017`.
-6. **Create the PostgreSQL tables** once by running `sample-data/<job>/03_postgres_tables.sql`. The application never creates tables itself.
+6. **Create the PostgreSQL tables** once by running `sample-data/vat-return-pipeline/03_postgres_tables.sql`. The application never creates tables itself.
 
 The `env` values in the YAML are Jinja templates. `{{ conn.<id>.<field> }}` reads an Airflow Connection and `{{ var.value.<key> }}` reads an Airflow Variable, so no password is written in a file.
 

@@ -19,9 +19,9 @@ import java.util.List;
  * Base class for pipelines. It gives you a few simple building blocks, so a pipeline reads like a recipe:
  *
  * <pre>
- *   SourceBatch payments = extractAndValidate(ctx, SOURCE, sanitizer, rules);   // E + data quality
- *   Dataset&lt;Row&gt; typed = mapper.toTyped(payments.valid());                    // T
- *   load(ctx, mapper.toDimPayer(typed), "silver.dim_payer", "payer_id");         // L
+ *   SourceBatch returns = extractAndValidate(ctx, SOURCE, sanitizer, rules);    // E + data quality
+ *   Dataset&lt;Row&gt; typed = mapper.toTyped(returns.valid());                     // T
+ *   loadDirect(ctx, mapper.toDimTaxpayer(typed), "silver.dim_taxpayer", List.of("tin"));   // L
  * </pre>
  *
  * Saving rejected records and advancing last_run_time happens automatically after run() succeeds.
@@ -47,7 +47,7 @@ public abstract class AbstractEtlPipeline implements EtlPipeline {
     }
 
     /**
-     * VALIDATE rows built from another batch (e.g. one row per line of an order's items[] array).
+     * VALIDATE rows built from another batch (e.g. one row per element of an array field).
      * A bad line is rejected on its own; its parent document is still loaded. See
      * {@link com.tcs.dmj.dwh.connector.source.SourceProcessor#processDerived}.
      */
@@ -108,8 +108,8 @@ public abstract class AbstractEtlPipeline implements EtlPipeline {
      * built from this source; the job FAILS if a source with deletes is never applied (nothing is lost silently).
      *
      * <pre>
-     *   applyDeletes(ctx, payments, "silver.fact_payment", "payment_id");
-     *   applyDeletes(ctx, orders,   "silver.fact_order_item", "order_id");   // cascade: the lines of a deleted order
+     *   applyDeletes(ctx, returns, "silver.fact_vat_return", "ack_no");
+     *   applyDeletes(ctx, returns, "silver.fact_x", "ack_no");          // same source in a 2nd table: call it again
      * </pre>
      */
     protected long applyDeletes(PipelineContext context, SourceBatch batch, String targetTable, String targetKeyColumn) {

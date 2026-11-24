@@ -16,16 +16,16 @@ import java.util.List;
  * instead of Spark failing or silently turning it into NULL. Fields that are not listed are not read.
  *
  * <pre>
- *   SourceDefinition.builder("payments")
- *       .fields("paymentId", "payerEmail", "amount", "updatedAt")
- *       .businessKey("paymentId")
+ *   SourceDefinition.builder("vat_return_coll")
+ *       .fields("ackNo", "tin", "netTax", "updatedAt")
+ *       .businessKey("ackNo")
  *       .latestRecordColumn("updatedAt")
  *       // ---- optional ----
  *       .excludeTestRecords()                     // source filter: skip {"isTest": true}
  *       .maxRejectPercent(30)                     // quality gate: more bad rows -> job FAILS
- *       .owner("payments-team@demo.com")          // metadata: who to ask when it breaks
- *       .sla("new data every hour")
- *       .description("Bill payments from the payment app")
+ *       .owner("vat-returns-team@demo.com")       // metadata: who to ask when it breaks
+ *       .sla("monthly, peak around the due date")
+ *       .description("Monthly VAT returns filed by taxpayers")
  *       .build();
  * </pre>
  *

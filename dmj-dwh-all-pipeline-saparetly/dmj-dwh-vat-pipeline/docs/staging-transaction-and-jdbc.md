@@ -61,9 +61,8 @@ connection khole ane batch ma `INSERT ... ON CONFLICT (key) DO UPDATE` seedhu si
 
 | Job / table | Staging vagar seedhu silver ma? |
 |---|---|
-| order, fulfillment, payment, transaction: dim / fact | Haa, ek row = ek upsert |
-| sales: `dim_product`, `fact_sales`, `fact_payment` | Haa, te j rite |
-| sales: `dim_customer` (SCD2) | Shakya, pan agharu: dar badlaayela customer maate juni version close + navi insert. Aaje aa aakha set maate ek transaction ma thaay chhe; staging vagar dar partition alag commit kare, etle failure par adhuru rahi shake (aavti run sudhaare) |
+| koi pan plain dim / fact (SCD1) | Haa, ek row = ek upsert (aaje `vat-return-pipeline` aa j rite kare chhe) |
+| SCD2 dimension (`Scd2Writer`) | Shakya, pan agharu: dar badlaayela record maate juni version close + navi insert. Aaje aa aakha set maate ek transaction ma thaay chhe; staging vagar dar partition alag commit kare, etle failure par adhuru rahi shake (aavti run sudhaare) |
 | meta: rejected records | Haa: naano data, driver par laavi `JdbcTemplate` batch thi |
 
 **Shu gumaavsho:**
@@ -188,7 +187,7 @@ lakhvu pade: etle JPA no faydo shunya, ane upar thi ek layer.
 
 ### 4) Staging tables na naam dynamic chhe
 
-Staging table dar run ane dar table maate navu bane chhe: `etl_staging.stg_silver_dim_customer_42_3`.
+Staging table dar run ane dar table maate navu bane chhe: `etl_staging.stg_silver_dim_taxpayer_42_3`.
 JPA entity ek **fix** table sathe map thaay; runtime par banta ane DROP thata tables maate entity bani j na shake.
 `JdbcTemplate` ma table naam SQL string ma mukvu e j pooratu chhe.
 

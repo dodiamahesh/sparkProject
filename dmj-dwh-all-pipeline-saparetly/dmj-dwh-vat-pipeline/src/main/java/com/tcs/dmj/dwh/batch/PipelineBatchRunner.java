@@ -17,7 +17,7 @@ import java.util.List;
  * BATCH MODE, used by Airflow: the same jar runs ONE pipeline and exits.
  *
  * <pre>
- *   java -jar dmj-dwh-1.0.0.jar --spring.profiles.active=prod --run-pipeline=sales-pipeline
+ *   java -jar dmj-dwh-1.0.0.jar --spring.profiles.active=prod --run-pipeline=vat-return-pipeline
  * </pre>
  *
  * Without --run-pipeline the application is the REST service (nothing happens here). With it, there is no web

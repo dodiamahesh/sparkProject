@@ -19,11 +19,11 @@ import static org.apache.spark.sql.functions.not;
  * DATA VALIDATION rules for one source, written as a readable list:
  * <pre>
  *   DataQualityRules.create()
- *       .mustBeDecimal("amount")                       // CORRUPT check
- *       .required("paymentId", "amount")               // VALIDATION check
- *       .mustBePositive("amount")
- *       .mustBeOneOf("currency", "INR", "USD")
- *       .mustExistIn("customerId", customers, "customer_id", "dim_customer");   // ORPHAN check
+ *       .mustBeDecimal("netTax")                       // CORRUPT check
+ *       .required("ackNo", "netTax")                   // VALIDATION check
+ *       .mustNotBeNegative("penaltyAmount")
+ *       .mustBeOneOf("fileFrom", "INET", "OFFC", "MOBL")
+ *       .mustExistIn("formId", formIds, "form_id", "dim_tax_form");   // ORPHAN check
  * </pre>
  * Every rule describes when a record is BAD. A record with zero failed rules is valid (and loaded).
  * All failed rules of a record are collected, so the rejected table shows every problem at once
@@ -144,7 +144,7 @@ public final class DataQualityRules {
      *
      * @param lookup       dataset that contains the allowed keys
      * @param lookupColumn key column inside {@code lookup}
-     * @param lookupName   friendly name for the error message, e.g. "dim_customer"
+     * @param lookupName   friendly name for the error message, e.g. "dim_tax_form"
      */
     public DataQualityRules mustExistIn(String column, Dataset<Row> lookup, String lookupColumn, String lookupName) {
         referenceRules.add(new ReferenceRule(column, lookup, lookupColumn, lookupName));

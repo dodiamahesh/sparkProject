@@ -108,12 +108,12 @@ public class SourceProcessor {
 
     /**
      * Validates rows that were BUILT from another batch instead of read from MongoDB, typically the
-     * lines of an array field: one order document with items[] -> one row per line.
+     * lines of an array field: one document with lines[] -> one row per line.
      *
      * A bad line is rejected on its own (with its own source_id / business_key in the rejected table),
      * while the rest of the document is still loaded. These rows have no window of their own.
      *
-     * @param definition describes the line rows: collection (e.g. "orders.items"), fields, business key
+     * @param definition describes the line rows: collection (e.g. "vat_return_coll.lines"), fields, business key
      * @param rows       must contain {@link QualityColumns#SOURCE_ID} (unique per line, e.g. "&lt;_id&gt;#2")
      *                   and {@link QualityColumns#RAW_RECORD} (JSON of the line, for the rejected table)
      */
@@ -218,7 +218,7 @@ public class SourceProcessor {
                 .collect(Collectors.joining(", "));
     }
 
-    /** "[ORPHAN] carrierId not found in dim_carrier (value: CRR-99)" */
+    /** "[ORPHAN] formId not found in dim_tax_form (value: 99999)" */
     private String exampleError(Dataset<Row> errors) {
         List<Row> example = errors.limit(1).collectAsList();
         if (example.isEmpty()) {

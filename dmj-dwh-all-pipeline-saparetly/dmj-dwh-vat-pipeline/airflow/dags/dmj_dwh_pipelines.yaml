@@ -4,7 +4,7 @@
 #  Every DAG runs the SAME jar with --run-pipeline=<name>: only that pipeline runs, then the process exits
 #  (0 = success -> dependent DAGs start, 1 = failed -> retries, dependent DAGs wait).
 #
-#  DAG id = pipeline name, exactly the same (sales-pipeline -> DAG "sales-pipeline"). The application stores
+#  DAG id = pipeline name, exactly the same (vat-return-pipeline -> DAG "vat-return-pipeline"). The application stores
 #  the same value in meta.meta_pipeline.pipeline_name and meta.meta_pipeline.airflow_dag_id.
 #
 #  Per pipeline:
@@ -40,24 +40,11 @@ defaults:
 
 pipelines:
 
-  ecommerce-order-pipeline:
-    schedule: "0 1 * * *"                          # every day 01:00
-
-  ecommerce-fulfillment-pipeline:
-    depends_on: [ecommerce-order-pipeline]          # needs silver.fact_order of the order pipeline
-
-  sales-pipeline:
-    schedule: "0 2 * * *"
-
-  payment-pipeline:
-    schedule: "0 2 * * *"
-    env:
-      MONGO_DATABASE: bankdb                        # banking collections live in another database
-
-  transaction-pipeline:
-    schedule: "30 2 * * *"
-    env:
-      MONGO_DATABASE: bankdb
-
   vat-return-pipeline:
-    schedule: "0 3 * * *"
+    schedule: "0 3 * * *"                          # every day 03:00
+
+  # A new pipeline = one new entry here (name = EtlPipeline.name() in the code), e.g.
+  #   my-new-pipeline:
+  #     schedule: "0 4 * * *"
+  #   my-report-pipeline:
+  #     depends_on: [vat-return-pipeline]          # starts after vat-return-pipeline succeeded

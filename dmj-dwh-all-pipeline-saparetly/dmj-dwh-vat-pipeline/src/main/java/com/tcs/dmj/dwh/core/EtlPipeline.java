@@ -17,7 +17,7 @@ import java.util.List;
 public interface EtlPipeline {
 
     /**
-     * Unique name, e.g. "payment-pipeline". The SAME name is used everywhere: REST URL, --run-pipeline=&lt;name&gt;,
+     * Unique name, e.g. "vat-return-pipeline". The SAME name is used everywhere: REST URL, --run-pipeline=&lt;name&gt;,
      * meta.meta_pipeline.pipeline_name and the Airflow DAG id (meta.meta_pipeline.airflow_dag_id). At most 30
      * characters; letters, digits, "-", "_" and "." only (Airflow DAG id rule).
      */

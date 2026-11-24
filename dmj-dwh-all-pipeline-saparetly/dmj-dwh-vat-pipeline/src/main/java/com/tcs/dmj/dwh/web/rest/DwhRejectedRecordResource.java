@@ -15,7 +15,7 @@ import java.util.List;
  * (meta.meta_error_master), error_messages (comma separated) and field_values (the bad value per field).
  * errorType filter = records with at least one error of that type. /summary = records per error.
  *
- *   GET /api/admin/dwh/rejected-records?pipelineName=payment-pipeline&collection=payments&errorType=CORRUPT
+ *   GET /api/admin/dwh/rejected-records?pipelineName=vat-return-pipeline&collection=vat_return_coll&errorType=CORRUPT
  *   GET /api/admin/dwh/rejected-records/summary
  *
  * How to fix: correct the document in MongoDB (the source sets a newer updatedAt) and run the pipeline:

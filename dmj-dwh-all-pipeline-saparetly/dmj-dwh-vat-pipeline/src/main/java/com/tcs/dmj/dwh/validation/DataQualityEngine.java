@@ -43,7 +43,7 @@ public class DataQualityEngine {
 
     /**
      * @param rows               cleaned rows (must contain _id and _raw_record)
-     * @param businessKey        column that identifies a record, e.g. "paymentId"
+     * @param businessKey        column that identifies a record, e.g. "ackNo"
      * @param latestRecordColumn when duplicates exist, the row with the highest value here wins (e.g. "updatedAt")
      */
     public QualityResult check(Dataset<Row> rows, DataQualityRules qualityRules,
