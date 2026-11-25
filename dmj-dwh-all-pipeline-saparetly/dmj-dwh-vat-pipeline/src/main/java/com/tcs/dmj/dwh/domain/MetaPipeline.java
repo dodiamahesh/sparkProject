@@ -2,12 +2,7 @@ package com.tcs.dmj.dwh.domain;
 
 import java.time.OffsetDateTime;
 
-/**
- * One row of meta.meta_pipeline: the registry of the pipelines (registered automatically at start-up).
- *
- * @param lastRunTime incremental watermark of the pipeline: the next run reads updatedAt &gt; lastRunTime.
- *                    NULL = the pipeline never succeeded yet, the next run reads everything.
- */
+/** One row of meta.meta_pipeline. lastRunTime = incremental watermark (null = never succeeded). */
 public record MetaPipeline(
         long pipelineId,
         String pipelineName,

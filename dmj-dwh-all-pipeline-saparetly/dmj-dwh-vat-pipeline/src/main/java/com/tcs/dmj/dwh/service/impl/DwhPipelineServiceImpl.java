@@ -8,12 +8,13 @@ import com.tcs.dmj.dwh.core.PipelineRegistry;
 import com.tcs.dmj.dwh.domain.MetaPipeline;
 import com.tcs.dmj.dwh.domain.MetaPipelineRun;
 import com.tcs.dmj.dwh.enums.PipelineStatus;
+import com.tcs.dmj.dwh.exception.PipelineAlreadyRunningException;
+import com.tcs.dmj.dwh.exception.PipelineConfigurationException;
+import com.tcs.dmj.dwh.exception.PipelineRunNotFoundException;
 import com.tcs.dmj.dwh.repository.MetaPipelineRepository;
 import com.tcs.dmj.dwh.repository.MetaPipelineRunRepository;
 import com.tcs.dmj.dwh.service.DwhPipelineService;
 import com.tcs.dmj.dwh.service.LineageService;
-import com.tcs.dmj.dwh.service.PipelineAlreadyRunningException;
-import com.tcs.dmj.dwh.service.PipelineRunNotFoundException;
 import com.tcs.dmj.dwh.service.SourceCommitService;
 import com.tcs.dmj.dwh.service.dto.PipelineInfoDTO;
 import com.tcs.dmj.dwh.service.dto.SourceInfoDTO;
@@ -35,24 +36,15 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
- * Runs a pipeline from start to end (in the calling thread: the REST call returns when the run is done)
- * and records everything in the meta tables. There is ONE way to run: INCREMENTAL by timestamp.
- *
- *   0. at start-up             -> every pipeline of the code is registered in meta.meta_pipeline
- *   1. lock the pipeline (no double runs)
- *   2. window end = now; create run row in meta.meta_pipeline_run (status RUNNING, last_run_time = window end)
- *   3. pipeline.run()          -> per source: read updatedAt > meta_pipeline.last_run_time AND <= window end,
- *                                 validate, transform, load (every load records its table lineage)
- *   4. commit                  -> save rejects, meta_pipeline.last_run_time = window end
- *      (pipelines with directLoad(): 3 + 4 run in ONE transaction -> all-or-nothing)
- *   5. finish run row          -> SUCCESS / SUCCESS_WITH_FAILED / FAILED + counts + error
- *   6. successful run          -> lineage: meta_asset, meta_lineage, meta_column_lineage
- *   7. always: free Spark cache, release lock
+ * Runs a pipeline from start to end in the calling thread:
+ * lock -> run row (RUNNING) -> pipeline.run() -> commit (rejects + last_run_time) -> status -> lineage.
+ * directLoad pipelines: run + commit in ONE transaction.
  */
 @Service
 public class DwhPipelineServiceImpl implements DwhPipelineService {
 
     private static final Logger log = LoggerFactory.getLogger(DwhPipelineServiceImpl.class);
+    private static final String ALL_REJECTED = "ALL_RECORDS_REJECTED";
 
     private final PipelineRegistry pipelineRegistry;
     private final MetaPipelineRepository metaPipelineRepository;
@@ -84,20 +76,21 @@ public class DwhPipelineServiceImpl implements DwhPipelineService {
         Map<String, MetaPipeline> registered = metaPipelineRepository.findAll().stream()
                 .collect(Collectors.toMap(MetaPipeline::pipelineName, Function.identity()));
         return pipelineRegistry.getAllPipelines().stream()
-                .map(pipeline -> {
-                    MetaPipeline meta = registered.get(pipeline.name());
-                    return new PipelineInfoDTO(
-                            meta == null ? 0 : meta.pipelineId(),
-                            pipeline.name(),
-                            pipeline.pipelineType().name(),
-                            pipeline.description(),
-                            pipeline.sourceCollections(),
-                            pipeline.sources().stream().map(SourceInfoDTO::from).toList(),
-                            pipeline.targetTables(),
-                            meta == null ? null : meta.lastRunTime(),
-                            pipelineRunRepository.isRunning(pipeline.name()));
-                })
+                .map(pipeline -> toInfo(pipeline, registered.get(pipeline.name())))
                 .toList();
+    }
+
+    private PipelineInfoDTO toInfo(EtlPipeline pipeline, MetaPipeline meta) {
+        return new PipelineInfoDTO(
+                meta == null ? 0 : meta.pipelineId(),
+                pipeline.name(),
+                pipeline.pipelineType().name(),
+                pipeline.description(),
+                pipeline.sourceCollections(),
+                pipeline.sources().stream().map(SourceInfoDTO::from).toList(),
+                pipeline.targetTables(),
+                meta == null ? null : meta.lastRunTime(),
+                pipelineRunRepository.isRunning(pipeline.name()));
     }
 
     @Override
@@ -107,19 +100,16 @@ public class DwhPipelineServiceImpl implements DwhPipelineService {
             if (lock == null) {
                 throw new PipelineAlreadyRunningException(pipeline.name());
             }
-            // we hold the lock: a RUNNING row of this pipeline can only be left behind by a process that died
+            // we hold the lock: a RUNNING row can only be left behind by a process that died
             int interrupted = pipelineRunRepository.failInterruptedRuns(pipeline.name());
             if (interrupted > 0) {
                 log.warn("{}: {} run(s) left RUNNING by a stopped process marked FAILED", pipeline.name(), interrupted);
             }
-            // Upper bound of the window for EVERY source of this run. Data changed after this moment is read next run.
-            // MILLIS (not seconds): MongoDB dates have millisecond precision, so a document changed in the same second
-            // as the run start is still inside the window and can never fall between two runs.
+            // millis: MongoDB dates have millisecond precision, so no document falls between two runs
             Instant windowEnd = Instant.now().truncatedTo(ChronoUnit.MILLIS);
             long pipelineRunId = pipelineRunRepository.createRun(pipeline.name(), windowEnd);
             execute(pipeline, pipelineRunId, windowEnd);
-            return pipelineRunRepository.findById(pipelineRunId)
-                    .orElseThrow(() -> new PipelineRunNotFoundException(pipelineRunId));
+            return pipelineRunRepository.findById(pipelineRunId).orElseThrow(() -> new PipelineRunNotFoundException(pipelineRunId));
         }
     }
 
@@ -127,44 +117,14 @@ public class DwhPipelineServiceImpl implements DwhPipelineService {
         PipelineContext context = new PipelineContext(pipelineRunId, pipeline.name(), windowEnd, pipeline.directLoad());
         long startMillis = System.currentTimeMillis();
         log.info("========== Job {} STARTED: pipeline={}, windowEnd={} ==========", pipelineRunId, pipeline.name(), windowEnd);
-
-        // Groups all Spark jobs of this run under one name (visible in Spark logs / UI)
         spark.sparkContext().setJobGroup("etl-job-" + pipelineRunId, pipeline.name() + " until " + windowEnd, true);
         try {
-            if (context.directLoad()) {
-                // ALL-OR-NOTHING: every table + rejected records + last_run_time in ONE transaction.
-                // Any exception -> ROLLBACK of everything.
-                transaction.executeWithoutResult(status -> {
-                    pipeline.run(context);
-                    commitService.commit(context);
-                });
-                log.info("[job {}] transaction committed", pipelineRunId);
-            } else {
-                pipeline.run(context);
-                commitService.commit(context);
-            }
-
-            JobMetrics metrics = context.metrics();
-            long successRecords = metrics.validCount() + metrics.deletedCount();
-            PipelineStatus status = PipelineStatus.of(successRecords, metrics.rejectedCount());
-            boolean allRejected = status == PipelineStatus.FAILED;
-            pipelineRunRepository.finishRun(pipelineRunId, status, metrics.sourceCount(), successRecords,
-                    metrics.rejectedCount(),
-                    allRejected ? "ALL_RECORDS_REJECTED" : null,
-                    allRejected ? "All " + metrics.rejectedCount() + " records were rejected (see meta.meta_rejected_record)" : null);
-            log.info("========== Job {} {} in {} ms: read={}, valid={}, rejected={}, deleted={}, loaded={} ==========",
-                    pipelineRunId, status, System.currentTimeMillis() - startMillis,
-                    metrics.sourceCount(), metrics.validCount(), metrics.rejectedCount(),
-                    metrics.deletedCount(), metrics.loadedCount());
-            if (!allRejected) {
-                lineageService.record(pipeline, context);
-            }
-
-        } catch (Throwable error) {
-            // Catch Throwable (not only Exception) so even an Error never leaves a run RUNNING
+            runAndCommit(pipeline, context);
+            finishSuccessfulRun(pipeline, context, startMillis);
+        } catch (Throwable error) {   // Throwable: even an Error never leaves a run RUNNING
             log.error("========== Job {} FAILED: {} ==========", pipelineRunId, error.getMessage(), error);
             if (context.directLoad()) {
-                context.metrics().resetLoaded();   // rolled back: nothing of this run is in the tables
+                context.metrics().resetLoaded();   // rolled back
             }
             saveFailure(pipelineRunId, context, error);
             if (error instanceof Error fatal) {
@@ -173,6 +133,39 @@ public class DwhPipelineServiceImpl implements DwhPipelineService {
         } finally {
             context.releaseResources();
             spark.sparkContext().clearJobGroup();
+        }
+    }
+
+    /** directLoad: ONE transaction, any exception rolls everything back. */
+    private void runAndCommit(EtlPipeline pipeline, PipelineContext context) {
+        if (context.directLoad()) {
+            transaction.executeWithoutResult(status -> {
+                pipeline.run(context);
+                commitService.commit(context);
+            });
+            log.info("[job {}] transaction committed", context.pipelineRunId());
+        } else {
+            pipeline.run(context);
+            commitService.commit(context);
+        }
+    }
+
+    private void finishSuccessfulRun(EtlPipeline pipeline, PipelineContext context, long startMillis) {
+        JobMetrics metrics = context.metrics();
+        long successRecords = metrics.validCount() + metrics.deletedCount();
+        PipelineStatus status = PipelineStatus.of(successRecords, metrics.rejectedCount());
+        boolean allRejected = status == PipelineStatus.FAILED;
+
+        pipelineRunRepository.finishRun(context.pipelineRunId(), status, metrics.sourceCount(), successRecords,
+                metrics.rejectedCount(),
+                allRejected ? ALL_REJECTED : null,
+                allRejected ? "All " + metrics.rejectedCount() + " records were rejected (see meta.meta_rejected_record)" : null);
+        log.info("========== Job {} {} in {} ms: read={}, valid={}, rejected={}, deleted={}, loaded={} ==========",
+                context.pipelineRunId(), status, System.currentTimeMillis() - startMillis,
+                metrics.sourceCount(), metrics.validCount(), metrics.rejectedCount(),
+                metrics.deletedCount(), metrics.loadedCount());
+        if (!allRejected) {
+            lineageService.record(pipeline, context);
         }
     }
 
@@ -187,38 +180,44 @@ public class DwhPipelineServiceImpl implements DwhPipelineService {
         }
     }
 
+    // ---------------------------------------------------------------- start-up
+
     /**
-     * On start-up (ApplicationStartedEvent: BEFORE the batch runner of an Airflow task starts its pipeline):
-     *   1. every pipeline of the code is registered in meta.meta_pipeline (pipelines that are no longer in the
-     *      code get active_flag 'N'; last_run_time is never touched here)
-     *   2. runs left RUNNING by a process that died are marked FAILED. Only for pipelines whose run lock is free:
-     *      a run that is busy in ANOTHER process (REST service, other Airflow task) is left alone.
-     * These are also the first queries on the meta tables, so a database without tables stops the application
-     * here with a clear message (the application does not create tables itself).
+     * Before any run: register the pipelines of the code in meta.meta_pipeline and close runs left RUNNING by a
+     * process that died (only when the pipeline's lock is free, so a run busy in another process is left alone).
      */
     @EventListener(ApplicationStartedEvent.class)
     public void onStartup() {
-        int closed = 0;
         try {
-            for (EtlPipeline pipeline : pipelineRegistry.getAllPipelines()) {
-                metaPipelineRepository.register(pipeline.name(), pipeline.pipelineType().name(),
-                        pipeline.description(), applicationJobName, pipeline.name());   // DAG id = pipeline name
-            }
-            int deactivated = metaPipelineRepository.deactivateAllExcept(
-                    pipelineRegistry.getAllPipelines().stream().map(EtlPipeline::name).toList());
-            if (deactivated > 0) {
-                log.warn("{} pipeline(s) in meta.meta_pipeline are no longer in the code: active_flag = 'N'", deactivated);
-            }
-            for (String pipelineName : pipelineRunRepository.pipelinesWithRunningRuns()) {
-                try (PipelineRunLock.Held lock = runLock.tryAcquire(pipelineName)) {
-                    if (lock != null) {
-                        closed += pipelineRunRepository.failInterruptedRuns(pipelineName);
-                    }
+            registerPipelines();
+            closeInterruptedRuns();
+        } catch (BadSqlGrammarException e) {
+            throw new PipelineConfigurationException("Meta tables not found in PostgreSQL ("
+                    + e.getMostSpecificCause().getMessage() + "). Run sample-data/<job>/03_postgres_tables.sql "
+                    + "for every job once, then start the application again.", e);
+        }
+    }
+
+    private void registerPipelines() {
+        for (EtlPipeline pipeline : pipelineRegistry.getAllPipelines()) {
+            metaPipelineRepository.register(pipeline.name(), pipeline.pipelineType().name(),
+                    pipeline.description(), applicationJobName, pipeline.name());   // DAG id = pipeline name
+        }
+        List<String> names = pipelineRegistry.getAllPipelines().stream().map(EtlPipeline::name).toList();
+        int deactivated = metaPipelineRepository.deactivateAllExcept(names);
+        if (deactivated > 0) {
+            log.warn("{} pipeline(s) in meta.meta_pipeline are no longer in the code: active_flag = 'N'", deactivated);
+        }
+    }
+
+    private void closeInterruptedRuns() {
+        int closed = 0;
+        for (String pipelineName : pipelineRunRepository.pipelinesWithRunningRuns()) {
+            try (PipelineRunLock.Held lock = runLock.tryAcquire(pipelineName)) {
+                if (lock != null) {
+                    closed += pipelineRunRepository.failInterruptedRuns(pipelineName);
                 }
             }
-        } catch (BadSqlGrammarException e) {
-            throw new IllegalStateException("Meta tables not found in PostgreSQL (" + e.getMostSpecificCause().getMessage()
-                    + "). Run sample-data/<job>/03_postgres_tables.sql for every job once, then start the application again.", e);
         }
         if (closed > 0) {
             log.warn("Marked {} run(s) as FAILED because their process stopped while they were running", closed);

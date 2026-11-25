@@ -1,9 +1,9 @@
 package com.tcs.dmj.dwh.web.rest.errors;
 
-import com.tcs.dmj.dwh.service.EtlException;
-import com.tcs.dmj.dwh.service.PipelineAlreadyRunningException;
-import com.tcs.dmj.dwh.service.PipelineNotFoundException;
-import com.tcs.dmj.dwh.service.PipelineRunNotFoundException;
+import com.tcs.dmj.dwh.exception.EtlException;
+import com.tcs.dmj.dwh.exception.PipelineAlreadyRunningException;
+import com.tcs.dmj.dwh.exception.PipelineNotFoundException;
+import com.tcs.dmj.dwh.exception.PipelineRunNotFoundException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,10 +16,7 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.time.LocalDateTime;
 
-/**
- * Turns exceptions into clean JSON errors with the right HTTP status.
- * Note: a job that FAILS is not an HTTP error - the job row simply gets status FAILED.
- */
+/** Exceptions -> JSON errors. A FAILED run is not an HTTP error: its run row has status FAILED. */
 @RestControllerAdvice
 public class ExceptionTranslator {
 
@@ -30,7 +27,6 @@ public class ExceptionTranslator {
         return build(HttpStatus.NOT_FOUND, e.getMessage(), request);
     }
 
-    /** Unknown URL (e.g. an endpoint that does not exist) -> 404, not 500. */
     @ExceptionHandler(NoResourceFoundException.class)
     public ResponseEntity<ApiError> handleUnknownUrl(NoResourceFoundException e, HttpServletRequest request) {
         return build(HttpStatus.NOT_FOUND, "No endpoint " + request.getMethod() + " " + request.getRequestURI(), request);
@@ -59,8 +55,8 @@ public class ExceptionTranslator {
     }
 
     private ResponseEntity<ApiError> build(HttpStatus status, String message, HttpServletRequest request) {
-        ApiError body = new ApiError(LocalDateTime.now(), status.value(), status.getReasonPhrase(),
-                message, request.getRequestURI());
+        ApiError body = new ApiError(LocalDateTime.now(), status.value(), status.getReasonPhrase(), message,
+                request.getRequestURI());
         return ResponseEntity.status(status).body(body);
     }
 }

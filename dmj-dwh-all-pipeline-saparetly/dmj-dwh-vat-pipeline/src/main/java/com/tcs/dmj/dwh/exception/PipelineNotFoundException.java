@@ -1,4 +1,4 @@
-package com.tcs.dmj.dwh.service;
+package com.tcs.dmj.dwh.exception;
 
 import java.util.Collection;
 

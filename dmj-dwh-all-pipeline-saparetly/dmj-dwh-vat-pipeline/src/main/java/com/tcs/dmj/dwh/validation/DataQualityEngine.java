@@ -30,77 +30,88 @@ import static org.apache.spark.sql.functions.row_number;
 import static org.apache.spark.sql.functions.size;
 
 /**
- * Applies {@link DataQualityRules} to a dataset and splits it into VALID and REJECTED rows.
- *
- * Order of checks:
- *   1. ORPHAN lookups are joined in (left join with the lookup keys)
- *   2. every rule is evaluated -> array of the failed rules per row (most serious type first)
- *   3. rows with at least one error = rejected (CORRUPT / VALIDATION / ORPHAN)
- *   4. rows without errors are de-duplicated on the business key -> extra copies = rejected (DUPLICATE)
+ * Splits rows into VALID and REJECTED:
+ * 1. join the ORPHAN lookups, 2. evaluate every rule, 3. rows with errors = rejected,
+ * 4. remaining rows: one per business key (latest wins), the other copies = DUPLICATE.
  */
 @Component
 public class DataQualityEngine {
 
     /**
-     * @param rows               cleaned rows (must contain _id and _raw_record)
-     * @param businessKey        column that identifies a record, e.g. "ackNo"
-     * @param latestRecordColumn when duplicates exist, the row with the highest value here wins (e.g. "updatedAt")
+     * @param rows               cleaned rows (with _id and _raw_record)
+     * @param latestRecordColumn on duplicates, the row with the highest value here wins
      */
     public QualityResult check(Dataset<Row> rows, DataQualityRules qualityRules,
                                String businessKey, String latestRecordColumn) {
         List<ValidationRule> rules = new ArrayList<>(qualityRules.rules());
-        Dataset<Row> checked = rows;
+        List<ReferenceRule> references = qualityRules.referenceRules();
 
-        // 1. ORPHAN checks: join every lookup and add a rule "value present but not found"
-        int index = 0;
-        for (ReferenceRule reference : qualityRules.referenceRules()) {
-            String foundColumn = REFERENCE_PREFIX + index++;
-            Dataset<Row> lookupKeys = reference.lookup()
-                    .select(col(reference.lookupColumn()).as(foundColumn))
-                    .distinct();
-            checked = checked.join(broadcast(lookupKeys),
-                    checked.col(reference.column()).equalTo(lookupKeys.col(foundColumn)), "left");
+        Dataset<Row> withLookups = joinLookups(rows, references, rules);
+        Dataset<Row> checked = withErrors(withLookups, rules, references.size());
 
-            Column failWhen = col(reference.column()).isNotNull().and(col(foundColumn).isNull());
-            rules.add(new ValidationRule(ErrorType.ORPHAN, failWhen, reference.column(),
-                    reference.column() + " not found in " + reference.lookupName()));
-        }
-
-        // 2. Evaluate all rules. Sorted by type (stable), so errors[0] is always the most serious error.
-        rules.sort(Comparator.comparing(ValidationRule::errorType));
-        checked = checked.withColumn(ERRORS, failedRules(rules));
-        for (int i = 0; i < index; i++) {
-            checked = checked.drop(REFERENCE_PREFIX + i);
-        }
-
-        // 3. Rows that broke at least one rule
         Dataset<Row> failedRows = checked.filter(size(col(ERRORS)).gt(0));
-
-        // 4. De-duplicate the remaining rows: keep the latest version of each business key
-        Dataset<Row> passedRows = checked.filter(size(col(ERRORS)).equalTo(0))
-                .withColumn(ROW_NUMBER, row_number().over(Window
-                        .partitionBy(col(businessKey))
-                        .orderBy(col(latestRecordColumn).cast(SparkTypes.TIMESTAMP).desc_nulls_last(), col(SOURCE_ID).asc())));
-
-        Dataset<Row> duplicateRows = passedRows.filter(col(ROW_NUMBER).gt(1))
-                .withColumn(ERRORS, array(QualityColumns.errorStruct(ErrorType.DUPLICATE, businessKey,
-                        "another record with the same " + businessKey + " was kept (latest " + latestRecordColumn + " wins)",
-                        col(businessKey))));
+        Dataset<Row> passedRows = numberCopiesPerKey(checked.filter(size(col(ERRORS)).equalTo(0)),
+                businessKey, latestRecordColumn);
 
         Dataset<Row> validRows = passedRows.filter(col(ROW_NUMBER).equalTo(1)).drop(ROW_NUMBER, ERRORS);
+        Dataset<Row> duplicateRows = markAsDuplicate(passedRows.filter(col(ROW_NUMBER).gt(1)),
+                businessKey, latestRecordColumn);
+
         Dataset<Row> rejectedRows = toRejectedFormat(failedRows, businessKey)
                 .unionByName(toRejectedFormat(duplicateRows, businessKey));
-
         return new QualityResult(validRows, rejectedRows);
     }
 
-    /** Every failed rule of a row as an array of error structs; empty array when the row is fine. */
+    /** Left-joins every lookup and adds an ORPHAN rule "value present but not found" for it. */
+    private Dataset<Row> joinLookups(Dataset<Row> rows, List<ReferenceRule> references, List<ValidationRule> rules) {
+        Dataset<Row> joined = rows;
+        for (int i = 0; i < references.size(); i++) {
+            ReferenceRule reference = references.get(i);
+            String foundColumn = REFERENCE_PREFIX + i;
+            Dataset<Row> lookupKeys = reference.lookup()
+                    .select(col(reference.lookupColumn()).as(foundColumn))
+                    .distinct();
+            joined = joined.join(broadcast(lookupKeys),
+                    joined.col(reference.column()).equalTo(lookupKeys.col(foundColumn)), "left");
+
+            Column notFound = col(reference.column()).isNotNull().and(col(foundColumn).isNull());
+            rules.add(new ValidationRule(ErrorType.ORPHAN, notFound, reference.column(),
+                    reference.column() + " not found in " + reference.lookupName()));
+        }
+        return joined;
+    }
+
+    /** Adds the errors column (most serious error first) and drops the lookup columns again. */
+    private Dataset<Row> withErrors(Dataset<Row> rows, List<ValidationRule> rules, int lookupCount) {
+        rules.sort(Comparator.comparing(ValidationRule::errorType));
+        Dataset<Row> checked = rows.withColumn(ERRORS, failedRules(rules));
+        for (int i = 0; i < lookupCount; i++) {
+            checked = checked.drop(REFERENCE_PREFIX + i);
+        }
+        return checked;
+    }
+
+    /** Every failed rule of a row as an array of error structs (empty when the row is fine). */
     private Column failedRules(List<ValidationRule> rules) {
         if (rules.isEmpty()) {
             return array().cast(DataTypes.createArrayType(QualityColumns.ERROR_SCHEMA));
         }
-        Column[] errors = rules.stream().map(rule -> rule.errorWhenFailed()).toArray(Column[]::new);
-        return array_compact(array(errors));   // a passed rule gives NULL -> removed
+        Column[] errors = rules.stream().map(ValidationRule::errorWhenFailed).toArray(Column[]::new);
+        return array_compact(array(errors));   // a passed rule gives NULL
+    }
+
+    private Dataset<Row> numberCopiesPerKey(Dataset<Row> rows, String businessKey, String latestRecordColumn) {
+        Column latestFirst = col(latestRecordColumn).cast(SparkTypes.TIMESTAMP).desc_nulls_last();
+        return rows.withColumn(ROW_NUMBER, row_number().over(Window
+                .partitionBy(col(businessKey))
+                .orderBy(latestFirst, col(SOURCE_ID).asc())));
+    }
+
+    private Dataset<Row> markAsDuplicate(Dataset<Row> rows, String businessKey, String latestRecordColumn) {
+        String message = "another record with the same " + businessKey + " was kept (latest "
+                + latestRecordColumn + " wins)";
+        return rows.withColumn(ERRORS, array(
+                QualityColumns.errorStruct(ErrorType.DUPLICATE, businessKey, message, col(businessKey))));
     }
 
     private Dataset<Row> toRejectedFormat(Dataset<Row> rows, String businessKey) {

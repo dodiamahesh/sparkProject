@@ -22,10 +22,7 @@ import java.util.stream.Collectors;
 import static org.apache.spark.sql.functions.lit;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-/**
- * Plain unit test (no Spring, no databases) of vat-return-pipeline: sanitization, validation rules and mapping,
- * with documents shaped like sample-data/vat-return-pipeline/01_mongo_full_load.js.
- */
+/** VAT sanitizing, rules and mapping, without Spring or databases (documents like 01_mongo_full_load.js). */
 class VatReturnPipelineRulesTest {
 
     private static SparkSession spark;

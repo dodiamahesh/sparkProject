@@ -27,15 +27,9 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Finds the TABLE-LEVEL lineage of a load automatically: which MongoDB collections and PostgreSQL tables a
- * Dataset was computed from. It follows every loaded column back through the Dataset's logical plan to the
- * leaves (Spark keeps them, also for cached Datasets), so no pipeline has to declare its table lineage by hand:
- *
- *   MongoDB read  (format "mongodb", option "collection") -&gt; MetaAsset COLLECTION, layer RAW
- *   JDBC read     (PostgresReader, option "dbtable")      -&gt; MetaAsset TABLE,      layer CURATED
- *
- * The edges are kept in the PipelineContext and written to meta.meta_asset / meta.meta_lineage only after the
- * run succeeded (LineageService).
+ * Finds the table lineage of a load automatically: it follows every loaded column back through the Spark plan
+ * to its MongoDB collections (option "collection") and JDBC tables (option "dbtable").
+ * A table only used to filter rows (e.g. an ORPHAN lookup) is not a source.
  */
 @Component
 public class LineageCollector {
@@ -51,13 +45,11 @@ public class LineageCollector {
     }
 
     /**
-     * Records "every source of {@code rows} -&gt; {@code targetTable}" in the context.
+     * Records "every source of rows -&gt; targetTable" in the context. Never fails a load.
      *
-     * @param extraSourceTables tables used by the load that are not in the Spark plan, e.g. the dimensions of a
-     *                          direct load (surrogate keys looked up inside the SQL)
+     * @param extraSourceTables tables not in the Spark plan, e.g. dimensions looked up inside the SQL
      */
-    public void record(PipelineContext context, Dataset<?> rows, String targetTable,
-                       Collection<String> extraSourceTables) {
+    public void record(PipelineContext context, Dataset<?> rows, String targetTable,Collection<String> extraSourceTables) {
         try {
             MetaAsset target = MetaAsset.postgresTable(postgresDatabase, targetTable);
             Map<String, MetaAsset> sources = sourcesOf(rows);
@@ -66,10 +58,9 @@ public class LineageCollector {
                 sources.putIfAbsent(asset.key(), asset);
             });
             sources.values().stream()
-                    .filter(source -> !source.key().equals(target.key()))   // e.g. SCD2 reads its own table
+                    .filter(source -> !source.key().equals(target.key()))
                     .forEach(source -> context.addLineage(source, target));
         } catch (RuntimeException e) {
-            // lineage is metadata: it must never fail a load
             log.warn("[job {}] could not read the lineage of {}: {}", context.pipelineRunId(), targetTable, e.toString());
         }
     }
@@ -82,11 +73,7 @@ public class LineageCollector {
         return MetaAsset.postgresTable(postgresDatabase, table);
     }
 
-    /**
-     * key -&gt; asset, for every MongoDB collection / JDBC table whose columns REACH the output of {@code rows}.
-     * A table that is only used to keep or drop rows (e.g. an ORPHAN check joined against a dimension, a filter)
-     * is not a source: only tables with at least one column in the loaded data are.
-     */
+    /** asset key -&gt; asset, for every collection / table with at least one column in the output of rows. */
     Map<String, MetaAsset> sourcesOf(Dataset<?> rows) {
         LogicalPlan plan = rows.queryExecution().analyzed();
         Map<String, MetaAsset> assets = new HashMap<>();
@@ -99,76 +86,94 @@ public class LineageCollector {
         return sources;
     }
 
-    /**
-     * For every output column of {@code node}: the assets it is computed from (column id -&gt; asset keys).
-     *   leaf                  -&gt; its own asset (MongoDB collection / JDBC table), or none
-     *   column of a child     -&gt; passed through (Filter, Join, Sort, ...: the rows change, not the column)
-     *   new column (Alias in Project / Aggregate / Window) -&gt; the assets of the columns its expression uses
-     *   Union                 -&gt; column i = column i of every child
-     *   other new columns     -&gt; the assets of every column the node uses (e.g. explode in Generate)
-     */
+    /** For every output column of {@code node}: the asset keys it is computed from (column id -&gt; keys). */
     private Map<Long, Set<String>> provenance(LogicalPlan node, Map<String, MetaAsset> assets,
                                               Map<LogicalPlan, Map<Long, Set<String>>> memo) {
         Map<Long, Set<String>> known = memo.get(node);
         if (known != null) {
             return known;
         }
-        Map<Long, Set<String>> result = new HashMap<>();
         List<LogicalPlan> children = list(node.children());
-        if (children.isEmpty()) {
-            MetaAsset asset = assetOf(node);
-            Set<String> keys = asset == null ? Set.of() : Set.of(asset.key());
-            if (asset != null) {
-                assets.putIfAbsent(asset.key(), asset);
-            }
-            list(node.output()).forEach(column -> result.put(column.exprId().id(), keys));
-        } else {
-            List<Map<Long, Set<String>>> childProvenance = new ArrayList<>();
-            Map<Long, Set<String>> fromChildren = new HashMap<>();
-            for (LogicalPlan child : children) {
-                Map<Long, Set<String>> map = provenance(child, assets, memo);
-                childProvenance.add(map);
-                fromChildren.putAll(map);
-            }
-            List<Attribute> output = list(node.output());
-            if (node instanceof Union) {
-                for (int i = 0; i < output.size(); i++) {
-                    Set<String> keys = new HashSet<>();
-                    for (int c = 0; c < children.size(); c++) {
-                        Attribute childColumn = list(children.get(c).output()).get(i);
-                        keys.addAll(childProvenance.get(c).getOrDefault(childColumn.exprId().id(), Set.of()));
-                    }
-                    result.put(output.get(i).exprId().id(), keys);
-                }
-            } else {
-                Map<Long, Expression> definitions = new HashMap<>();
-                for (Expression expression : list(node.expressions())) {
-                    if (expression instanceof NamedExpression named && !(expression instanceof Attribute)) {
-                        definitions.put(named.exprId().id(), expression);
-                    }
-                }
-                for (Attribute column : output) {
-                    long id = column.exprId().id();
-                    Set<String> passed = fromChildren.get(id);
-                    if (passed != null) {
-                        result.put(id, passed);
-                        continue;
-                    }
-                    Expression definition = definitions.get(id);
-                    Set<String> keys = new HashSet<>();
-                    for (Attribute used : list((definition != null ? definition.references() : node.references()).toSeq())) {
-                        keys.addAll(fromChildren.getOrDefault(used.exprId().id(), Set.of()));
-                    }
-                    result.put(id, keys);
-                }
-            }
-        }
+        Map<Long, Set<String>> result = children.isEmpty()
+                ? leafProvenance(node, assets)
+                : innerProvenance(node, children, assets, memo);
         memo.put(node, result);
         return result;
     }
 
-    private static <T> List<T> list(scala.collection.Seq<T> seq) {
-        return JavaConverters.seqAsJavaList(seq);
+    /** A leaf: every column comes from its own asset (or from nothing). */
+    private Map<Long, Set<String>> leafProvenance(LogicalPlan leaf, Map<String, MetaAsset> assets) {
+        MetaAsset asset = assetOf(leaf);
+        Set<String> keys = Set.of();
+        if (asset != null) {
+            assets.putIfAbsent(asset.key(), asset);
+            keys = Set.of(asset.key());
+        }
+        Map<Long, Set<String>> result = new HashMap<>();
+        for (Attribute column : list(leaf.output())) {
+            result.put(column.exprId().id(), keys);
+        }
+        return result;
+    }
+
+    private Map<Long, Set<String>> innerProvenance(LogicalPlan node, List<LogicalPlan> children,
+                                                   Map<String, MetaAsset> assets,
+                                                   Map<LogicalPlan, Map<Long, Set<String>>> memo) {
+        List<Map<Long, Set<String>>> perChild = new ArrayList<>();
+        Map<Long, Set<String>> fromChildren = new HashMap<>();
+        for (LogicalPlan child : children) {
+            Map<Long, Set<String>> childProvenance = provenance(child, assets, memo);
+            perChild.add(childProvenance);
+            fromChildren.putAll(childProvenance);
+        }
+        return node instanceof Union
+                ? unionProvenance(node, children, perChild)
+                : columnProvenance(node, fromChildren);
+    }
+
+    /** Union: output column i = column i of every child. */
+    private Map<Long, Set<String>> unionProvenance(LogicalPlan union, List<LogicalPlan> children,
+                                                   List<Map<Long, Set<String>>> perChild) {
+        Map<Long, Set<String>> result = new HashMap<>();
+        List<Attribute> output = list(union.output());
+        for (int i = 0; i < output.size(); i++) {
+            Set<String> keys = new HashSet<>();
+            for (int c = 0; c < children.size(); c++) {
+                Attribute childColumn = list(children.get(c).output()).get(i);
+                keys.addAll(perChild.get(c).getOrDefault(childColumn.exprId().id(), Set.of()));
+            }
+            result.put(output.get(i).exprId().id(), keys);
+        }
+        return result;
+    }
+
+    /**
+     * Other nodes: a column of a child is passed through; a new column (alias) gets the assets of the columns
+     * its expression uses; anything else gets the assets of every column the node uses.
+     */
+    private Map<Long, Set<String>> columnProvenance(LogicalPlan node, Map<Long, Set<String>> fromChildren) {
+        Map<Long, Expression> definitions = new HashMap<>();
+        for (Expression expression : list(node.expressions())) {
+            if (expression instanceof NamedExpression named && !(expression instanceof Attribute)) {
+                definitions.put(named.exprId().id(), expression);
+            }
+        }
+        Map<Long, Set<String>> result = new HashMap<>();
+        for (Attribute column : list(node.output())) {
+            long id = column.exprId().id();
+            Set<String> passed = fromChildren.get(id);
+            if (passed != null) {
+                result.put(id, passed);
+                continue;
+            }
+            Expression definition = definitions.get(id);
+            Set<String> keys = new HashSet<>();
+            for (Attribute used : list((definition != null ? definition.references() : node.references()).toSeq())) {
+                keys.addAll(fromChildren.getOrDefault(used.exprId().id(), Set.of()));
+            }
+            result.put(id, keys);
+        }
+        return result;
     }
 
     private MetaAsset assetOf(LogicalPlan leaf) {
@@ -181,14 +186,18 @@ public class LineageCollector {
         }
         if (leaf instanceof LogicalRelation relation && relation.relation() instanceof JDBCRelation jdbc) {
             String table = jdbc.jdbcOptions().tableOrQuery();
-            if (!table.contains("(")) {                         // a sub-query is not an asset
+            if (!table.contains("(")) {   // a sub-query is not an asset
                 return MetaAsset.postgresTable(databaseOfJdbcUrl(jdbc.jdbcOptions().url()), table);
             }
         }
         return null;
     }
 
-    /** "jdbc:postgresql://localhost:5433/silver?reWriteBatchedInserts=true" -&gt; "silver". */
+    private static <T> List<T> list(scala.collection.Seq<T> seq) {
+        return JavaConverters.seqAsJavaList(seq);
+    }
+
+    /** "jdbc:postgresql://host:5433/silver?x=y" -&gt; "silver" */
     static String databaseOfJdbcUrl(String url) {
         String path = url.substring(url.indexOf("//") + 2);
         int slash = path.indexOf('/');
@@ -200,7 +209,7 @@ public class LineageCollector {
         return query < 0 ? database : database.substring(0, query);
     }
 
-    /** For tests and logs: the edges of a context as "source -&gt; target". */
+    /** For tests and logs: "source -&gt; target" per edge. */
     static List<String> describe(PipelineContext context) {
         return context.lineage().stream()
                 .map(edge -> edge.source().displayName() + " -> " + edge.target().displayName())

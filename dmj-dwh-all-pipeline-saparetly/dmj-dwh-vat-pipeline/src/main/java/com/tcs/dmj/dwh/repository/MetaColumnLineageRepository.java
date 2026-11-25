@@ -6,9 +6,7 @@ import org.springframework.stereotype.Repository;
 
 import java.util.Collection;
 
-/**
- * SQL for meta.meta_column_lineage: selected field-to-field lineage (critical / regulatory columns only).
- */
+/** meta.meta_column_lineage: declared field-to-field lineage of critical columns. */
 @Repository
 public class MetaColumnLineageRepository {
 
@@ -22,10 +20,7 @@ public class MetaColumnLineageRepository {
         this.jdbc = jdbc;
     }
 
-    /**
-     * Inserts the mapping (only when it is new: column_lineage_id has no gaps) or updates its mapping type /
-     * makes it active again; returns its id.
-     */
+    /** Inserts or updates the mapping and returns its column_lineage_id. */
     public long upsert(long pipelineId, long sourceAssetId, String sourceColumn, long targetAssetId,
                        String targetColumn, MappingType mappingType) {
         Object[] key = {pipelineId, sourceAssetId, sourceColumn, targetAssetId, targetColumn};
@@ -49,7 +44,7 @@ public class MetaColumnLineageRepository {
                 Long.class, key);
     }
 
-    /** Mappings of the pipeline that are no longer declared in the code: active_flag = 'N'. */
+    /** Mappings no longer declared in the code get active_flag = 'N'. */
     public int deactivateAllExcept(long pipelineId, Collection<Long> columnLineageIds) {
         return jdbc.update("UPDATE meta.meta_column_lineage SET active_flag = 'N' "
                         + "WHERE pipeline_id = ? AND active_flag = 'Y' AND NOT (column_lineage_id = ANY (?))",

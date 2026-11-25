@@ -1,8 +1,6 @@
-package com.tcs.dmj.dwh.service;
+package com.tcs.dmj.dwh.exception;
 
-/**
- * Base class for every ETL error. Unchecked, so pipeline code stays clean.
- */
+/** Base class of every ETL error (unchecked). */
 public class EtlException extends RuntimeException {
 
     public EtlException(String message) {

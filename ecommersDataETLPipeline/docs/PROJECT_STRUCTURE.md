@@ -1,6 +1,6 @@
 # 🗂️ Project files: dmj-dwh
 
-> **131 files**: 100 Java (☕), plus scripts, SQL, Airflow DAGs, docs and config. Base package `com.tcs.dmj.dwh`. The `target` build folder, `.git` and `.vscode` are left out. Paths are relative to the project folder.
+> **133 files**: 100 Java (☕), plus scripts, SQL, Airflow DAGs, docs and config. Base package `com.tcs.dmj.dwh`. The `target` build folder, `.git` and `.vscode` are left out. Paths are relative to the project folder.
 
 **Legend:** ☕ Java · 🍃 Mongo script · 🐘 PostgreSQL · 🐍 Python (Airflow) · 📝 Markdown · ⚙️ YAML · 📦 Maven
 
@@ -208,11 +208,13 @@
 - 🐍 `airflow\dags\dmj_dwh_dags.py`
 - ⚙️ `airflow\dags\dmj_dwh_pipelines.yaml`
 
-### 📂 docs  ·  _4 files_
+### 📂 docs  ·  _6 files_
 
 - 📝 `docs\PROJECT_STRUCTURE.md`
 - 📝 `docs\airflow-execution-jar-running-on-multiple-jvm.md`
+- 📝 `docs\copilot-step-by-step-prompts.md`
 - 📝 `docs\full-flow-test-report.md`
+- 📝 `docs\sales-pipeline-end-to-end-flow.md`
 - 📝 `docs\staging-transaction-and-jdbc.md`
 
 ### 📂 (project root)  ·  _1 file_

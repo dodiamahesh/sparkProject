@@ -1,6 +1,7 @@
 package com.tcs.dmj.dwh.core;
 
-import com.tcs.dmj.dwh.service.PipelineNotFoundException;
+import com.tcs.dmj.dwh.exception.PipelineConfigurationException;
+import com.tcs.dmj.dwh.exception.PipelineNotFoundException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -10,10 +11,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 
-/**
- * Finds every {@link EtlPipeline} bean automatically (Spring injects the list).
- * You never register a pipeline by hand: add @Component to the class and it is here.
- */
+/** All EtlPipeline beans by name (Spring injects them: a @Component pipeline is registered automatically). */
 @Component
 public class PipelineRegistry {
 
@@ -23,9 +21,8 @@ public class PipelineRegistry {
 
     public PipelineRegistry(List<EtlPipeline> pipelines) {
         for (EtlPipeline pipeline : pipelines) {
-            EtlPipeline existing = pipelinesByName.put(pipeline.name(), pipeline);
-            if (existing != null) {
-                throw new IllegalStateException("Two pipelines use the same name: " + pipeline.name());
+            if (pipelinesByName.putIfAbsent(pipeline.name(), pipeline) != null) {
+                throw new PipelineConfigurationException("Two pipelines use the same name: " + pipeline.name());
             }
             log.info("Registered ETL pipeline '{}' ({})", pipeline.name(), pipeline.getClass().getSimpleName());
         }

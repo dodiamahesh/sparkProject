@@ -24,16 +24,8 @@ import static org.apache.spark.sql.functions.upper;
 import static org.apache.spark.sql.functions.when;
 
 /**
- * DATA SANITIZATION = fix values that are "messy but correct" BEFORE validation.
- * Example: "  rahul.SHAH@Gmail.com " -> "rahul.shah@gmail.com", "inr" -> "INR", "1,250.50" -> "1250.50".
- *
- * Build it like a recipe, steps run in the order you add them:
- * <pre>
- *   DataSanitizer.create()
- *       .trimAllAndBlankToNull()
- *       .toUpperCase("currency", "status")
- *       .toLowerCase("email");
- * </pre>
+ * Cleans "messy but correct" values BEFORE validation (" inr " -> "INR", "1,250.50" -> "1250.50").
+ * Steps run in the order they are added.
  */
 public final class DataSanitizer {
 
@@ -46,7 +38,7 @@ public final class DataSanitizer {
         return new DataSanitizer();
     }
 
-    /** Trims every business column and turns empty strings ("", "   ") into NULL. */
+    /** Trims every business column; "" and "   " become NULL. */
     public DataSanitizer trimAllAndBlankToNull() {
         steps.add(rows -> {
             Dataset<Row> result = rows;
@@ -69,17 +61,17 @@ public final class DataSanitizer {
         return addStep(columns, column -> lower(col(column)));
     }
 
-    /** "rahul SHAH" -> "Rahul Shah". */
+    /** "rahul SHAH" -> "Rahul Shah" */
     public DataSanitizer toProperCase(String... columns) {
         return addStep(columns, column -> initcap(col(column)));
     }
 
-    /** "1,25,000.50" -> "125000.50". */
+    /** "1,25,000.50" -> "125000.50" */
     public DataSanitizer removeThousandSeparators(String... columns) {
         return addStep(columns, column -> regexp_replace(col(column), ",", ""));
     }
 
-    /** "+91 98765-43210" / "098765 43210" -> "9876543210". */
+    /** "+91 98765-43210" / "098765 43210" -> "9876543210" */
     public DataSanitizer normalizeIndianPhone(String... columns) {
         return addStep(columns, column -> {
             Column digits = regexp_replace(col(column), "[^0-9]", "");
@@ -90,21 +82,15 @@ public final class DataSanitizer {
     }
 
     /**
-     * Copies one value out of a NESTED field into its own column. Every field is read from MongoDB as
-     * String, so a sub-document arrives as JSON text: address = {"city": "Pune", "state": "MH"}.
-     * {@code fromJson("city", "address", "$.city")} -> city = "Pune". Missing path / null JSON -> NULL.
-     * Put it BEFORE {@link #trimAllAndBlankToNull()} so the new column is cleaned too.
+     * Copies a value out of a nested object (it arrives as JSON text) into its own column:
+     * {@code fromJson("city", "address", "$.city")}. Add it BEFORE trimAllAndBlankToNull().
      */
     public DataSanitizer fromJson(String targetColumn, String jsonColumn, String jsonPath) {
         steps.add(rows -> rows.withColumn(targetColumn, get_json_object(col(jsonColumn), jsonPath)));
         return this;
     }
 
-    /**
-     * Replaces known values with their standard value; anything else is kept as it is (a validation
-     * rule can still reject it). {@code mapValues("state", Map.of("RJ", "Rajasthan", "GJ", "Gujarat"))}.
-     * Matching is exact, so apply upper/lower case first when the source mixes cases.
-     */
+    /** Replaces known values with their standard value (exact match); other values stay as they are. */
     public DataSanitizer mapValues(String column, Map<String, String> mapping) {
         return addStep(new String[]{column}, name -> {
             Column result = col(name);
@@ -115,12 +101,11 @@ public final class DataSanitizer {
         });
     }
 
-    /** NULL -> {@code defaultValue}, e.g. a customer without tier is "Bronze". */
     public DataSanitizer defaultIfNull(String column, String defaultValue) {
         return addStep(new String[]{column}, name -> coalesce(col(name), lit(defaultValue)));
     }
 
-    /** Any other cleaning you need: {@code custom("pincode", c -> regexp_replace(c, " ", ""))}. */
+    /** Any other cleaning: {@code custom("pincode", c -> regexp_replace(c, " ", ""))}. */
     public DataSanitizer custom(String column, UnaryOperator<Column> cleaner) {
         steps.add(rows -> rows.withColumn(column, cleaner.apply(col(column))));
         return this;

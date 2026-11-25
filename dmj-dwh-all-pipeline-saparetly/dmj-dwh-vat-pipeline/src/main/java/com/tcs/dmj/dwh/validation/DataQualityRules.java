@@ -5,6 +5,7 @@ import com.tcs.dmj.dwh.service.constant.SparkTypes;
 import org.apache.spark.sql.Column;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
+import org.apache.spark.sql.types.DataType;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -16,21 +17,8 @@ import static org.apache.spark.sql.functions.current_timestamp;
 import static org.apache.spark.sql.functions.not;
 
 /**
- * DATA VALIDATION rules for one source, written as a readable list:
- * <pre>
- *   DataQualityRules.create()
- *       .mustBeDecimal("netTax")                       // CORRUPT check
- *       .required("ackNo", "netTax")                   // VALIDATION check
- *       .mustNotBeNegative("penaltyAmount")
- *       .mustBeOneOf("fileFrom", "INET", "OFFC", "MOBL")
- *       .mustExistIn("formId", formIds, "form_id", "dim_tax_form");   // ORPHAN check
- * </pre>
- * Every rule describes when a record is BAD. A record with zero failed rules is valid (and loaded).
- * All failed rules of a record are collected, so the rejected table shows every problem at once
- * (one row per failed rule, pointing to its message in meta.meta_error_master).
- *
- * The message of a rule is fixed text (the bad value is stored separately as field_value), so every
- * rule has exactly ONE row in meta.meta_error_master.
+ * The data-quality rules of one source. Every rule says when a record is BAD.
+ * A rule message is fixed text (no record values): error type + message = one row in meta.meta_error_master.
  */
 public final class DataQualityRules {
 
@@ -47,39 +35,32 @@ public final class DataQualityRules {
         return new DataQualityRules();
     }
 
-    // ------------------------------------------------------------------
-    // CORRUPT checks: the value is there, but it cannot be converted
-    // ------------------------------------------------------------------
+    // ---------------------------------------------------------------- CORRUPT: value cannot be converted
 
     public DataQualityRules mustBeDecimal(String column) {
-        Column value = col(column);
-        return add(ErrorType.CORRUPT, value.isNotNull().and(value.cast(SparkTypes.MONEY).isNull()),
-                column, column + " is not a valid number");
+        return add(ErrorType.CORRUPT, cannotBeCastTo(column, SparkTypes.MONEY), column,
+                column + " is not a valid number");
     }
 
     public DataQualityRules mustBeInteger(String column) {
         Column value = col(column);
-        return add(ErrorType.CORRUPT, value.isNotNull().and(not(value.rlike(INTEGER_REGEX))),
-                column, column + " is not a whole number");
+        return add(ErrorType.CORRUPT, value.isNotNull().and(not(value.rlike(INTEGER_REGEX))), column,
+                column + " is not a whole number");
     }
 
-    /** Expects yyyy-MM-dd. */
+    /** yyyy-MM-dd */
     public DataQualityRules mustBeDate(String column) {
-        Column value = col(column);
-        return add(ErrorType.CORRUPT, value.isNotNull().and(value.cast(SparkTypes.DATE).isNull()),
-                column, column + " is not a valid date (expected yyyy-MM-dd)");
+        return add(ErrorType.CORRUPT, cannotBeCastTo(column, SparkTypes.DATE), column,
+                column + " is not a valid date (expected yyyy-MM-dd)");
     }
 
-    /** Expects yyyy-MM-ddTHH:mm:ss. */
+    /** yyyy-MM-ddTHH:mm:ss */
     public DataQualityRules mustBeTimestamp(String column) {
-        Column value = col(column);
-        return add(ErrorType.CORRUPT, value.isNotNull().and(value.cast(SparkTypes.TIMESTAMP).isNull()),
-                column, column + " is not a valid timestamp (expected yyyy-MM-ddTHH:mm:ss)");
+        return add(ErrorType.CORRUPT, cannotBeCastTo(column, SparkTypes.TIMESTAMP), column,
+                column + " is not a valid timestamp (expected yyyy-MM-ddTHH:mm:ss)");
     }
 
-    // ------------------------------------------------------------------
-    // VALIDATION checks: business rules
-    // ------------------------------------------------------------------
+    // ---------------------------------------------------------------- VALIDATION: business rules
 
     public DataQualityRules required(String... columns) {
         for (String column : columns) {
@@ -89,69 +70,58 @@ public final class DataQualityRules {
     }
 
     public DataQualityRules mustBePositive(String column) {
-        return add(ErrorType.VALIDATION, col(column).cast(SparkTypes.MONEY).leq(0),
-                column, column + " must be greater than 0");
+        return add(ErrorType.VALIDATION, money(column).leq(0), column, column + " must be greater than 0");
     }
 
     public DataQualityRules mustNotBeNegative(String column) {
-        return add(ErrorType.VALIDATION, col(column).cast(SparkTypes.MONEY).lt(0),
-                column, column + " cannot be negative");
+        return add(ErrorType.VALIDATION, money(column).lt(0), column, column + " cannot be negative");
     }
 
     public DataQualityRules mustNotBeMoreThan(String column, double max) {
-        return add(ErrorType.VALIDATION, col(column).cast(SparkTypes.MONEY).gt(max),
-                column, column + " is more than " + max);
+        return add(ErrorType.VALIDATION, money(column).gt(max), column, column + " is more than " + max);
     }
 
     public DataQualityRules mustBeBetween(String column, double min, double max) {
         Column number = col(column).cast(SparkTypes.RATE);
-        return add(ErrorType.VALIDATION, number.lt(min).or(number.gt(max)),
-                column, column + " must be between " + min + " and " + max);
+        return add(ErrorType.VALIDATION, number.lt(min).or(number.gt(max)), column,
+                column + " must be between " + min + " and " + max);
     }
 
     public DataQualityRules mustNotBeInFuture(String column) {
-        return add(ErrorType.VALIDATION, col(column).cast(SparkTypes.TIMESTAMP).gt(current_timestamp()),
-                column, column + " cannot be in the future");
+        return add(ErrorType.VALIDATION, col(column).cast(SparkTypes.TIMESTAMP).gt(current_timestamp()), column,
+                column + " cannot be in the future");
     }
 
     public DataQualityRules mustBeOneOf(String column, String... allowedValues) {
         Column value = col(column);
-        return add(ErrorType.VALIDATION, value.isNotNull().and(not(value.isin((Object[]) allowedValues))),
-                column, column + " must be one of " + Arrays.toString(allowedValues));
+        return add(ErrorType.VALIDATION, value.isNotNull().and(not(value.isin((Object[]) allowedValues))), column,
+                column + " must be one of " + Arrays.toString(allowedValues));
     }
 
     public DataQualityRules mustMatch(String column, String regex, String description) {
         Column value = col(column);
-        return add(ErrorType.VALIDATION, value.isNotNull().and(not(value.rlike(regex))),
-                column, column + " " + description);
+        return add(ErrorType.VALIDATION, value.isNotNull().and(not(value.rlike(regex))), column,
+                column + " " + description);
     }
 
     public DataQualityRules mustBeValidEmail(String column) {
         return mustMatch(column, EMAIL_REGEX, "is not a valid email address");
     }
 
-    /** Anything else, e.g. {@code custom(VALIDATION, "from and to account must differ", col("from").equalTo(col("to")))}. */
-    public DataQualityRules custom(ErrorType errorType, String description, Column failWhen) {
-        return add(errorType, failWhen, null, description);
+    /** Any other rule: {@code failWhen} is true for a BAD record. */
+    public DataQualityRules custom(ErrorType errorType, String message, Column failWhen) {
+        return add(errorType, failWhen, null, message);
     }
 
-    // ------------------------------------------------------------------
-    // ORPHAN checks: referential integrity
-    // ------------------------------------------------------------------
+    // ---------------------------------------------------------------- ORPHAN: referenced key must exist
 
-    /**
-     * The value must exist in another dataset (usually a dimension table already in PostgreSQL).
-     *
-     * @param lookup       dataset that contains the allowed keys
-     * @param lookupColumn key column inside {@code lookup}
-     * @param lookupName   friendly name for the error message, e.g. "dim_tax_form"
-     */
+    /** The value of {@code column} must exist in {@code lookup.lookupColumn}. lookupName is used in the message. */
     public DataQualityRules mustExistIn(String column, Dataset<Row> lookup, String lookupColumn, String lookupName) {
         referenceRules.add(new ReferenceRule(column, lookup, lookupColumn, lookupName));
         return this;
     }
 
-    // ------------------------------------------------------------------
+    // ----------------------------------------------------------------
 
     public List<ValidationRule> rules() {
         return Collections.unmodifiableList(rules);
@@ -159,6 +129,16 @@ public final class DataQualityRules {
 
     public List<ReferenceRule> referenceRules() {
         return Collections.unmodifiableList(referenceRules);
+    }
+
+    private static Column money(String column) {
+        return col(column).cast(SparkTypes.MONEY);
+    }
+
+    /** Value present, but the cast gives NULL (non-ANSI mode). */
+    private static Column cannotBeCastTo(String column, DataType type) {
+        Column value = col(column);
+        return value.isNotNull().and(value.cast(type).isNull());
     }
 
     private DataQualityRules add(ErrorType errorType, Column failWhen, String fieldName, String message) {

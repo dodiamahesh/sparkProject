@@ -46,7 +46,8 @@ Files kya kram ma lakhvi e mate: [BUILD_ORDER_PHASE_WISE.md](BUILD_ORDER_PHASE_W
 | `connector/source/` | Mongo read, window, soft delete, reject gate (generic) | Na |
 | `connector/target/` | PostgreSQL writers (direct, staging, SCD2, soft delete) | Na |
 | `core/` | pipeline contract + base class + registry + lineage | Na |
-| `service/`, `service/impl/` | run flow, commit, lock, lineage save | Na |
+| `service/`, `service/impl/`, `service/dto/` | run flow, commit, lock, lineage save (interfaces + impl) | Na |
+| `exception/` | **badhi custom exceptions** (`EtlException` base, `DataQualityGateException`, `PipelineConfigurationException`, `SoftDeletesNotAppliedException`, `PipelineNotFound...` ...) | Navo error prakar joie to j: `EtlException` extend karo |
 | `repository/` | meta tables nu SQL | Na |
 | `web/rest/`, `batch/`, `DmjDwhApp` | REST API, Airflow batch mode, `main` | Na |
 | `config/`, `src/main/resources/*.yml` | Spark / Mongo / Postgres settings | Fakt navo DB / setting hoy to |
@@ -74,7 +75,7 @@ Baki nu badhu **framework** che: badhi pipelines e vapre che, ema badlav sauthi 
 | 6 | Sanitize | `VatReturnSources.sanitizer()` | nested JSON → columns (`fromJson`), trim, upper/lower, codes map, `"2,80,000"` → `280000` |
 | 7 | Soft delete split | `SourceProcessor` | `isDeleted = true` vala documents validate nathi thata, delete list ma jay |
 | 8 | Validate | `VatReturnSources.rules()` + `DataQualityEngine` | CORRUPT → VALIDATION → ORPHAN; pachhi same `ackNo` → DUPLICATE (latest `updatedAt` jite) |
-| 9 | Reject gate | `SourceProcessor` | 30% thi vadhu kharab (≥ 10 rows hoy to) → job FAILED, kai load nahi |
+| 9 | Reject gate | `SourceProcessor` | 30% thi vadhu kharab (≥ 10 rows hoy to) → `DataQualityGateException`, job FAILED, kai load nahi |
 | 10 | Transform | `VatReturnSchemaMapper` | `toTyped` → `toDimTaxpayer`, `toDimTaxPeriod`, `toFactVatReturn` |
 | 11 | Load dims | `loadDirect` → `DirectPostgresWriter` | `INSERT ... ON CONFLICT (tin) DO UPDATE` (SCD1), pachhi `dim_tax_period`, `dim_date` |
 | 12 | Load fact | `loadDirect(..., FACT_KEYS)` | surrogate keys SQL ni andar sub-select thi (`KeyLookup`), kem ke nava taxpayers haju commit nathi |
@@ -333,7 +334,7 @@ public void run(PipelineContext context) {
 | **Be incremental batch ne seedha `join` na karo** | aa run ma fakt *badlayela* documents che: return badlayu pan master nahi, to join ma taxpayer madse nahi. Bija collection ni mahiti **silver table** mathi lo (`KeyLookup` ke `readTable`) |
 | **Ek table no ek j "owner" source** | `dim_taxpayer` ne master ane returns banne lakhe to chhelle lakhnar jite. Ek pasand karo (upar: master), ane `toDimTaxpayer(typed)` vado load kadhi nakho |
 | **Dims pehla, fact pachhi** | `KeyLookup` sub-select ne dimension ni row joie |
-| **Darek soft-delete source mate `applyDeletes`** | nahi to `SourceCommitServiceImpl` job FAILED kare (delete gumay nahi) |
+| **Darek soft-delete source mate `applyDeletes`** | nahi to `SoftDeletesNotAppliedException`: job FAILED (delete gumay nahi) |
 | **Badha collections ek j Mongo database ma** | app ek j `MONGO_DATABASE` vanche (`MongoSourceReader`) |
 | **Reject gate collection dith** | darek `SourceDefinition` no potano `maxRejectPercent` |
 | **Collection naam = lineage + rejected table** | `meta_rejected_record.source_collection` ma collection naam aave che |
@@ -365,7 +366,7 @@ Udaharan: **`vat-payment-pipeline`**: MongoDB `vat_payment_coll` → `silver.fac
 | 7 | `sample-data/vat-payment-pipeline/03_postgres_tables.sql` | **navi**: PART 1 meta (VAT `03` mathi copy, re-run safe) + PART 2 tables + PART 3 error seed |
 | 8 | `airflow/dags/dmj_dwh_pipelines.yaml` | navi entry: `vat-payment-pipeline: depends_on: [vat-return-pipeline]` |
 | 9 | `sample-data/README.md` "Jobs" table, `vat-payment-pipeline.md` | docs (optional) |
-| — | `core/`, `connector/`, `validation/`, `service/`, `repository/`, `web/`, `batch/`, `config/` | **kai nahi**: `PipelineRegistry` navi `@Component` jate shodhe, REST URL ane `--run-pipeline` tarat chale |
+| — | `core/`, `connector/`, `validation/`, `exception/`, `service/`, `repository/`, `web/`, `batch/`, `config/` | **kai nahi**: `PipelineRegistry` navi `@Component` jate shodhe, REST URL ane `--run-pipeline` tarat chale |
 
 Pachhi: `03` chalavo → jar build → app restart (start-up par `meta_pipeline` ma register) →
 `POST /api/admin/dwh/pipelines/vat-payment-pipeline/run`.
@@ -559,6 +560,7 @@ ON CONFLICT (error_type, error_message) DO NOTHING;
 | DB / Mongo connection | `application-dev.yml` / env variables (`POSTGRES_URL`, `MONGO_URI`, `MONGO_DATABASE` ...) |
 | Spark settings (cores, partitions) | `application.yml` `application.dwh.spark.config`, prod ma `SPARK_MASTER` |
 | Critical column ni lineage | `VatReturnPipeline.columnLineage()` |
+| Navo custom exception | `exception/` ma navi class (`extends EtlException`); REST ma alag HTTP status joie to `web/rest/errors/ExceptionTranslator` ma `@ExceptionHandler`. Run vakhte throw thay to `meta_pipeline_run.error_code` = class naam |
 
 ---
 

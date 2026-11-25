@@ -2,9 +2,7 @@ package com.tcs.dmj.dwh.core;
 
 import java.util.concurrent.atomic.AtomicLong;
 
-/**
- * Counters for one job run. They are saved in meta.meta_pipeline_run when the job ends.
- */
+/** Counters of one run, saved in meta.meta_pipeline_run. */
 public class JobMetrics {
 
     private final AtomicLong sourceCount = new AtomicLong();
@@ -30,20 +28,15 @@ public class JobMetrics {
         duplicateCount.addAndGet(count);
     }
 
-    /** Documents soft-deleted at the source (applied to the target tables, not validated). */
     public void addDeleted(long count) {
         deletedCount.addAndGet(count);
-    }
-
-    public long deletedCount() {
-        return deletedCount.get();
     }
 
     public void addLoaded(long count) {
         loadedCount.addAndGet(count);
     }
 
-    /** A rolled-back run (directLoad) wrote nothing: its loaded count goes back to 0. */
+    /** A rolled-back run wrote nothing. */
     public void resetLoaded() {
         loadedCount.set(0);
     }
@@ -62,6 +55,10 @@ public class JobMetrics {
 
     public long duplicateCount() {
         return duplicateCount.get();
+    }
+
+    public long deletedCount() {
+        return deletedCount.get();
     }
 
     public long loadedCount() {

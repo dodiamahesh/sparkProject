@@ -1,9 +1,9 @@
 package com.tcs.dmj.dwh.service.impl;
 
 import com.tcs.dmj.dwh.domain.MetaPipelineRun;
+import com.tcs.dmj.dwh.exception.PipelineRunNotFoundException;
 import com.tcs.dmj.dwh.repository.MetaPipelineRunRepository;
 import com.tcs.dmj.dwh.service.DwhPipelineRunService;
-import com.tcs.dmj.dwh.service.PipelineRunNotFoundException;
 import org.springframework.stereotype.Service;
 
 import java.util.List;

@@ -1,20 +1,14 @@
 package com.tcs.dmj.dwh.enums;
 
-/**
- * Why a record was rejected (error_type in meta.meta_error_master). The order matters: the errors of a
- * rejected record are sorted in this order, so the first one is its most serious problem.
- */
+/** Why a record was rejected. The order matters: the first error of a record is its most serious one. */
 public enum ErrorType {
 
-    /** Value exists but has the wrong data type: "12abc" for an amount, "2026-13-45" for a date. */
+    /** Wrong data type, e.g. "12abc" for an amount. */
     CORRUPT,
-
-    /** Value has the right type but breaks a business rule: missing field, negative amount, bad email. */
+    /** Right type, but a business rule is broken. */
     VALIDATION,
-
-    /** Referential integrity: the record points to a form / taxpayer / code that does not exist. */
+    /** The referenced code / key does not exist. */
     ORPHAN,
-
-    /** Same business key seen more than once in this batch. One copy is kept, the others are rejected. */
+    /** Same business key more than once in one run (the latest copy is kept). */
     DUPLICATE
 }

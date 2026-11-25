@@ -7,10 +7,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-/**
- * Creates ONE SparkSession for the whole application.
- * A SparkSession is thread-safe, so every pipeline can share it.
- */
+/** One SparkSession for the whole application (thread-safe, shared by every pipeline). */
 @Configuration
 public class SparkConfig {
 
@@ -18,17 +15,14 @@ public class SparkConfig {
 
     @Bean(destroyMethod = "stop")
     public SparkSession sparkSession(ApplicationProperties properties) {
-        ApplicationProperties.Spark sparkProperties = properties.spark();
-
+        ApplicationProperties.Spark settings = properties.spark();
         SparkConf conf = new SparkConf()
-                .setAppName(sparkProperties.appName())
-                .setMaster(sparkProperties.master());
-
-        if (sparkProperties.config() != null) {
-            sparkProperties.config().forEach(conf::set);
+                .setAppName(settings.appName())
+                .setMaster(settings.master());
+        if (settings.config() != null) {
+            settings.config().forEach(conf::set);
         }
-
-        log.info("Starting SparkSession (master={}, app={})", sparkProperties.master(), sparkProperties.appName());
+        log.info("Starting SparkSession (master={}, app={})", settings.master(), settings.appName());
         return SparkSession.builder().config(conf).getOrCreate();
     }
 }

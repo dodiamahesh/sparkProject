@@ -1,4 +1,4 @@
-package com.tcs.dmj.dwh.service;
+package com.tcs.dmj.dwh.exception;
 
 public class PipelineRunNotFoundException extends EtlException {
 

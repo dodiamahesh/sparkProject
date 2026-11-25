@@ -79,8 +79,7 @@ public class SalesPipeline extends AbstractEtlPipeline {
 
     @Override
     public List<String> targetTables() {
-        return List.of(DIM_PRODUCT, DIM_CUSTOMER, DIM_ORDER_STATUS, DIM_PAYMENT_METHOD, "silver.dim_date",
-                FACT_SALES, FACT_PAYMENT);
+        return List.of(DIM_PRODUCT, DIM_CUSTOMER, DIM_ORDER_STATUS, DIM_PAYMENT_METHOD, "silver.dim_date",FACT_SALES, FACT_PAYMENT);
     }
 
     @Override

@@ -1,10 +1,6 @@
-package com.tcs.dmj.dwh.service;
+package com.tcs.dmj.dwh.exception;
 
-/**
- * A source failed the reject gate (too many rejected rows).
- * The job stops BEFORE the collection is loaded and last_run_time does not move, so after the source is
- * fixed the next run simply reads the same window again.
- */
+/** Too many rejected rows in one collection: the run stops before that collection is loaded. */
 public class DataQualityGateException extends EtlException {
 
     private final String collection;

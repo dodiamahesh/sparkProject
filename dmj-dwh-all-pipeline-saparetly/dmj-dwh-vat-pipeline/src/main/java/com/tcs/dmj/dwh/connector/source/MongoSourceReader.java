@@ -1,7 +1,6 @@
 package com.tcs.dmj.dwh.connector.source;
 
 import com.tcs.dmj.dwh.config.ApplicationProperties;
-import org.apache.spark.sql.DataFrameReader;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SparkSession;
@@ -16,15 +15,8 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 /**
- * Reads a MongoDB collection into a Spark DataFrame. READ ONLY: the ETL never writes to MongoDB.
- *
- * WHICH documents are read is decided by:
- *   1. the incremental window on the source's timestamp field ({@link SourceDefinition#latestRecordColumn()},
- *      e.g. updatedAt):  updatedAt &gt; meta_pipeline.last_run_time AND &lt;= start of this run
- *   2. the optional source filter of the {@link SourceDefinition} (e.g. skip test documents)
- *
- * The $match stages run INSIDE MongoDB, so only the documents of the window travel to Spark.
- * The timestamp field must be a BSON Date and should have an index ({updatedAt: 1}) to make the filter fast.
+ * Reads the documents of one window from a MongoDB collection (read only). The $match runs inside MongoDB;
+ * the timestamp field must be a BSON Date with an index.
  */
 @Component
 public class MongoSourceReader {
@@ -44,22 +36,17 @@ public class MongoSourceReader {
                 .map(Document::toJson)
                 .collect(Collectors.joining(", ", "[", "]"));
         log.debug("Reading {}.{} pipeline={}", mongo.database(), source.collection(), pipeline);
-        DataFrameReader reader = spark.read()
+        return spark.read()
                 .format("mongodb")
                 .option("connection.uri", mongo.uri())
                 .option("database", mongo.database())
                 .option("collection", source.collection())
                 .option("aggregation.pipeline", pipeline)
-                .schema(source.schema());
-        return reader.load();
+                .schema(source.schema())
+                .load();
     }
 
-    /**
-     * The $match stages for this source and window:
-     * <pre>
-     *   {"$match": {"updatedAt": {"$gt": {"$date": start}, "$lte": {"$date": end}}}}   ($gt left out on the first run)
-     * </pre>
-     */
+    /** {"$match": {"updatedAt": {"$gt": start, "$lte": end}}} (+ the source filter). No $gt on the first run. */
     private List<Document> matchStages(SourceDefinition source, LoadWindow window) {
         Document range = new Document();
         if (!window.isFirstRun()) {

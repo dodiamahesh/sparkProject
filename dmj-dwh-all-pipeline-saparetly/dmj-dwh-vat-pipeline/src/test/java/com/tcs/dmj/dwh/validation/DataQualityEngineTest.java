@@ -18,10 +18,7 @@ import java.util.stream.Collectors;
 import static org.apache.spark.sql.functions.col;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-/**
- * Plain unit test (no Spring, no databases): sanitizer + rules + engine on a small in-memory dataset.
- * Copy this style to test the rules of your own pipeline.
- */
+/** Unit test without Spring or databases: sanitizer + rules + engine on an in-memory dataset. */
 class DataQualityEngineTest {
 
     private static SparkSession spark;

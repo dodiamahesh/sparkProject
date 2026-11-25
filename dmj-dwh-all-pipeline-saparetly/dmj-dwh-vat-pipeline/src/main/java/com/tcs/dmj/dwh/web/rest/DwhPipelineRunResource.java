@@ -11,12 +11,8 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 /**
- * Run history (meta.meta_pipeline_run).
- *
- *   GET /api/admin/dwh/pipeline-runs?pipelineName=vat-return-pipeline&status=FAILED&limit=20
- *   GET /api/admin/dwh/pipeline-runs/{pipelineRunId}     -> one run (status, counts, error)
- *
- * status: RUNNING, SUCCESS, SUCCESS_WITH_FAILED or FAILED.
+ * GET /api/admin/dwh/pipeline-runs?pipelineName=vat-return-pipeline&status=FAILED&limit=20
+ * GET /api/admin/dwh/pipeline-runs/{pipelineRunId}
  */
 @RestController
 @RequestMapping("/api/admin/dwh/pipeline-runs")

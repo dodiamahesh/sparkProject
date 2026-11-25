@@ -12,11 +12,8 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 /**
- * List pipelines and trigger them. Every run is INCREMENTAL: per source it reads the documents whose
- * timestamp (e.g. updatedAt) is after meta.meta_pipeline.last_run_time, up to the moment the run starts.
- *
- *   GET  /api/admin/dwh/pipelines                        -> pipelines, their sources and last_run_time
- *   POST /api/admin/dwh/pipelines/{pipelineName}/run     -> runs the pipeline and answers when it has finished
+ * GET  /api/admin/dwh/pipelines                    -> pipelines, sources, last_run_time
+ * POST /api/admin/dwh/pipelines/{pipelineName}/run -> runs the pipeline, answers when it has finished
  */
 @RestController
 @RequestMapping("/api/admin/dwh/pipelines")
@@ -33,10 +30,7 @@ public class DwhPipelineResource {
         return pipelineService.listPipelines();
     }
 
-    /**
-     * Synchronous: the response is the finished run (status SUCCESS / SUCCESS_WITH_FAILED / FAILED, counts, error).
-     * A FAILED job is still HTTP 200: the run row tells why it failed.
-     */
+    /** A FAILED run is still HTTP 200: the run row says why it failed. */
     @PostMapping("/{pipelineName}/run")
     public MetaPipelineRun runPipeline(@PathVariable String pipelineName) {
         return pipelineService.runPipeline(pipelineName);

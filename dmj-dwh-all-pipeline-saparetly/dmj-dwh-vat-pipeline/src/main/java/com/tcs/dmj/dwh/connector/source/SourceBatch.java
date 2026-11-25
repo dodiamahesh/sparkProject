@@ -4,18 +4,11 @@ import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 
 /**
- * Result of reading + cleaning + validating ONE source collection in ONE job run.
+ * Result of one source in one run.
  *
- * @param valid       clean rows, ready to transform (same column names as MongoDB, all String)
- * @param rejected    bad rows in the standard rejected format, one row per record (saved at the end of the job)
- * @param deleted     business keys soft-deleted at the source in this window: the business key column +
- *                    {@link #DELETED_AT}. null when the source has no soft delete (and for derived batches).
- *                    The pipeline applies them to its tables with AbstractEtlPipeline.applyDeletes(...)
- * @param sourceCount documents read (active + deleted)
- * @param derived     true = the rows do not come straight from a MongoDB collection but were built from
- *                    another batch (e.g. the elements of an array field, one row per element). Rejected rows are
- *                    saved as usual, but they have NO window of their own: the parent collection
- *                    window covers them.
+ * @param valid   clean rows (MongoDB column names, all String)
+ * @param deleted business keys soft-deleted at the source (+ DELETED_AT); null when the source has no soft delete
+ * @param derived true = rows built from another batch (e.g. array lines), not read from MongoDB
  */
 public record SourceBatch(
         SourceDefinition source,
@@ -29,19 +22,19 @@ public record SourceBatch(
         long deletedCount,
         boolean derived) {
 
-    /** Column of {@link #deleted}: when the document was deleted at the source (its timestamp field). */
+    /** Column of {@link #deleted}: when the document was deleted at the source. */
     public static final String DELETED_AT = "_deleted_at";
 
     public String collection() {
         return source.collection();
     }
 
-    /** Rejected rows that are really bad (duplicates are a normal part of change data). */
+    /** Rejected rows without the duplicates. */
     public long badRowCount() {
         return rejectedCount - duplicateCount;
     }
 
-    /** Documents that went through validation (soft-deleted documents are not validated). */
+    /** Rows that were validated (soft-deleted documents are not). */
     public long activeCount() {
         return sourceCount - deletedCount;
     }

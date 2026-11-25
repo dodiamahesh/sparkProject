@@ -2,6 +2,7 @@ package com.tcs.dmj.dwh.repository;
 
 import com.tcs.dmj.dwh.domain.MetaPipelineRun;
 import com.tcs.dmj.dwh.enums.PipelineStatus;
+import com.tcs.dmj.dwh.exception.PipelineConfigurationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
@@ -13,9 +14,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
-/**
- * SQL for meta.meta_pipeline_run (plain JdbcTemplate: easy to read, no magic).
- */
+/** meta.meta_pipeline_run: one row per run. */
 @Repository
 public class MetaPipelineRunRepository {
 
@@ -50,11 +49,7 @@ public class MetaPipelineRunRepository {
         this.jdbc = jdbc;
     }
 
-    /**
-     * Inserts the row of a new run (status RUNNING) and returns the new pipeline_run_id.
-     *
-     * @param windowEnd the run reads data up to this time (stored as last_run_time of the run)
-     */
+    /** Inserts a RUNNING run that reads up to windowEnd; returns its pipeline_run_id. */
     public long createRun(String pipelineName, Instant windowEnd) {
         List<Long> ids = jdbc.queryForList("""
                 INSERT INTO meta.meta_pipeline_run (pipeline_id, pipeline_status, last_run_time, start_time)
@@ -65,16 +60,12 @@ public class MetaPipelineRunRepository {
                 """, Long.class, PipelineStatus.RUNNING.name(), OffsetDateTime.ofInstant(windowEnd, ZoneOffset.UTC),
                 pipelineName);
         if (ids.isEmpty()) {
-            throw new IllegalStateException("Pipeline " + pipelineName + " is not registered in meta.meta_pipeline");
+            throw new PipelineConfigurationException("Pipeline " + pipelineName + " is not registered in meta.meta_pipeline");
         }
         return ids.get(0);
     }
 
-    /**
-     * @param totalRecords   records read from the source
-     * @param successRecords records handled successfully (valid + soft-deleted)
-     * @param failedRecords  records rejected
-     */
+    /** successRecords = valid + soft-deleted, failedRecords = rejected. */
     public void finishRun(long pipelineRunId, PipelineStatus status, long totalRecords, long successRecords,
                           long failedRecords, String errorCode, String errorMessage) {
         jdbc.update("""
@@ -97,7 +88,7 @@ public class MetaPipelineRunRepository {
         return jdbc.query(SELECT + " WHERE r.pipeline_run_id = ?", ROW_MAPPER, pipelineRunId).stream().findFirst();
     }
 
-    /** Latest runs first. Both filters are optional (null = no filter). */
+    /** Latest runs first. Filters are optional (null = no filter). */
     public List<MetaPipelineRun> findRecent(String pipelineName, String status, int limit) {
         StringBuilder sql = new StringBuilder(SELECT).append(" WHERE 1 = 1");
         List<Object> params = new ArrayList<>();
@@ -114,7 +105,6 @@ public class MetaPipelineRunRepository {
         return jdbc.query(sql.toString(), ROW_MAPPER, params.toArray());
     }
 
-    /** Pipelines that have a run with status RUNNING (busy now, or left behind by a process that died). */
     public List<String> pipelinesWithRunningRuns() {
         return jdbc.queryForList("""
                 SELECT DISTINCT p.pipeline_name
@@ -132,12 +122,7 @@ public class MetaPipelineRunRepository {
                 """, Boolean.class, pipelineName, PipelineStatus.RUNNING.name()));
     }
 
-    /**
-     * Runs of this pipeline that stayed RUNNING because their process died: they become FAILED.
-     * Call it ONLY while holding the pipeline's run lock (then no live run of this pipeline exists anywhere).
-     *
-     * @return number of runs closed
-     */
+    /** RUNNING runs left by a process that died become FAILED. Call it only while holding the run lock. */
     public int failInterruptedRuns(String pipelineName) {
         return jdbc.update("""
                 UPDATE meta.meta_pipeline_run r

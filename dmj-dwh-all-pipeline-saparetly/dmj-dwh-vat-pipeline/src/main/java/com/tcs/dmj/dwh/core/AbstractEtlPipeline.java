@@ -16,17 +16,8 @@ import java.util.Arrays;
 import java.util.List;
 
 /**
- * Base class for pipelines. It gives you a few simple building blocks, so a pipeline reads like a recipe:
- *
- * <pre>
- *   SourceBatch returns = extractAndValidate(ctx, SOURCE, sanitizer, rules);    // E + data quality
- *   Dataset&lt;Row&gt; typed = mapper.toTyped(returns.valid());                     // T
- *   loadDirect(ctx, mapper.toDimTaxpayer(typed), "silver.dim_taxpayer", List.of("tin"));   // L
- * </pre>
- *
- * Saving rejected records and advancing last_run_time happens automatically after run() succeeds.
- * Every load also records its TABLE lineage (which collections / tables it was built from, see
- * {@link LineageCollector}); it is written to meta.meta_lineage when the run succeeds.
+ * Base class of every pipeline: building blocks for extract + validate, load and soft delete.
+ * Every load also records its table lineage. Rejects and last_run_time are saved after run() succeeds.
  */
 public abstract class AbstractEtlPipeline implements EtlPipeline {
 
@@ -38,58 +29,52 @@ public abstract class AbstractEtlPipeline implements EtlPipeline {
         this.toolkit = toolkit;
     }
 
-    /**
-     * EXTRACT one MongoDB collection, then SANITIZE, VALIDATE and DE-DUPLICATE it.
-     * Use {@code batch.valid()} for the next steps. Bad rows are saved for you at the end of the job.
-     */
+    // ---------------------------------------------------------------- extract + validate
+
+    /** Reads one collection (incremental window), cleans, validates and de-duplicates it. Use batch.valid(). */
     protected SourceBatch extractAndValidate(PipelineContext context, SourceDefinition source,DataSanitizer sanitizer, DataQualityRules rules) {
         return toolkit.sourceProcessor().process(context, source, sanitizer, rules);
     }
 
-    /**
-     * VALIDATE rows built from another batch (e.g. one row per element of an array field).
-     * A bad line is rejected on its own; its parent document is still loaded. See
-     * {@link com.tcs.dmj.dwh.connector.source.SourceProcessor#processDerived}.
-     */
-    protected SourceBatch validateDerived(PipelineContext context, SourceDefinition definition,
-                                          Dataset<Row> rows, DataQualityRules rules) {
+    /** Validates rows built from another batch (e.g. array lines); a bad line is rejected on its own. */
+    protected SourceBatch validateDerived(PipelineContext context, SourceDefinition definition,Dataset<Row> rows, DataQualityRules rules) {
         return toolkit.sourceProcessor().processDerived(context, definition, rows, rules);
     }
 
-    /** Loads a slowly changing dimension TYPE 2 (history kept). See {@link Scd2Writer}. */
-    protected long loadScd2(PipelineContext context, Dataset<Row> rows, Scd2Writer.Scd2Spec spec) {
-        toolkit.lineageCollector().record(context, rows, spec.table(), List.of());
-        return loaded(context, spec.table(), toolkit.scd2Writer().load(context, rows, spec));
-    }
+    // ---------------------------------------------------------------- load with staging (directLoad = false)
 
-    /** UPSERT rows into a PostgreSQL table, matching on the business key column(s). */
+    /** UPSERT on the business key column(s), through a staging table. */
     protected long load(PipelineContext context, Dataset<Row> rows, String targetTable, String... businessKeyColumns) {
         toolkit.lineageCollector().record(context, rows, targetTable, List.of());
         return loaded(context, targetTable, toolkit.postgresWriter().upsert(context, rows, targetTable, businessKeyColumns));
     }
 
-    /** Adds every date found in {@code dateColumn} to the shared silver.dim_date table. */
+    /** SCD type 2 dimension (history kept). */
+    protected long loadScd2(PipelineContext context, Dataset<Row> rows, Scd2Writer.Scd2Spec spec) {
+        toolkit.lineageCollector().record(context, rows, spec.table(), List.of());
+        return loaded(context, spec.table(), toolkit.scd2Writer().load(context, rows, spec));
+    }
+
+    /** Adds every date of {@code dateColumn} to silver.dim_date. */
     protected long loadDateDimension(PipelineContext context, Dataset<Row> rows, String dateColumn) {
         return load(context, DateDimension.fromColumn(rows, dateColumn), DateDimension.TABLE, DateDimension.KEY_COLUMN);
     }
 
-    // ------------------------------------------------------------------ direct load (no staging)
+    // ---------------------------------------------------------------- direct load (directLoad = true)
 
     /**
-     * UPSERT rows DIRECTLY into a PostgreSQL table, without a staging table, inside the job's transaction.
-     * Only for pipelines with {@link #directLoad()} = true: nothing is visible until the whole job commits.
+     * UPSERT straight into the table, inside the run's transaction.
      *
-     * @param lookups surrogate keys looked up in SQL (a dimension written in this same transaction is
-     *                invisible to Spark), see {@link DirectPostgresWriter.KeyLookup}
+     * @param lookups surrogate keys looked up inside the SQL (for dimensions written in this same run)
      */
-    protected long loadDirect(PipelineContext context, Dataset<Row> rows, String targetTable, List<String> keyColumns,
-                              DirectPostgresWriter.KeyLookup... lookups) {
-        toolkit.lineageCollector().record(context, rows, targetTable,
-                Arrays.stream(lookups).map(DirectPostgresWriter.KeyLookup::dimensionTable).toList());
-        return loaded(context, targetTable, toolkit.directWriter().upsert(context, rows, targetTable, keyColumns, List.of(lookups)));
+    protected long loadDirect(PipelineContext context, Dataset<Row> rows, String targetTable, List<String> keyColumns,DirectPostgresWriter.KeyLookup... lookups) {
+        List<String> lookupTables = Arrays.stream(lookups).map(DirectPostgresWriter.KeyLookup::dimensionTable).toList();
+        toolkit.lineageCollector().record(context, rows, targetTable, lookupTables);
+        long written = toolkit.directWriter().upsert(context, rows, targetTable, keyColumns, List.of(lookups));
+        return loaded(context, targetTable, written);
     }
 
-    /** Adds every date of the given columns to silver.dim_date, directly (see {@link #loadDirect}). */
+    /** Adds every date of the given columns to silver.dim_date (direct load). */
     protected long loadDateDimensionDirect(PipelineContext context, Dataset<Row> rows, String... dateColumns) {
         Dataset<Row> dates = null;
         for (String dateColumn : dateColumns) {
@@ -99,24 +84,17 @@ public abstract class AbstractEtlPipeline implements EtlPipeline {
         return loadDirect(context, dates.distinct(), DateDimension.TABLE, List.of(DateDimension.KEY_COLUMN));
     }
 
-    // ------------------------------------------------------------------ soft delete
+    // ---------------------------------------------------------------- soft delete
 
     /**
-     * SOFT DELETE: the documents of {@code batch} that were deleted at the source (isDeleted = true) are marked
-     * is_deleted = true / deleted_at in {@code targetTable}, on the rows whose {@code targetKeyColumn} holds their
-     * business key. Rows are never removed, so facts and history stay. Call it once per target table that is
-     * built from this source; the job FAILS if a source with deletes is never applied (nothing is lost silently).
-     *
-     * <pre>
-     *   applyDeletes(ctx, returns, "silver.fact_vat_return", "ack_no");
-     *   applyDeletes(ctx, returns, "silver.fact_x", "ack_no");          // same source in a 2nd table: call it again
-     * </pre>
+     * Marks the rows of {@code targetTable} whose {@code targetKeyColumn} holds a key deleted at the source.
+     * Call it once per table built from the source; a source whose deletes are never applied fails the run.
      */
     protected long applyDeletes(PipelineContext context, SourceBatch batch, String targetTable, String targetKeyColumn) {
         return softDelete(context, batch, targetTable, targetKeyColumn, false);
     }
 
-    /** SOFT DELETE for an SCD2 dimension: the CURRENT version is closed (valid_to = deleted_at) and marked deleted. */
+    /** Same for an SCD2 dimension: the current version is closed and marked deleted. */
     protected long applyDeletesScd2(PipelineContext context, SourceBatch batch, Scd2Writer.Scd2Spec spec) {
         return softDelete(context, batch, spec.table(), spec.businessKey(), true);
     }
@@ -129,20 +107,21 @@ public abstract class AbstractEtlPipeline implements EtlPipeline {
         return toolkit.softDeleteWriter().apply(context, batch, table, keyColumn, scd2);
     }
 
+    // ---------------------------------------------------------------- lookups
+
+    /** Joins the dimension and adds its surrogate key column (committed data only). */
+    protected Dataset<Row> addSurrogateKey(Dataset<Row> facts, String dimensionTable,String surrogateKeyColumn, String... businessKeyColumns) {
+        return toolkit.postgresReader().addSurrogateKey(facts, dimensionTable, surrogateKeyColumn, businessKeyColumns);
+    }
+
+    /** Reads a PostgreSQL table (committed data only), e.g. for ORPHAN checks. */
+    protected Dataset<Row> readTable(String table, String... columns) {
+        return toolkit.postgresReader().readTable(table, columns);
+    }
+
     private static long loaded(PipelineContext context, String table, long count) {
         context.metrics().addLoaded(count);
         log.info("[job {}] loaded {}: {} rows", context.pipelineRunId(), table, count);
         return count;
-    }
-
-    /** Replaces a business key with the dimension's surrogate key (adds the key column). */
-    protected Dataset<Row> addSurrogateKey(Dataset<Row> facts, String dimensionTable,
-                                           String surrogateKeyColumn, String... businessKeyColumns) {
-        return toolkit.postgresReader().addSurrogateKey(facts, dimensionTable, surrogateKeyColumn, businessKeyColumns);
-    }
-
-    /** Reads a PostgreSQL table (for lookups / ORPHAN checks). */
-    protected Dataset<Row> readTable(String table, String... columns) {
-        return toolkit.postgresReader().readTable(table, columns);
     }
 }

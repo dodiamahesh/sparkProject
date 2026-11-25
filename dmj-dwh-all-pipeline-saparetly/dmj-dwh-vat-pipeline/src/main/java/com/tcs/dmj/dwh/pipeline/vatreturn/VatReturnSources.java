@@ -18,27 +18,21 @@ import static org.apache.spark.sql.functions.month;
 import static org.apache.spark.sql.functions.year;
 
 /**
- * WHAT we read from MongoDB vat_return_coll and HOW we clean + validate it.
- * Design, sample data and expected results: sample-data/vat-return-pipeline/vat-return-pipeline.md.
- *
- * Every field is read as String. The nested objects (taxableOutputDataDto, purchExpnsData, vatComputationData,
- * rtnRegisterVatDTO, additionalInputData) arrive as JSON text and are flattened into columns with fromJson.
+ * WHAT is read from vat_return_coll, HOW it is cleaned and WHICH rules it must pass.
+ * Nested objects arrive as JSON text and are flattened into columns with fromJson.
  */
 final class VatReturnSources {
 
     private VatReturnSources() {
     }
 
-    /** Allowed values: the same codes are seeded in the reference dimensions (03_postgres_tables.sql). */
+    // allowed codes: the same values are seeded in the reference dimensions (03_postgres_tables.sql)
     static final String[] CATEGORIES = {"Individual", "Non-Individual"};
     static final String[] RETURN_TYPES = {"Original", "Amended"};
     static final String[] CHANNELS = {"INET", "OFFC", "MOBL"};
     static final String[] STATUSES = {"APRV", "PEND", "REJT"};
 
-    /**
-     * Every amount: column name in Spark -> {nested object, JSON path in the source}.
-     * The column names are also the field names in the error messages (meta_error_master).
-     */
+    /** Every amount: Spark column -> {nested object, JSON path}; null object = top-level field. */
     static final Map<String, String[]> AMOUNTS = new LinkedHashMap<>();
 
     static {
@@ -61,7 +55,7 @@ final class VatReturnSources {
         amount("netPayable", "vatComputationData", "$.netPayableValue");
         amount("creditBroughtForward", "rtnRegisterVatDTO", "$.rtnCrdtBroughtFrwd");
         amount("creditCarriedForward", "rtnRegisterVatDTO", "$.rtnCrdtCarriedFrwd");
-        amount("penaltyAmount", null, null);                                          // top level
+        amount("penaltyAmount", null, null);
         amount("interest", null, null);
         amount("netTax", null, null);
         amount("stockStandardValue", "additionalInputData", "$.valueOfStockBoughtStandard");
@@ -74,16 +68,15 @@ final class VatReturnSources {
         AMOUNTS.put(column, new String[]{jsonColumn, jsonPath});
     }
 
-    // =================================================================== vat_return_coll
     static final SourceDefinition VAT_RETURNS = SourceDefinition.builder("vat_return_coll")
             .fields("tin", "taxpayerName", "taxpayerCategory", "taxpayerJurisdiction", "taxpayerId",
                     "rtnFromDate", "rtnToDate", "rtnDueDt", "month", "year", "rtnType", "isNilReturn", "fileFrom",
                     "ackNo", "formId", "taxableOutputDataDto", "purchExpnsData", "vatComputationData",
                     "rtnRegisterVatDTO", "additionalInputData", "penaltyAmount", "interest", "netTax", "delayDays",
                     "updatedAt")
-            .businessKey("ackNo")                 // one filing = one acknowledgement number
-            .latestRecordColumn("updatedAt")      // incremental field: must be set by the source on every insert / update
-            .softDelete()                         // isDeleted = true at the source -> soft delete in silver
+            .businessKey("ackNo")
+            .latestRecordColumn("updatedAt")
+            .softDelete()
             .excludeTestRecords()
             .maxRejectPercent(30)
             .description("Monthly VAT returns filed by taxpayers (one document per filing)")
@@ -91,21 +84,12 @@ final class VatReturnSources {
             .sla("monthly, peak around the due date")
             .build();
 
+    // ---------------------------------------------------------------- cleaning
+
     static DataSanitizer sanitizer() {
         DataSanitizer sanitizer = DataSanitizer.create();
-        // 1. flatten the nested objects (BEFORE trimAllAndBlankToNull, so the new columns are cleaned too)
-        AMOUNTS.forEach((column, source) -> {
-            if (source[0] != null) {
-                sanitizer.fromJson(column, source[0], source[1]);
-            }
-        });
+        flattenNestedFields(sanitizer);   // before trimming, so the new columns are cleaned too
         return sanitizer
-                .fromJson("rtnStatus", "rtnRegisterVatDTO", "$.rtnStatus")
-                .fromJson("filedAt", "rtnRegisterVatDTO", "$.crtDt")
-                .fromJson("isLateRtn", "rtnRegisterVatDTO", "$.isLateRtn")
-                .fromJson("isActive", "rtnRegisterVatDTO", "$.isActive")
-                .fromJson("ackDate", "rtnRegisterVatDTO", "$.genAcknowledgementVatHeader.ackDate")
-                // 2. standard cleaning
                 .trimAllAndBlankToNull()
                 .toUpperCase("tin", "fileFrom", "rtnType", "taxpayerCategory", "rtnStatus", "isLateRtn", "isActive")
                 .toLowerCase("isNilReturn")
@@ -115,10 +99,32 @@ final class VatReturnSources {
                 .removeThousandSeparators(AMOUNTS.keySet().toArray(String[]::new));   // "2,80,000" -> "280000"
     }
 
-    /** @param formIds every form_id in silver.dim_tax_form (seeded reference data) */
+    private static void flattenNestedFields(DataSanitizer sanitizer) {
+        AMOUNTS.forEach((column, source) -> {
+            if (source[0] != null) {
+                sanitizer.fromJson(column, source[0], source[1]);
+            }
+        });
+        sanitizer.fromJson("rtnStatus", "rtnRegisterVatDTO", "$.rtnStatus")
+                .fromJson("filedAt", "rtnRegisterVatDTO", "$.crtDt")
+                .fromJson("isLateRtn", "rtnRegisterVatDTO", "$.isLateRtn")
+                .fromJson("isActive", "rtnRegisterVatDTO", "$.isActive")
+                .fromJson("ackDate", "rtnRegisterVatDTO", "$.genAcknowledgementVatHeader.ackDate");
+    }
+
+    // ---------------------------------------------------------------- rules
+
+    /** @param formIds every form_id of silver.dim_tax_form */
     static DataQualityRules rules(Dataset<Row> formIds) {
         DataQualityRules rules = DataQualityRules.create();
-        // CORRUPT: wrong data type
+        addTypeRules(rules);
+        addBusinessRules(rules);
+        rules.mustExistIn("formId", formIds, "form_id", "dim_tax_form");
+        return rules;
+    }
+
+    /** CORRUPT: wrong data type. */
+    private static void addTypeRules(DataQualityRules rules) {
         AMOUNTS.keySet().forEach(rules::mustBeDecimal);
         rules.mustBeDate("rtnFromDate")
                 .mustBeDate("rtnToDate")
@@ -128,10 +134,10 @@ final class VatReturnSources {
                 .mustBeInteger("delayDays")
                 .mustBeTimestamp("filedAt")
                 .mustBeTimestamp("ackDate");
+    }
 
-        // VALIDATION: business rules
-        Column from = col("rtnFromDate").cast(SparkTypes.DATE);
-        Column to = col("rtnToDate").cast(SparkTypes.DATE);
+    /** VALIDATION: business rules. */
+    private static void addBusinessRules(DataQualityRules rules) {
         rules.required("tin", "taxpayerName", "taxpayerCategory", "ackNo", "rtnFromDate", "rtnToDate", "month", "year",
                         "rtnType", "formId", "fileFrom", "rtnStatus", "filedAt", "netTax")
                 .mustMatch("tin", "^P[0-9]{10}$", "must look like P0000000001")
@@ -148,20 +154,39 @@ final class VatReturnSources {
                 .mustNotBeNegative("penaltyAmount")
                 .mustNotBeNegative("interest")
                 .mustNotBeInFuture("rtnToDate")      // a month can only be filed after it ended
-                .custom(ErrorType.VALIDATION, "month must be between 1 and 12",
-                        col("month").cast(SparkTypes.INT).lt(1).or(col("month").cast(SparkTypes.INT).gt(12)))
-                .custom(ErrorType.VALIDATION, "rtnToDate cannot be before rtnFromDate", to.lt(from))
-                .custom(ErrorType.VALIDATION, "month and year must match rtnFromDate",
-                        month(from).notEqual(col("month").cast(SparkTypes.INT))
-                                .or(year(from).notEqual(col("year").cast(SparkTypes.INT))))
-                .custom(ErrorType.VALIDATION, "a nil return cannot have taxable outputs",
-                        col("isNilReturn").equalTo("true").and(col("taxableOutputsValue").cast(SparkTypes.MONEY).gt(0)))
+                .custom(ErrorType.VALIDATION, "month must be between 1 and 12", monthOutOfRange())
+                .custom(ErrorType.VALIDATION, "rtnToDate cannot be before rtnFromDate", toBeforeFrom())
+                .custom(ErrorType.VALIDATION, "month and year must match rtnFromDate", periodDoesNotMatchFromDate())
+                .custom(ErrorType.VALIDATION, "a nil return cannot have taxable outputs", nilReturnWithOutputs())
                 .custom(ErrorType.VALIDATION, "netOutputTax must equal totalOutputTax - deductibleInputTax",
-                        abs(col("netOutputTax").cast(SparkTypes.MONEY)
-                                .minus(col("totalOutputTax").cast(SparkTypes.MONEY)
-                                        .minus(col("deductibleInputTax").cast(SparkTypes.MONEY)))).gt(0.01))
-                // ORPHAN: the form must exist in the reference dimension
-                .mustExistIn("formId", formIds, "form_id", "dim_tax_form");
-        return rules;
+                        netOutputTaxDoesNotAddUp());
+    }
+
+    private static Column monthOutOfRange() {
+        Column month = col("month").cast(SparkTypes.INT);
+        return month.lt(1).or(month.gt(12));
+    }
+
+    private static Column toBeforeFrom() {
+        return col("rtnToDate").cast(SparkTypes.DATE).lt(col("rtnFromDate").cast(SparkTypes.DATE));
+    }
+
+    private static Column periodDoesNotMatchFromDate() {
+        Column from = col("rtnFromDate").cast(SparkTypes.DATE);
+        return month(from).notEqual(col("month").cast(SparkTypes.INT))
+                .or(year(from).notEqual(col("year").cast(SparkTypes.INT)));
+    }
+
+    private static Column nilReturnWithOutputs() {
+        return col("isNilReturn").equalTo("true").and(money("taxableOutputsValue").gt(0));
+    }
+
+    private static Column netOutputTaxDoesNotAddUp() {
+        Column expected = money("totalOutputTax").minus(money("deductibleInputTax"));
+        return abs(money("netOutputTax").minus(expected)).gt(0.01);
+    }
+
+    private static Column money(String column) {
+        return col(column).cast(SparkTypes.MONEY);
     }
 }

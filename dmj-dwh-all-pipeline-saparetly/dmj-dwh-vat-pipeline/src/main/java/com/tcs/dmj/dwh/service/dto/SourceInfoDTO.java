@@ -4,7 +4,7 @@ import com.tcs.dmj.dwh.connector.source.SourceDefinition;
 
 import java.util.List;
 
-/** The data contract of one source, as shown in GET /api/admin/dwh/pipelines. */
+/** The data contract of one source in GET /api/admin/dwh/pipelines. */
 public record SourceInfoDTO(
         String collection,
         String description,
@@ -17,15 +17,9 @@ public record SourceInfoDTO(
         String softDeleteField) {
 
     public static SourceInfoDTO from(SourceDefinition source) {
-        return new SourceInfoDTO(
-                source.collection(),
-                source.metadata().description(),
-                source.metadata().owner(),
-                source.metadata().sla(),
-                source.businessKey(),
-                source.fields(),
-                source.maxRejectPercent(),
-                source.sourceFilter(),
+        SourceDefinition.SourceMetadata metadata = source.metadata();
+        return new SourceInfoDTO(source.collection(), metadata.description(), metadata.owner(), metadata.sla(),
+                source.businessKey(), source.fields(), source.maxRejectPercent(), source.sourceFilter(),
                 source.softDeleteField());
     }
 }

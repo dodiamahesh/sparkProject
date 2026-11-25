@@ -8,9 +8,11 @@ tya j atki ne check kari shako ke atyar sudhi nu barabar lakhayu che ke nahi.
 > `mvn test-compile` / `mvn test` chalavyu, ane badha phase pass thaya. Phase no kram badalso to
 > compile error aavi shake (koi file pehla ni phase ni file vapre che).
 
-**Kul:** 81 Java files (77 main + 4 test), 3 YAML, 1 `pom.xml`, 3 sample-data scripts, 2 Airflow files.
-`[120]` = file ma aashare ketli lines che (comments sathe). Comments lakhva jaruri nathi, pan rules / SQL
-samajva mate upyogi che.
+**Kul:** 83 Java files (79 main + 4 test), 3 YAML, 1 `pom.xml`, 3 sample-data scripts, 2 Airflow files.
+`[120]` = file ma aashare ketli lines che (tunka comments sathe).
+
+**Package structure** (`com.tcs.dmj.dwh`): `exception/` = badhi custom exceptions (ek j jagya e),
+`service/` = fakt service interfaces + `impl/` + `dto/`, `web/rest/errors/` = exceptions → HTTP response.
 
 ---
 
@@ -20,7 +22,7 @@ samajva mate upyogi che.
 |---|---|---|---|
 | 0 | Maven project + config | 4 | `mvn test-compile` (dependencies download) |
 | 1 | PostgreSQL tables + MongoDB sample data | 3 | `psql` / `mongosh` thi count check |
-| 2 | Paya na types (enum, exception, domain, config) | 21 | `mvn test-compile` |
+| 2 | Paya na types (enum, `exception/`, domain, config) | 23 | `mvn test-compile` |
 | 3 | Data quality engine (sanitize + rules + reject) | 7 + 1 test | `DataQualityEngineTest` (1 test) |
 | 4 | **VAT na rules + mapping** (pipeline nu dil) | 4 + 1 test | `VatReturnPipelineRulesTest` (3 tests) |
 | 5 | Meta tables na repositories (JDBC) | 7 | `mvn test-compile` |
@@ -50,7 +52,7 @@ Folder banavo (base package `com.tcs.dmj.dwh`):
 dmj-dwh-vat-pipeline/
 ├── pom.xml
 ├── src/main/java/com/tcs/dmj/dwh/
-│   ├── batch/  config/  connector/source/  connector/target/  core/  domain/  enums/
+│   ├── batch/  config/  connector/source/  connector/target/  core/  domain/  enums/  exception/
 │   ├── pipeline/vatreturn/  repository/  service/constant/  service/dto/  service/impl/
 │   ├── utils/  validation/  web/rest/errors/
 ├── src/main/resources/
@@ -125,26 +127,28 @@ db.vat_return_coll.countDocuments()             // 22
 | # | File | Kaam |
 |---|---|---|
 | 8 | `enums/AssetType.java` [12] | lineage asset no prakar (TABLE, COLLECTION ...) |
-| 9 | `enums/ErrorType.java` [20] | CORRUPT, VALIDATION, ORPHAN, DUPLICATE (**kram mahatvano**: pehli = sauthi gambhir) |
-| 10 | `enums/LayerName.java` [15] | RAW / CURATED ... |
+| 9 | `enums/ErrorType.java` [14] | CORRUPT, VALIDATION, ORPHAN, DUPLICATE (**kram mahatvano**: pehli = sauthi gambhir) |
+| 10 | `enums/LayerName.java` [9] | RAW / CURATED ... |
 | 11 | `enums/MappingType.java` [14] | column lineage: DIRECT, RENAMED, LOOKUP ... |
-| 12 | `enums/PipelineStatus.java` [37] | RUNNING / SUCCESS / SUCCESS_WITH_FAILED / FAILED + `of(...)` |
-| 13 | `enums/PipelineType.java` [14] | RAW_TO_CURATED ... |
-| 14 | `enums/Platform.java` [14] | MONGODB, EDB_PAS ... |
-| 15 | `service/constant/SparkTypes.java` [20] | MONEY = decimal(18,2), DATE, TIMESTAMP, INT |
-| 16 | `utils/ErrorMessages.java` [47] | exception → error_code / short message |
-| 17 | `service/EtlException.java` [15] | badhi ETL errors no base |
-| 18 | `service/DataQualityGateException.java` [20] | reject gate fail |
-| 19 | `service/PipelineAlreadyRunningException.java` [8] | |
-| 20 | `service/PipelineNotFoundException.java` [10] | |
-| 21 | `service/PipelineRunNotFoundException.java` [8] | |
-| 22 | `domain/MetaAsset.java` [47] | lineage asset (collection / table) |
-| 23 | `domain/MetaPipeline.java` [22] | `meta.meta_pipeline` ni ek row |
-| 24 | `domain/MetaPipelineRun.java` [30] | `meta.meta_pipeline_run` ni ek row (REST response pan aa j) |
-| 25 | `domain/RejectedRecord.java` [31] | `meta.meta_rejected_record` ni ek row |
-| 26 | `service/dto/RejectedRecordSummaryDTO.java` [6] | |
-| 27 | `config/ApplicationProperties.java` [52] | `application.dwh.*` typed record |
-| 28 | `config/SparkConfig.java` [34] | ek j `SparkSession` bean |
+| 12 | `enums/PipelineStatus.java` [21] | RUNNING / SUCCESS / SUCCESS_WITH_FAILED / FAILED + `of(...)` |
+| 13 | `enums/PipelineType.java` [8] | RAW_TO_CURATED ... |
+| 14 | `enums/Platform.java` [9] | MONGODB, EDB_PAS ... |
+| 15 | `service/constant/SparkTypes.java` [17] | MONEY = decimal(18,2), DATE, TIMESTAMP, INT |
+| 16 | `utils/ErrorMessages.java` [34] | exception → error_code / short message |
+| 17 | `exception/EtlException.java` [13] | badhi custom exceptions no base (unchecked) |
+| 18 | `exception/DataQualityGateException.java` [16] | reject gate fail |
+| 19 | `exception/PipelineAlreadyRunningException.java` [8] | same pipeline biji jagya e chalu (HTTP 409) |
+| 20 | `exception/PipelineNotFoundException.java` [10] | ajanyu pipeline naam (HTTP 404) |
+| 21 | `exception/PipelineRunNotFoundException.java` [8] | ajanyo run id (HTTP 404) |
+| 22 | `exception/PipelineConfigurationException.java` [13] | code / DB setup khotu: naam, table / column nathi, khoto load mode |
+| 23 | `exception/SoftDeletesNotAppliedException.java` [10] | source na delete `applyDeletes` vagar rahi gaya |
+| 24 | `domain/MetaAsset.java` [43] | lineage asset (collection / table) |
+| 25 | `domain/MetaPipeline.java` [17] | `meta.meta_pipeline` ni ek row |
+| 26 | `domain/MetaPipelineRun.java` [24] | `meta.meta_pipeline_run` ni ek row (REST response pan aa j) |
+| 27 | `domain/RejectedRecord.java` [23] | `meta.meta_rejected_record` ni ek row |
+| 28 | `service/dto/RejectedRecordSummaryDTO.java` [6] | |
+| 29 | `config/ApplicationProperties.java` [36] | `application.dwh.*` typed record |
+| 30 | `config/SparkConfig.java` [28] | ek j `SparkSession` bean |
 
 (Path `src/main/java/com/tcs/dmj/dwh/` thi shuru thay che; aagal na phase ma pan.)
 
@@ -156,14 +160,14 @@ db.vat_return_coll.countDocuments()             // 22
 
 | # | File | Kaam |
 |---|---|---|
-| 29 | `validation/QualityColumns.java` [90] | technical column names (`_id`, `_raw_record`, errors struct) |
-| 30 | `validation/ValidationRule.java` [26] | ek rule = error type + "kyare kharab" condition + message |
-| 31 | `validation/ReferenceRule.java` [11] | ORPHAN rule (value bija table ma hovi joie) |
-| 32 | `validation/QualityResult.java` [14] | valid + rejected datasets |
-| 33 | `validation/DataSanitizer.java` [147] | cleaning recipe: trim, upper, `fromJson`, `mapValues` ... |
-| 34 | `validation/DataQualityRules.java` [168] | rule list: `required`, `mustBeDecimal`, `mustBeOneOf`, `custom` ... |
-| 35 | `validation/DataQualityEngine.java` [113] | rules lagave → valid / rejected + DUPLICATE check |
-| T1 | `src/test/java/.../validation/DataQualityEngineTest.java` [103] | engine no unit test (Spark local, DB vagar) |
+| 31 | `validation/QualityColumns.java` [75] | technical column names (`_id`, `_raw_record`, errors struct) |
+| 32 | `validation/ValidationRule.java` [21] | ek rule = error type + "kyare kharab" condition + message |
+| 33 | `validation/ReferenceRule.java` [8] | ORPHAN rule (value bija table ma hovi joie) |
+| 34 | `validation/QualityResult.java` [8] | valid + rejected datasets |
+| 35 | `validation/DataSanitizer.java` [132] | cleaning recipe: trim, upper, `fromJson`, `mapValues` ... |
+| 36 | `validation/DataQualityRules.java` [148] | rule list: `required`, `mustBeDecimal`, `mustBeOneOf`, `custom` ... |
+| 37 | `validation/DataQualityEngine.java` [124] | rules lagave → valid / rejected + DUPLICATE check |
+| T1 | `src/test/java/.../validation/DataQualityEngineTest.java` [100] | engine no unit test (Spark local, DB vagar) |
 
 **Test**
 
@@ -179,11 +183,11 @@ mvn test "-Dtest=DataQualityEngineTest"
 
 | # | File | Kaam |
 |---|---|---|
-| 36 | `connector/source/SourceDefinition.java` [198] | ek collection no "data contract": fields, business key, watermark, soft delete, reject % |
-| 37 | `connector/target/DateDimension.java` [52] | `silver.dim_date` rows + `dateKey()` (20261014) |
-| 38 | `pipeline/vatreturn/VatReturnSources.java` [167] | **shu vanchvu** (`VAT_RETURNS`), **kevi rite saaf karvu** (`sanitizer()`), **kya rules** (`rules()`) |
-| 39 | `pipeline/vatreturn/VatReturnSchemaMapper.java` [127] | String rows → typed rows → `dim_taxpayer`, `dim_tax_period`, `fact_vat_return` rows |
-| T2 | `src/test/java/.../pipeline/vatreturn/VatReturnPipelineRulesTest.java` [182] | VAT sanitize + rules + mapping test |
+| 38 | `connector/source/SourceDefinition.java` [150] | ek collection no "data contract": fields, business key, watermark, soft delete, reject % |
+| 39 | `connector/target/DateDimension.java` [50] | `silver.dim_date` rows + `dateKey()` (20261014) |
+| 40 | `pipeline/vatreturn/VatReturnSources.java` [192] | **shu vanchvu** (`VAT_RETURNS`), **kevi rite saaf karvu** (`sanitizer()`), **kya rules** (`rules()`) |
+| 41 | `pipeline/vatreturn/VatReturnSchemaMapper.java` [147] | String rows → typed rows → `dim_taxpayer`, `dim_tax_period`, `fact_vat_return` rows |
+| T2 | `src/test/java/.../pipeline/vatreturn/VatReturnPipelineRulesTest.java` [179] | VAT sanitize + rules + mapping test |
 
 **Test**
 
@@ -204,13 +208,13 @@ Aa phase pass = VAT business logic barabar che. Database haju jaruri nathi.
 
 | # | File | Kaam |
 |---|---|---|
-| 40 | `connector/source/LoadWindow.java` [31] | incremental window: `updatedAt > last_run_time AND <= run start` |
-| 41 | `repository/MetaPipelineRepository.java` [128] | pipeline register, `last_run_time` vanchvu / aagal khasedvu, name check (≤ 30, `[A-Za-z0-9._-]`) |
-| 42 | `repository/MetaPipelineRunRepository.java` [154] | run row: create, finish, interrupted runs FAILED |
-| 43 | `repository/MetaAssetRepository.java` [80] | lineage assets |
-| 44 | `repository/MetaLineageRepository.java` [45] | table lineage edges |
-| 45 | `repository/MetaColumnLineageRepository.java` [58] | column lineage |
-| 46 | `repository/RejectedRecordRepository.java` [288] | rejected rows save (staging + direct), nava messages → `meta_error_master` |
+| 42 | `connector/source/LoadWindow.java` [21] | incremental window: `updatedAt > last_run_time AND <= run start` |
+| 43 | `repository/MetaPipelineRepository.java` [130] | pipeline register, `last_run_time` vanchvu / aagal khasedvu, name check (≤ 30, `[A-Za-z0-9._-]`) |
+| 44 | `repository/MetaPipelineRunRepository.java` [139] | run row: create, finish, interrupted runs FAILED |
+| 45 | `repository/MetaAssetRepository.java` [71] | lineage assets |
+| 46 | `repository/MetaLineageRepository.java` [43] | table lineage edges |
+| 47 | `repository/MetaColumnLineageRepository.java` [53] | column lineage |
+| 48 | `repository/RejectedRecordRepository.java` [293] | rejected rows save (staging + direct), nava messages → `meta_error_master` |
 
 **Test:** `mvn -q test-compile` → error vagar.
 
@@ -220,15 +224,15 @@ Aa phase pass = VAT business logic barabar che. Database haju jaruri nathi.
 
 | # | File | Kaam |
 |---|---|---|
-| 47 | `connector/source/SourceBatch.java` [48] | ek collection nu parinam: valid, rejected, deleted + counts |
-| 48 | `core/JobMetrics.java` [70] | run na counters |
-| 49 | `core/PipelineContext.java` [118] | ek run ni badhi vastu: id, window end, cache, lineage |
-| 50 | `connector/target/SoftDeleteColumns.java` [56] | table ma `is_deleted` / `deleted_at` che ke nahi |
-| 51 | `connector/target/PostgresWriter.java` [115] | staging thi UPSERT (`directLoad=false` pipelines) + `job_run_id`, `loaded_at` constants |
-| 52 | `connector/target/DirectPostgresWriter.java` [147] | **VAT vapre che**: staging vagar `INSERT ... ON CONFLICT`, `KeyLookup` (surrogate key SQL ma) |
-| 53 | `connector/target/PostgresReader.java` [71] | Spark thi table vanchvu (ORPHAN lookup) |
-| 54 | `connector/target/Scd2Writer.java` [154] | SCD2 dimension (VAT ma nathi vaparatu, framework mate) |
-| 55 | `connector/target/SoftDeleteWriter.java` [116] | soft delete UPDATE (direct + staging) |
+| 49 | `connector/source/SourceBatch.java` [41] | ek collection nu parinam: valid, rejected, deleted + counts |
+| 50 | `core/JobMetrics.java` [67] | run na counters |
+| 51 | `core/PipelineContext.java` [105] | ek run ni badhi vastu: id, window end, cache, lineage |
+| 52 | `connector/target/SoftDeleteColumns.java` [47] | table ma `is_deleted` / `deleted_at` che ke nahi |
+| 53 | `connector/target/PostgresWriter.java` [98] | staging thi UPSERT (`directLoad=false` pipelines) + `job_run_id`, `loaded_at` constants |
+| 54 | `connector/target/DirectPostgresWriter.java` [137] | **VAT vapre che**: staging vagar `INSERT ... ON CONFLICT`, `KeyLookup` (surrogate key SQL ma) |
+| 55 | `connector/target/PostgresReader.java` [64] | Spark thi table vanchvu (ORPHAN lookup) |
+| 56 | `connector/target/Scd2Writer.java` [127] | SCD2 dimension (VAT ma nathi vaparatu, framework mate) |
+| 57 | `connector/target/SoftDeleteWriter.java` [104] | soft delete UPDATE (direct + staging) |
 | T3 | `src/test/java/.../connector/target/DirectPostgresWriterTest.java` [23] | upsert SQL check |
 | T4 | `src/test/java/.../connector/target/SoftDeleteWriterTest.java` [28] | soft delete SQL check |
 
@@ -246,8 +250,8 @@ mvn test "-Dtest=DirectPostgresWriterTest,SoftDeleteWriterTest"
 
 | # | File | Kaam |
 |---|---|---|
-| 56 | `connector/source/MongoSourceReader.java` [77] | Mongo collection → Spark (window `$match` MongoDB ma j chale) |
-| 57 | `connector/source/SourceProcessor.java` [236] | WINDOW → EXTRACT → SANITIZE → SOFT DELETE split → VALIDATE → DEDUP → REJECT GATE |
+| 58 | `connector/source/MongoSourceReader.java` [64] | Mongo collection → Spark (window `$match` MongoDB ma j chale) |
+| 59 | `connector/source/SourceProcessor.java` [210] | WINDOW → EXTRACT → SANITIZE → SOFT DELETE split → VALIDATE → DEDUP → REJECT GATE |
 
 **Test:** `mvn -q test-compile` → error vagar.
 
@@ -257,13 +261,13 @@ mvn test "-Dtest=DirectPostgresWriterTest,SoftDeleteWriterTest"
 
 | # | File | Kaam |
 |---|---|---|
-| 58 | `core/ColumnLineage.java` [26] | ek field → column mapping |
-| 59 | `core/EtlPipeline.java` [68] | pipeline no contract: `name()`, `sources()`, `run()`, `directLoad()` ... |
-| 60 | `core/LineageCollector.java` [209] | Spark plan mathi table lineage jate shodhe |
-| 61 | `core/PipelineRegistry.java` [45] | badhi `@Component` pipelines jate register |
-| 62 | `core/PipelineToolkit.java` [64] | pipeline ne jaruri services ek object ma |
-| 63 | `core/AbstractEtlPipeline.java` [148] | building blocks: `extractAndValidate`, `loadDirect`, `applyDeletes` ... |
-| 64 | `pipeline/vatreturn/VatReturnPipeline.java` [130] | **VAT recipe**: extract+validate → dim_taxpayer → dim_tax_period → dim_date → fact → soft delete |
+| 60 | `core/ColumnLineage.java` [16] | ek field → column mapping |
+| 61 | `core/EtlPipeline.java` [52] | pipeline no contract: `name()`, `sources()`, `run()`, `directLoad()` ... |
+| 62 | `core/LineageCollector.java` [219] | Spark plan mathi table lineage jate shodhe |
+| 63 | `core/PipelineRegistry.java` [42] | badhi `@Component` pipelines jate register |
+| 64 | `core/PipelineToolkit.java` [21] | record: pipeline ne jaruri services ek object ma |
+| 65 | `core/AbstractEtlPipeline.java` [131] | building blocks: `extractAndValidate`, `loadDirect`, `applyDeletes` ... |
+| 66 | `pipeline/vatreturn/VatReturnPipeline.java` [115] | **VAT recipe**: extract+validate → dim_taxpayer → dim_tax_period → dim_date → fact → soft delete |
 
 **Test:** `mvn -q test-compile` → error vagar. (Phase 4 na test fari chalavi shako: `mvn test "-Dtest=VatReturnPipelineRulesTest"`.)
 
@@ -273,19 +277,19 @@ mvn test "-Dtest=DirectPostgresWriterTest,SoftDeleteWriterTest"
 
 | # | File | Kaam |
 |---|---|---|
-| 65 | `service/SourceCommitService.java` [13] | interface |
-| 66 | `service/LineageService.java` [14] | interface |
-| 67 | `service/DwhPipelineService.java` [25] | interface |
-| 68 | `service/DwhPipelineRunService.java` [24] | interface |
-| 69 | `service/RejectedRecordService.java` [26] | interface |
-| 70 | `service/dto/SourceInfoDTO.java` [31] | API ma source ni mahiti |
-| 71 | `service/dto/PipelineInfoDTO.java` [23] | API ma pipeline ni mahiti |
-| 72 | `service/impl/PipelineRunLock.java` [87] | PostgreSQL advisory lock (same pipeline be vaar ek saathe nahi) |
-| 73 | `service/impl/SourceCommitServiceImpl.java` [80] | commit phase: rejects save + `last_run_time` aagal |
-| 74 | `service/impl/LineageServiceImpl.java` [126] | safal run pachhi lineage lakhe |
-| 75 | `service/impl/DwhPipelineServiceImpl.java` [227] | **run no main flow**: lock → run row → transaction → pipeline.run → commit → status |
-| 76 | `service/impl/DwhPipelineRunServiceImpl.java` [32] | run history |
-| 77 | `service/impl/RejectedRecordServiceImpl.java` [31] | rejected records list / summary |
+| 67 | `service/SourceCommitService.java` [9] | interface |
+| 68 | `service/LineageService.java` [10] | interface |
+| 69 | `service/DwhPipelineService.java` [18] | interface |
+| 70 | `service/DwhPipelineRunService.java` [14] | interface |
+| 71 | `service/RejectedRecordService.java` [15] | interface |
+| 72 | `service/dto/SourceInfoDTO.java` [25] | API ma source ni mahiti |
+| 73 | `service/dto/PipelineInfoDTO.java` [17] | API ma pipeline ni mahiti |
+| 74 | `service/impl/PipelineRunLock.java` [87] | PostgreSQL advisory lock (same pipeline be vaar ek saathe nahi) |
+| 75 | `service/impl/SourceCommitServiceImpl.java` [69] | commit phase: rejects save + `last_run_time` aagal |
+| 76 | `service/impl/LineageServiceImpl.java` [136] | safal run pachhi lineage lakhe |
+| 77 | `service/impl/DwhPipelineServiceImpl.java` [227] | **run no main flow**: lock → run row → transaction → pipeline.run → commit → status |
+| 78 | `service/impl/DwhPipelineRunServiceImpl.java` [32] | run history |
+| 79 | `service/impl/RejectedRecordServiceImpl.java` [31] | rejected records list / summary |
 
 **Test:** `mvn -q test-compile` → error vagar.
 
@@ -295,13 +299,13 @@ mvn test "-Dtest=DirectPostgresWriterTest,SoftDeleteWriterTest"
 
 | # | File | Kaam |
 |---|---|---|
-| 78 | `web/rest/errors/ApiError.java` [7] | error JSON |
-| 79 | `web/rest/errors/ExceptionTranslator.java` [66] | 404 (pipeline nathi), 409 (already running), 503 ... |
-| 80 | `web/rest/DwhPipelineResource.java` [44] | `GET /api/admin/dwh/pipelines`, `POST .../{name}/run` |
-| 81 | `web/rest/DwhPipelineRunResource.java` [43] | `GET /api/admin/dwh/pipeline-runs` |
-| 82 | `web/rest/DwhRejectedRecordResource.java` [48] | `GET /api/admin/dwh/rejected-records` (+ `/summary`) |
-| 83 | `batch/PipelineBatchRunner.java` [90] | `--run-pipeline=<name>`: ek pipeline chalavi ne exit 0 / 1 |
-| 84 | `DmjDwhApp.java` [49] | `main`: REST service ke batch mode |
+| 80 | `web/rest/errors/ApiError.java` [7] | error JSON |
+| 81 | `web/rest/errors/ExceptionTranslator.java` [62] | 404 (pipeline nathi), 409 (already running), 503 ... |
+| 82 | `web/rest/DwhPipelineResource.java` [38] | `GET /api/admin/dwh/pipelines`, `POST .../{name}/run` |
+| 83 | `web/rest/DwhPipelineRunResource.java` [39] | `GET /api/admin/dwh/pipeline-runs` |
+| 84 | `web/rest/DwhRejectedRecordResource.java` [41] | `GET /api/admin/dwh/rejected-records` (+ `/summary`) |
+| 85 | `batch/PipelineBatchRunner.java` [89] | `--run-pipeline=<name>`: ek pipeline chalavi ne exit 0 / 1 |
+| 86 | `DmjDwhApp.java` [38] | `main`: REST service ke batch mode |
 
 ### Test A: badha unit tests
 
@@ -379,9 +383,9 @@ aa j pipeline chalti hoy to batch `exit 1` "already running" aape.)
 
 | # | File | Kaam |
 |---|---|---|
-| 85 | `airflow/dags/dmj_dwh_dags.py` [102] | YAML mathi darek pipeline mate ek DAG banave |
-| 86 | `airflow/dags/dmj_dwh_pipelines.yaml` [50] | `vat-return-pipeline`: schedule `0 3 * * *`, jar path, env |
-| 87 | `airflow/README.md` [79] | setup steps |
+| 87 | `airflow/dags/dmj_dwh_dags.py` [102] | YAML mathi darek pipeline mate ek DAG banave |
+| 88 | `airflow/dags/dmj_dwh_pipelines.yaml` [50] | `vat-return-pipeline`: schedule `0 3 * * *`, jar path, env |
+| 89 | `airflow/README.md` [79] | setup steps |
 
 **Test:** Airflow worker par `airflow dags list | grep vat-return-pipeline`
 (Airflow na hoy to `python -c "import ast; ast.parse(open('airflow/dags/dmj_dwh_dags.py').read())"` thi syntax check).

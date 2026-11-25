@@ -4,12 +4,7 @@ import com.tcs.dmj.dwh.enums.AssetType;
 import com.tcs.dmj.dwh.enums.LayerName;
 import com.tcs.dmj.dwh.enums.Platform;
 
-/**
- * A lineage asset (meta.meta_asset): a MongoDB collection or a PostgreSQL table.
- * An asset is identified by platform + database + schema + name (unique index in meta.meta_asset).
- *
- * @param schemaName NULL for MongoDB (a collection lives directly in a database)
- */
+/** A lineage asset (meta.meta_asset): a MongoDB collection or a PostgreSQL table. */
 public record MetaAsset(
         String assetName,
         AssetType assetType,
@@ -24,7 +19,7 @@ public record MetaAsset(
                 description);
     }
 
-    /** @param table "schema.table" or "table" (schema public) */
+    /** @param table "schema.table" (or "table" for schema public) */
     public static MetaAsset postgresTable(String database, String table) {
         int dot = table.indexOf('.');
         String schema = dot < 0 ? "public" : table.substring(0, dot);
@@ -32,13 +27,14 @@ public record MetaAsset(
         return new MetaAsset(name, AssetType.TABLE, Platform.EDB_PAS, database, schema, LayerName.CURATED, null);
     }
 
-    /** The same asset, regardless of the description (used to compare assets). */
+    /** Identity of the asset (without description). */
     public String key() {
         return platform + "|" + databaseName + "|" + schemaName + "|" + assetName;
     }
 
     public String displayName() {
-        return schemaName == null ? databaseName + "." + assetName : schemaName + "." + assetName;
+        String prefix = schemaName == null ? databaseName : schemaName;
+        return prefix + "." + assetName;
     }
 
     public MetaAsset withDescription(String description) {

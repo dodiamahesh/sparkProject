@@ -1,5 +1,6 @@
 package com.tcs.dmj.dwh.connector.source;
 
+import com.tcs.dmj.dwh.exception.PipelineConfigurationException;
 import com.tcs.dmj.dwh.validation.QualityColumns;
 import org.apache.spark.sql.types.DataTypes;
 import org.apache.spark.sql.types.StructField;
@@ -9,31 +10,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Describes ONE MongoDB collection that a pipeline reads: the "data contract" of that source.
- *
- * All fields are read as STRING on purpose (standard "bronze" practice):
- * a corrupt value like "12abc" in a number field is still read, and our CORRUPT rules can report it,
- * instead of Spark failing or silently turning it into NULL. Fields that are not listed are not read.
- *
- * <pre>
- *   SourceDefinition.builder("vat_return_coll")
- *       .fields("ackNo", "tin", "netTax", "updatedAt")
- *       .businessKey("ackNo")
- *       .latestRecordColumn("updatedAt")
- *       // ---- optional ----
- *       .excludeTestRecords()                     // source filter: skip {"isTest": true}
- *       .maxRejectPercent(30)                     // quality gate: more bad rows -> job FAILS
- *       .owner("vat-returns-team@demo.com")       // metadata: who to ask when it breaks
- *       .sla("monthly, peak around the due date")
- *       .description("Monthly VAT returns filed by taxpayers")
- *       .build();
- * </pre>
- *
- * @param maxRejectPercent null = no reject gate. Duplicates do NOT count as bad rows.
- * @param sourceFilter     extra MongoDB $match (JSON), applied on every run next to the timestamp window; null = none
- * @param softDeleteField  field that marks a document as deleted at the source (e.g. isDeleted = true); null = the
- *                         source never soft-deletes. Deleted documents are not validated: their business key is
- *                         soft-deleted in the target tables (is_deleted = true), see SourceProcessor.
+ * The data contract of one MongoDB collection (example: VatReturnSources.VAT_RETURNS).
+ * Every field is read as String, so a corrupt value ("12abc") is reported by a CORRUPT rule.
  */
 public record SourceDefinition(
         String collection,
@@ -45,30 +23,28 @@ public record SourceDefinition(
         String softDeleteField,
         SourceMetadata metadata) {
 
-    /** Field set on test documents in MongoDB; {@link Builder#excludeTestRecords()} skips them. */
     public static final String TEST_RECORD_FIELD = "isTest";
-
-    /** Default soft-delete flag field, see {@link Builder#softDelete()}. */
     public static final String DEFAULT_SOFT_DELETE_FIELD = "isDeleted";
 
-    /** Documentation of the source; shown in GET /api/admin/dwh/pipelines and in quality-gate errors. */
     public record SourceMetadata(String description, String owner, String sla) {
     }
 
     public SourceDefinition {
-        if (!fields.contains(businessKey)) {
-            throw new IllegalArgumentException("businessKey '" + businessKey + "' must be one of the fields of " + collection);
-        }
-        if (!fields.contains(latestRecordColumn)) {
-            throw new IllegalArgumentException("latestRecordColumn '" + latestRecordColumn + "' must be one of the fields of " + collection);
-        }
+        requireField(fields, businessKey, "businessKey", collection);
+        requireField(fields, latestRecordColumn, "latestRecordColumn", collection);
         if (maxRejectPercent != null && (maxRejectPercent < 0 || maxRejectPercent > 100)) {
-            throw new IllegalArgumentException("maxRejectPercent of " + collection + " must be between 0 and 100");
+            throw new PipelineConfigurationException("maxRejectPercent of " + collection + " must be between 0 and 100");
         }
         fields = List.copyOf(fields);
     }
 
-    /** Spark schema: _id + every field, all as String. */
+    private static void requireField(List<String> fields, String field, String role, String collection) {
+        if (!fields.contains(field)) {
+            throw new PipelineConfigurationException(role + " '" + field + "' must be one of the fields of " + collection);
+        }
+    }
+
+    /** _id + every field (+ the soft-delete flag), all String. */
     public StructType schema() {
         List<StructField> structFields = new ArrayList<>();
         structFields.add(DataTypes.createStructField(QualityColumns.SOURCE_ID, DataTypes.StringType, false));
@@ -81,7 +57,7 @@ public record SourceDefinition(
         return DataTypes.createStructType(structFields);
     }
 
-    /** "Source owner: x" for error messages, or "" when no owner is set. */
+    /** " Source owner: x." for error messages, or "". */
     public String ownerHint() {
         return metadata.owner() == null ? "" : " Source owner: " + metadata.owner() + ".";
     }
@@ -111,80 +87,56 @@ public record SourceDefinition(
             return this;
         }
 
-        /** Column that uniquely identifies a record (used for duplicate check and rejected table). */
+        /** Identifies a record: duplicate check, upsert key, rejected table. */
         public Builder businessKey(String businessKey) {
             this.businessKey = businessKey;
             return this;
         }
 
-        /**
-         * The TIMESTAMP field of the source (e.g. updatedAt). Two jobs:
-         *   1. INCREMENTAL WATERMARK: a run reads only documents with this field &gt; meta_pipeline.last_run_time and &lt;= run start
-         *      (it must be a BSON Date in MongoDB, and should be indexed)
-         *   2. DE-DUPLICATION: when the same business key appears twice, the row with the highest value is kept
-         */
+        /** Timestamp field (BSON Date, indexed): incremental watermark + "latest wins" on duplicates. */
         public Builder latestRecordColumn(String latestRecordColumn) {
             this.latestRecordColumn = latestRecordColumn;
             return this;
         }
 
-        // ------------------------------------------------------------ quality gate
-
-        /**
-         * QUALITY GATE: if more than {@code percent} % of the rows read are rejected (duplicates not counted),
-         * the job FAILS before this collection is loaded, so a broken source cannot fill silver with gaps.
-         * Not applied to very small batches
-         * (fewer than application.dwh.quality.reject-gate-min-records rows).
-         */
+        /** More than this % bad rows (duplicates not counted) -> the run FAILS before loading. */
         public Builder maxRejectPercent(double percent) {
             this.maxRejectPercent = percent;
             return this;
         }
 
-        // ------------------------------------------------------------ source filter
-
-        /** Extra MongoDB $match, e.g. {@code {"country": "India"}}. Documents that do not match are never read. */
+        /** Extra MongoDB $match, e.g. {@code {"country": "India"}}. */
         public Builder sourceFilter(String mongoMatchJson) {
             this.sourceFilter = mongoMatchJson;
             return this;
         }
 
-        /** Skips test documents ({"isTest": true}). Documents without the field are read normally. */
+        /** Skips {"isTest": true} documents. */
         public Builder excludeTestRecords() {
             return sourceFilter("{\"" + TEST_RECORD_FIELD + "\": {\"$ne\": true}}");
         }
 
-        // ------------------------------------------------------------ soft delete
-
-        /**
-         * The source marks deleted documents with {@code isDeleted: true} (and a new updatedAt) instead of removing
-         * them. Such a document is NOT validated or loaded: its business key is soft-deleted in the target tables
-         * (is_deleted = true, deleted_at = its updatedAt). isDeleted = false again later = restored.
-         */
+        /** isDeleted = true at the source -> the key is soft-deleted in the target tables (not validated). */
         public Builder softDelete() {
             return softDelete(DEFAULT_SOFT_DELETE_FIELD);
         }
 
-        /** Same as {@link #softDelete()} with another flag field. Values true / 1 / Y / yes mean deleted. */
+        /** Same with another flag field. true / 1 / Y / yes mean deleted. */
         public Builder softDelete(String flagField) {
             this.softDeleteField = flagField;
             return this;
         }
-
-        // ------------------------------------------------------------ metadata
 
         public Builder description(String description) {
             this.description = description;
             return this;
         }
 
-        /** Team / person to contact when this source sends bad data. */
         public Builder owner(String owner) {
             this.owner = owner;
             return this;
         }
 
-        /** When new data is expected, e.g. "every hour" or "daily by 06:00". */
         public Builder sla(String sla) {
             this.sla = sla;
             return this;

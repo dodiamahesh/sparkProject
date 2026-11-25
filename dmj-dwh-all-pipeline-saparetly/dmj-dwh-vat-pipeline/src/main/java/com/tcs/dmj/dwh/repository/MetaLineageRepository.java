@@ -5,9 +5,7 @@ import org.springframework.stereotype.Repository;
 
 import java.util.Collection;
 
-/**
- * SQL for meta.meta_lineage: asset-level lineage edges (source asset -&gt; target asset, by pipeline).
- */
+/** meta.meta_lineage: table-level edges source asset -&gt; target asset, per pipeline. */
 @Repository
 public class MetaLineageRepository {
 
@@ -17,7 +15,7 @@ public class MetaLineageRepository {
         this.jdbc = jdbc;
     }
 
-    /** Inserts the edge (only when it is new: lineage_id has no gaps) or makes it active again; returns its id. */
+    /** Inserts the edge (or makes it active again) and returns its lineage_id. */
     public long upsert(long sourceAssetId, long targetAssetId, long pipelineId) {
         jdbc.update("""
                 INSERT INTO meta.meta_lineage (source_asset_id, target_asset_id, pipeline_id)
@@ -36,7 +34,7 @@ public class MetaLineageRepository {
                 """, Long.class, sourceAssetId, targetAssetId, pipelineId);
     }
 
-    /** Edges of the pipeline that were not seen in its last successful run: active_flag = 'N'. */
+    /** Edges not seen in the pipeline's last successful run get active_flag = 'N'. */
     public int deactivateAllExcept(long pipelineId, Collection<Long> lineageIds) {
         return jdbc.update("UPDATE meta.meta_lineage SET active_flag = 'N' "
                         + "WHERE pipeline_id = ? AND active_flag = 'Y' AND NOT (lineage_id = ANY (?))",

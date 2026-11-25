@@ -21,19 +21,9 @@ import static com.tcs.dmj.dwh.pipeline.vatreturn.VatReturnSchemaMapper.toFactVat
 import static com.tcs.dmj.dwh.pipeline.vatreturn.VatReturnSchemaMapper.toTyped;
 
 /**
- * VAT returns -> STAR schema in silver, loaded DIRECTLY (no etl_staging tables) in ONE transaction.
- *
- *   vat_return_coll --+-- tin, name, category ...       -------------------> dim_taxpayer      (SCD1)
- *                     +-- month, year, from, to, due    -------------------> dim_tax_period
- *                     +-- filed / due / ack date        -------------------> silver.dim_date
- *                     +-- everything + 26 amounts, keys looked up in SQL --> fact_vat_return   (1 row per ackNo)
- *   seeded reference dimensions: dim_tax_form, dim_vat_return_type, dim_vat_return_status, dim_filing_channel
- *
- * directLoad() = true: every table above, the rejected records (+ new messages in meta_error_master) and the
- * last_run_time are written in ONE database transaction. COMMIT = all of it, any error = ROLLBACK = nothing.
- *
+ * vat_return_coll -> star schema in silver: dim_taxpayer, dim_tax_period, dim_date, fact_vat_return.
+ * Loaded directly (no staging), the whole run in ONE transaction.
  * Design and sample data: sample-data/vat-return-pipeline/vat-return-pipeline.md
- * Trigger: POST /api/admin/dwh/pipelines/vat-return-pipeline/run
  */
 @Component
 public class VatReturnPipeline extends AbstractEtlPipeline {
@@ -46,7 +36,7 @@ public class VatReturnPipeline extends AbstractEtlPipeline {
     static final String DIM_FILING_CHANNEL = "silver.dim_filing_channel";
     static final String FACT_VAT_RETURN = "silver.fact_vat_return";
 
-    /** Surrogate keys of the fact, resolved by sub-selects in the INSERT (same transaction as the dimensions). */
+    /** Surrogate keys of the fact, looked up inside the INSERT (business key column -> dimension key). */
     private static final KeyLookup[] FACT_KEYS = {
             new KeyLookup("tin", DIM_TAXPAYER, "tin", "taxpayer_key"),
             new KeyLookup("form_id", DIM_TAX_FORM, "form_id", "tax_form_key"),
@@ -79,10 +69,11 @@ public class VatReturnPipeline extends AbstractEtlPipeline {
         return List.of(DIM_TAXPAYER, DIM_TAX_PERIOD, DateDimension.TABLE, FACT_VAT_RETURN);
     }
 
-    /**
-     * Column lineage of the regulatory fields (meta.meta_column_lineage). The table lineage (which collections /
-     * tables feed which table) is found automatically from the loads.
-     */
+    @Override
+    public boolean directLoad() {
+        return true;
+    }
+
     @Override
     public List<ColumnLineage> columnLineage() {
         String source = VatReturnSources.VAT_RETURNS.collection();
@@ -92,39 +83,32 @@ public class VatReturnPipeline extends AbstractEtlPipeline {
                 ColumnLineage.of(source, "tin", FACT_VAT_RETURN, "taxpayer_key", MappingType.LOOKUP),
                 ColumnLineage.of(source, "taxpayerName", DIM_TAXPAYER, "taxpayer_name", MappingType.RENAMED),
                 ColumnLineage.of(source, "rtnRegisterVatDTO.crtDt", FACT_VAT_RETURN, "filed_at", MappingType.DERIVED),
-                ColumnLineage.of(source, "vatComputationData.totalOutputTaxValue", FACT_VAT_RETURN, "total_output_tax",
-                        MappingType.RENAMED),
-                ColumnLineage.of(source, "vatComputationData.netOutputTaxValue", FACT_VAT_RETURN, "net_output_tax",
-                        MappingType.RENAMED),
-                ColumnLineage.of(source, "vatComputationData.netPayableValue", FACT_VAT_RETURN, "net_payable",
-                        MappingType.RENAMED),
+                ColumnLineage.of(source, "vatComputationData.totalOutputTaxValue", FACT_VAT_RETURN, "total_output_tax",MappingType.RENAMED),
+                ColumnLineage.of(source, "vatComputationData.netOutputTaxValue", FACT_VAT_RETURN, "net_output_tax",MappingType.RENAMED),
+                ColumnLineage.of(source, "vatComputationData.netPayableValue", FACT_VAT_RETURN, "net_payable",MappingType.RENAMED),
                 ColumnLineage.of(source, "penaltyAmount", FACT_VAT_RETURN, "penalty_amount", MappingType.RENAMED),
                 ColumnLineage.of(source, "interest", FACT_VAT_RETURN, "interest_amount", MappingType.RENAMED),
                 ColumnLineage.of(source, "netTax", FACT_VAT_RETURN, "net_tax", MappingType.RENAMED));
     }
 
-    /** All tables of this pipeline + rejects + last_run_time in ONE transaction, written without staging tables. */
-    @Override
-    public boolean directLoad() {
-        return true;
-    }
-
     @Override
     public void run(PipelineContext context) {
-        // E + data quality (ORPHAN check: the form must exist in the seeded reference dimension)
-        SourceBatch returns = extractAndValidate(context, VatReturnSources.VAT_RETURNS,
-                VatReturnSources.sanitizer(), VatReturnSources.rules(readTable(DIM_TAX_FORM, "form_id")));
+        // extract + validate (ORPHAN: the form must exist in the seeded dim_tax_form)
+        SourceBatch returns = extractAndValidate(context, 
+        										 VatReturnSources.VAT_RETURNS,
+        										 VatReturnSources.sanitizer(), 
+        										 VatReturnSources.rules(readTable(DIM_TAX_FORM, "form_id")));
 
-        // T
+        // transform
         Dataset<Row> typed = context.cache(toTyped(returns.valid()));
 
-        // L: dimensions first (the fact references them), then the fact; all in the job's transaction
+        // load: dimensions first, then the fact
         loadDirect(context, toDimTaxpayer(typed), DIM_TAXPAYER, List.of("tin"));
         loadDirect(context, toDimTaxPeriod(typed), DIM_TAX_PERIOD, List.of("period_key"));
         loadDateDimensionDirect(context, typed, "filed_date", "due_date", "ack_date");
         loadDirect(context, toFactVatReturn(typed), FACT_VAT_RETURN, List.of("ack_no"), FACT_KEYS);
 
-        // SOFT DELETES: returns deleted at the source (in the same transaction)
+        // returns deleted at the source
         applyDeletes(context, returns, FACT_VAT_RETURN, "ack_no");
     }
 }

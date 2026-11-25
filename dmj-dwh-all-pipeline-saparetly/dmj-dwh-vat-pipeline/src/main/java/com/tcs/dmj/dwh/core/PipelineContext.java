@@ -15,10 +15,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
-/**
- * Everything that belongs to ONE job run: id, window end, counters, processed sources and cached data.
- * A new context is created for every run and thrown away at the end.
- */
+/** Everything of ONE run: id, window end, counters, processed sources, cached data and lineage. */
 public class PipelineContext {
 
     private final long pipelineRunId;
@@ -31,6 +28,10 @@ public class PipelineContext {
     private final AtomicInteger stagingTableCounter = new AtomicInteger();
     private final Set<String> deletesApplied = ConcurrentHashMap.newKeySet();
     private final Map<String, LineageEdge> lineage = new ConcurrentHashMap<>();
+
+    /** One source -> target edge of the table lineage. */
+    public record LineageEdge(MetaAsset source, MetaAsset target) {
+    }
 
     public PipelineContext(long pipelineRunId, String pipelineName, Instant windowEnd, boolean directLoad) {
         this.pipelineRunId = pipelineRunId;
@@ -47,15 +48,12 @@ public class PipelineContext {
         return pipelineName;
     }
 
-    /** Upper bound of the incremental window of EVERY source in this run (the run's start time). */
+    /** Upper bound of the incremental window of every source of this run (the run's start time). */
     public Instant windowEnd() {
         return windowEnd;
     }
 
-    /**
-     * true = the pipeline writes straight into its tables (no staging) and the whole run is ONE transaction:
-     * every table, the rejected records and last_run_time are committed together, or nothing at all.
-     */
+    /** true = the whole run is one transaction (see EtlPipeline.directLoad). */
     public boolean directLoad() {
         return directLoad;
     }
@@ -64,7 +62,6 @@ public class PipelineContext {
         return metrics;
     }
 
-    /** Every source processed in this run. Used at the end to save rejects and move last_run_time. */
     public void addSourceBatch(SourceBatch batch) {
         sourceBatches.add(batch);
     }
@@ -73,24 +70,19 @@ public class PipelineContext {
         return Collections.unmodifiableList(sourceBatches);
     }
 
-    /**
-     * Caches a dataset for the rest of this run.
-     * IMPORTANT: Spark is lazy. Without caching, every action (count, load, save rejects) would read
-     * MongoDB again. Caching reads it ONCE and freezes what we read for the rest of the run.
-     */
+    /** Caches a dataset for the rest of the run, so MongoDB is read only once (Spark is lazy). */
     public Dataset<Row> cache(Dataset<Row> dataset) {
         Dataset<Row> cached = dataset.persist(StorageLevel.MEMORY_AND_DISK());
         cachedDatasets.add(cached);
         return cached;
     }
 
-    /** Called by the framework when the job ends (success or failure). */
+    /** Called when the run ends. */
     public void releaseResources() {
         cachedDatasets.forEach(Dataset::unpersist);
         cachedDatasets.clear();
     }
 
-    /** The pipeline applied the soft deletes of this collection (AbstractEtlPipeline.applyDeletes). */
     public void markDeletesApplied(String collection) {
         deletesApplied.add(collection);
     }
@@ -103,16 +95,11 @@ public class PipelineContext {
         return stagingTableCounter.incrementAndGet();
     }
 
-    /** Table-level lineage seen in this run (written to meta.meta_lineage when the run succeeds). */
     public void addLineage(MetaAsset source, MetaAsset target) {
         lineage.putIfAbsent(source.key() + " -> " + target.key(), new LineageEdge(source, target));
     }
 
     public List<LineageEdge> lineage() {
         return List.copyOf(lineage.values());
-    }
-
-    /** source asset -&gt; target asset, written by this run. */
-    public record LineageEdge(MetaAsset source, MetaAsset target) {
     }
 }

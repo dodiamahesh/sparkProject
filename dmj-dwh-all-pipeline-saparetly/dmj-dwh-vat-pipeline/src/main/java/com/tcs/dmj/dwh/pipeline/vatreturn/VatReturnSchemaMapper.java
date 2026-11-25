@@ -10,7 +10,6 @@ import org.apache.spark.sql.types.DataTypes;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 import static org.apache.spark.sql.functions.coalesce;
 import static org.apache.spark.sql.functions.col;
@@ -23,87 +22,37 @@ import static org.apache.spark.sql.functions.to_date;
 import static org.apache.spark.sql.functions.when;
 
 /**
- * Transformations of vat-return-pipeline: validated (String) rows -> typed rows -> dimension / fact rows.
- * Pure Spark functions, no I/O.
- *
- * Dates: Ghana = UTC. Dates are taken from the TEXT of the source value ("2026-10-14T10:43:38Z" -> 2026-10-14),
- * not converted with the Spark session time zone (Asia/Kolkata), so a filing late in the evening keeps its own day.
+ * Transformations (pure Spark, no I/O): valid String rows -> typed rows -> dimension / fact rows.
+ * Dates come from the TEXT of the source ("2026-10-14T10:43:38Z" -> 2026-10-14), not from the Spark time zone.
  */
 final class VatReturnSchemaMapper {
 
     private VatReturnSchemaMapper() {
     }
 
-    /** camelCase amount column -> snake_case fact column: "vatLevies" -> "vat_levies", "interest" -> "interest_amount". */
-    static String factColumn(String amountColumn) {
-        return "interest".equals(amountColumn)
-                ? "interest_amount"
-                : amountColumn.replaceAll("([a-z0-9])([A-Z])", "$1_$2").toLowerCase();
-    }
-
-    /** "2026-10-14T10:43:38.639Z" -> the date of the text, 2026-10-14 */
-    private static Column dateOfText(String column) {
-        return to_date(substring(col(column), 1, 10));
-    }
-
     /** All columns typed and renamed to the warehouse names. */
     static Dataset<Row> toTyped(Dataset<Row> valid) {
-        List<Column> columns = new ArrayList<>(List.of(
-                col("ackNo").as("ack_no"),
-                col("tin"),
-                col("taxpayerId").as("taxpayer_id"),
-                col("taxpayerName").as("taxpayer_name"),
-                col("taxpayerCategory").as("taxpayer_category"),
-                col("taxpayerJurisdiction").as("jurisdiction_code"),
-                // period
-                col("year").cast(SparkTypes.INT).multiply(100).plus(col("month").cast(SparkTypes.INT)).as("period_key"),
-                to_date(col("rtnFromDate")).as("period_from"),
-                to_date(col("rtnToDate")).as("period_to"),
-                col("month").cast(SparkTypes.INT).as("period_month"),
-                col("year").cast(SparkTypes.INT).as("period_year"),
-                quarter(to_date(col("rtnFromDate"))).as("period_quarter"),
-                to_date(col("rtnDueDt")).as("due_date"),
-                // codes of the reference dimensions (looked up in SQL at load time)
-                col("formId").as("form_id"),
-                col("rtnType").as("return_type_code"),
-                col("rtnStatus").as("status_code"),
-                col("fileFrom").as("channel_code"),
-                // filing time: wall-clock time of the source text, no time-zone conversion (TIMESTAMP_NTZ)
-                regexp_replace(col("filedAt"), "Z$", "").cast(DataTypes.TimestampNTZType).as("filed_at"),
-                dateOfText("filedAt").as("filed_date"),
-                dateOfText("ackDate").as("ack_date"),
-                // flags
-                col("isNilReturn").equalTo("true").as("is_nil_return"),
-                when(col("isLateRtn").isNotNull(), col("isLateRtn").equalTo("Y"))
-                        .otherwise(col("delayDays").cast(SparkTypes.INT).gt(0)).as("is_late_return"),
-                coalesce(col("isActive").equalTo("Y"), lit(true)).as("is_active"),
-                col("delayDays").cast(SparkTypes.INT).as("delay_days"),
-                col("updatedAt").cast(SparkTypes.TIMESTAMP).as("updated_at")));
-        for (Map.Entry<String, String[]> amount : VatReturnSources.AMOUNTS.entrySet()) {
-            // an amount that is missing in the source counts as 0
-            columns.add(coalesce(col(amount.getKey()).cast(SparkTypes.MONEY), lit(0).cast(SparkTypes.MONEY))
-                    .as(factColumn(amount.getKey())));
-        }
+        List<Column> columns = new ArrayList<>();
+        columns.addAll(taxpayerColumns());
+        columns.addAll(periodColumns());
+        columns.addAll(referenceCodeColumns());
+        columns.addAll(filingColumns());
+        columns.addAll(amountColumns());
         return valid.select(columns.toArray(Column[]::new));
     }
 
-    /** dim_taxpayer (SCD1): one row per tin, the values of its latest return win. */
+    /** dim_taxpayer (SCD1): one row per tin, the latest return wins. */
     static Dataset<Row> toDimTaxpayer(Dataset<Row> typed) {
-        return latestPer(typed, "tin")
-                .select("tin", "taxpayer_id", "taxpayer_name", "taxpayer_category", "jurisdiction_code");
+        return latestPer(typed, "tin").select("tin", "taxpayer_id", "taxpayer_name", "taxpayer_category", "jurisdiction_code");
     }
 
     /** dim_tax_period: one row per return month. */
     static Dataset<Row> toDimTaxPeriod(Dataset<Row> typed) {
-        return latestPer(typed, "period_key")
-                .select("period_key", "period_from", "period_to", "period_month", "period_year", "period_quarter",
+        return latestPer(typed, "period_key").select("period_key", "period_from", "period_to", "period_month", "period_year", "period_quarter",
                         "due_date");
     }
 
-    /**
-     * fact_vat_return: one row per filed return. tin / form_id / *_code stay as business keys: the writer replaces
-     * them with the surrogate keys inside the SQL (KeyLookup), because new taxpayers are not committed yet.
-     */
+    /** fact_vat_return: one row per return. tin / form_id / *_code become surrogate keys in the SQL (KeyLookup). */
     static Dataset<Row> toFactVatReturn(Dataset<Row> typed) {
         List<Column> columns = new ArrayList<>(List.of(
                 col("ack_no"), col("tin"), col("period_key"), col("form_id"), col("return_type_code"),
@@ -116,11 +65,78 @@ final class VatReturnSchemaMapper {
         return typed.select(columns.toArray(Column[]::new));
     }
 
-    /** The row with the latest updated_at per key (ack_no breaks ties), so the newest values win. */
+    /** "vatLevies" -> "vat_levies"; "interest" -> "interest_amount". */
+    static String factColumn(String amountColumn) {
+        return "interest".equals(amountColumn)
+                ? "interest_amount"
+                : amountColumn.replaceAll("([a-z0-9])([A-Z])", "$1_$2").toLowerCase();
+    }
+
+    // ---------------------------------------------------------------- column groups of toTyped
+
+    private static List<Column> taxpayerColumns() {
+        return List.of(
+                col("ackNo").as("ack_no"),
+                col("tin"),
+                col("taxpayerId").as("taxpayer_id"),
+                col("taxpayerName").as("taxpayer_name"),
+                col("taxpayerCategory").as("taxpayer_category"),
+                col("taxpayerJurisdiction").as("jurisdiction_code"));
+    }
+
+    private static List<Column> periodColumns() {
+        Column month = col("month").cast(SparkTypes.INT);
+        Column year = col("year").cast(SparkTypes.INT);
+        return List.of(
+                year.multiply(100).plus(month).as("period_key"),
+                to_date(col("rtnFromDate")).as("period_from"),
+                to_date(col("rtnToDate")).as("period_to"),
+                month.as("period_month"),
+                year.as("period_year"),
+                quarter(to_date(col("rtnFromDate"))).as("period_quarter"),
+                to_date(col("rtnDueDt")).as("due_date"));
+    }
+
+    /** Codes of the seeded reference dimensions. */
+    private static List<Column> referenceCodeColumns() {
+        return List.of(
+                col("formId").as("form_id"),
+                col("rtnType").as("return_type_code"),
+                col("rtnStatus").as("status_code"),
+                col("fileFrom").as("channel_code"));
+    }
+
+    private static List<Column> filingColumns() {
+        Column delayDays = col("delayDays").cast(SparkTypes.INT);
+        return List.of(
+                // wall-clock time of the source text, no time-zone conversion
+                regexp_replace(col("filedAt"), "Z$", "").cast(DataTypes.TimestampNTZType).as("filed_at"),
+                dateOfText("filedAt").as("filed_date"),
+                dateOfText("ackDate").as("ack_date"),
+                col("isNilReturn").equalTo("true").as("is_nil_return"),
+                when(col("isLateRtn").isNotNull(), col("isLateRtn").equalTo("Y"))
+                        .otherwise(delayDays.gt(0)).as("is_late_return"),
+                coalesce(col("isActive").equalTo("Y"), lit(true)).as("is_active"),
+                delayDays.as("delay_days"),
+                col("updatedAt").cast(SparkTypes.TIMESTAMP).as("updated_at"));
+    }
+
+    /** A missing amount counts as 0. */
+    private static List<Column> amountColumns() {
+        return VatReturnSources.AMOUNTS.keySet().stream()
+                .map(amount -> coalesce(col(amount).cast(SparkTypes.MONEY), lit(0).cast(SparkTypes.MONEY))
+                        .as(factColumn(amount)))
+                .toList();
+    }
+
+    /** "2026-10-14T10:43:38.639Z" -> 2026-10-14 */
+    private static Column dateOfText(String column) {
+        return to_date(substring(col(column), 1, 10));
+    }
+
+    /** The row with the latest updated_at per key (ack_no breaks ties). */
     private static Dataset<Row> latestPer(Dataset<Row> typed, String key) {
-        return typed
-                .withColumn("_rn", row_number().over(Window.partitionBy(col(key))
-                        .orderBy(col("updated_at").desc_nulls_last(), col("ack_no").desc())))
+        return typed.withColumn("_rn", row_number().over(Window.partitionBy(col(key)).orderBy(col("updated_at").desc_nulls_last(), col("ack_no").desc())))
                 .filter(col("_rn").equalTo(1))
                 .drop("_rn");
     }
